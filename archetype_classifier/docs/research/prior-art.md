@@ -3,6 +3,14 @@
 Research for issue #3. Compiled 2026-09-28. Findings only: this document does not recommend an approach, and no experiments were run.
 Terms follow [CONTEXT.md](../../CONTEXT.md) (archetype tree, parent fallback, unseen card, guess, label).
 
+## Our reading (interpretation, not a research finding)
+
+Agreed after the research on 2026-09-28. The findings below are unchanged.
+
+> Represent each card by a frozen small text encoder over its oracle text with its own name masked (`bge-small-en-v1.5` first, as in DraftFM), plus structured card features. Classify decks with a flat, calibrated classifier, and fall back up the archetype tree by summing probabilities over subtrees. Score with hierarchical precision and recall plus a specificity-versus-correctness view, against today's guesser as the baseline.
+
+bge-small is a first candidate, not a proven winner: no benchmark covers rules text, and text alone did not fully carry other models to new sets. Checking candidate encoders against the card-representation scenarios in `archetype_classifier/docs/adr/Scenarios.md` comes first.
+
 ## Summary
 
 - **MTG sites do not publish their methods.** MTGGoldfish, MTGTop8 and Untapped.gg document nothing about how decks get an archetype. What you can see on the sites is still useful. MTGTop8 uses a two-level tree (Aggro / Control / Combo, then named archetypes) with "Other - Aggro/Control/Combo" buckets, which work like a parent fallback. 17lands classifies draft decks only by colour pair, and clusters decks within a pair for exploration.

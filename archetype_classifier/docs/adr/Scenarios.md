@@ -51,7 +51,8 @@ A deck is labelled **Red Deck Wins**, a parent archetype, because it has no clea
 
 - **Expect:** the guess Prisoner scores below the exact guess Red Deck Wins (hP 0.67, hR 1.00, tree distance 1), and above Azorius Control.
 - **Tentative:** a too-specific guess costs more than a parent fallback that is the same distance off. For example, guessing Prisoner for a Red Deck Wins deck scores below guessing Red Deck Wins for a Prisoner deck. Hierarchical precision separates them (0.67 against 1.00). Plain hierarchical F scores both 0.80 and tree distance scores both 1, so neither produces this ordering on its own.
-- **Revisit if:** the penalty pushes models to guess only top-level archetypes such as Aggro, Midrange or Combo. The exact size of the penalty is settled in [How should predictions be scored against the archetype tree?](https://github.com/violetteavi/Penny-Dreadful-Tools/issues/5).
+- **How it's measured:** through hierarchical precision, reported beside the headline hierarchical F (β = 1). See [ADR 0001](0001-score-guesses-with-hierarchical-f.md), which records β = 0.8 as the alternative if this scenario becomes firm.
+- **Revisit if:** the penalty pushes models to guess only top-level archetypes such as Aggro, Midrange or Combo. The depth-difference report shows whether guesses lean up or down the tree.
 
 ### A wrong child on the right branch beats a top-level fallback
 

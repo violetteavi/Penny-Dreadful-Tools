@@ -85,6 +85,10 @@ _Avoid_: Deck type, category, class
 The hierarchy of archetypes, from broad strategies (Aggro, Control, Combo, Midrange, Ramp and their hybrids such as Aggro-Control) down to specific ones.
 _Avoid_: Taxonomy
 
+**Top-level archetype**:
+An archetype with no parent in the archetype tree, such as Aggro, Control, Combo, Midrange, Ramp or a hybrid like Aggro-Control.
+_Avoid_: Root (the root is the whole tree, above every top-level archetype)
+
 **Leaf archetype**:
 An archetype with no children in the archetype tree, describing a specific strategy.
 

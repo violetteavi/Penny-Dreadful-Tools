@@ -2,7 +2,7 @@
 
 Concrete cases the parts of the archetype classifier must get right. Each one names real cards, decks or archetypes, says what should happen, and says how to check it, so it can become a test or an evaluation check.
 
-Terms follow [CONTEXT.md](../../CONTEXT.md). Scenarios marked **Proposed** still need confirming in the ticket named.
+Terms follow [CONTEXT.md](../../CONTEXT.md). Scenarios marked **Tentative** are agreed for now but may change; each says what would make us revisit it.
 
 ## Card representation
 
@@ -43,14 +43,15 @@ hP and hR are hierarchical precision and recall: each archetype is extended with
 
 - **Expect:** the tree-aware metric ranks the four guesses in this order.
 - **Check:** score each guess against the Prisoner label.
-- **Proposed:** that a correct parent fallback (Red Deck Wins) should score better than a wrong child on the right branch (Mono Red Devotion). Both hierarchical F and tree distance rank them this way. Confirm in [How should predictions be scored against the archetype tree?](https://github.com/violetteavi/Penny-Dreadful-Tools/issues/5).
+- **Confirmed 2026-09-28:** a correct parent fallback (Red Deck Wins) scores better than a wrong child on the right branch (Mono Red Devotion). Both hierarchical F and tree distance rank them this way.
 
 ### A too-specific guess on a parent label is penalised
 
 A deck is labelled **Red Deck Wins**, a parent archetype, because it has no clear home in any child.
 
 - **Expect:** the guess Prisoner scores below the exact guess Red Deck Wins (hP 0.67, hR 1.00, tree distance 1), and above Azorius Control.
-- **Proposed:** how much a too-specific guess should cost compared with a parent fallback of the same distance. Confirm in [How should predictions be scored against the archetype tree?](https://github.com/violetteavi/Penny-Dreadful-Tools/issues/5).
+- **Tentative:** a too-specific guess costs more than a parent fallback that is the same distance off. For example, guessing Prisoner for a Red Deck Wins deck scores below guessing Red Deck Wins for a Prisoner deck. Hierarchical F ranks them this way; tree distance scores them equally.
+- **Revisit if:** the penalty pushes models to guess only top-level archetypes such as Aggro, Midrange or Combo. The exact size of the penalty is settled in [How should predictions be scored against the archetype tree?](https://github.com/violetteavi/Penny-Dreadful-Tools/issues/5).
 
 ## Parent fallback
 

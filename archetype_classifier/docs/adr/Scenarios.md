@@ -50,8 +50,16 @@ hP and hR are hierarchical precision and recall: each archetype is extended with
 A deck is labelled **Red Deck Wins**, a parent archetype, because it has no clear home in any child.
 
 - **Expect:** the guess Prisoner scores below the exact guess Red Deck Wins (hP 0.67, hR 1.00, tree distance 1), and above Azorius Control.
-- **Tentative:** a too-specific guess costs more than a parent fallback that is the same distance off. For example, guessing Prisoner for a Red Deck Wins deck scores below guessing Red Deck Wins for a Prisoner deck. Hierarchical F ranks them this way; tree distance scores them equally.
+- **Tentative:** a too-specific guess costs more than a parent fallback that is the same distance off. For example, guessing Prisoner for a Red Deck Wins deck scores below guessing Red Deck Wins for a Prisoner deck. Hierarchical precision separates them (0.67 against 1.00). Plain hierarchical F scores both 0.80 and tree distance scores both 1, so neither produces this ordering on its own.
 - **Revisit if:** the penalty pushes models to guess only top-level archetypes such as Aggro, Midrange or Combo. The exact size of the penalty is settled in [How should predictions be scored against the archetype tree?](https://github.com/violetteavi/Penny-Dreadful-Tools/issues/5).
+
+### A wrong child on the right branch beats a top-level fallback
+
+A deck is labelled **Prisoner**.
+
+- **Expect:** guessing **Mono Red Devotion** (a wrong child of Red Deck Wins, on the right branch) scores higher than guessing **Aggro** (the correct top-level archetype). Plain hierarchical F gives 0.67 against 0.50.
+- **Why it matters:** retreating to a top-level archetype tells a reviewer very little. The metric should not reward a model for playing safe that way.
+- **Confirmed 2026-09-28.**
 
 ## Parent fallback
 

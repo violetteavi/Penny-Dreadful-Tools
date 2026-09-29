@@ -6,6 +6,7 @@ from enum import Enum
 class Provenance(Enum):
     CORRECTED_GUESS = 'corrected_guess'  # A person changed the automatic guess before it.
     AUTOMATIC = 'automatic'  # The latest label is an automatic guess nobody has reviewed.
+    NO_HISTORY = 'no_history'  # The deck predates the label history.
 
 HUMAN_PROVENANCES = frozenset({Provenance.CORRECTED_GUESS})
 
@@ -23,6 +24,8 @@ class LabelSource:
 
 def label_source(history: Sequence[LabelChange]) -> LabelSource:
     """Where a deck's latest label came from. `history` is that deck's label changes, oldest first."""
+    if not history:
+        return LabelSource(Provenance.NO_HISTORY, None, None)
     latest = history[-1]
     if not latest.by_person:
         return LabelSource(Provenance.AUTOMATIC, None, latest.archetype_id)

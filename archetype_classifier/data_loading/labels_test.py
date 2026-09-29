@@ -10,6 +10,12 @@ def test_a_person_changing_the_guess_is_a_corrected_guess() -> None:
     assert source.guess_archetype_id == RED_DECK_WINS
     assert source.latest_archetype_id == PRISONER
 
+def test_no_history() -> None:
+    source = label_source([])
+    assert source.provenance == Provenance.NO_HISTORY
+    assert source.guess_archetype_id is None
+    assert source.latest_archetype_id is None
+
 def test_an_unreviewed_guess_is_automatic() -> None:
     source = label_source([LabelChange(8, RED_DECK_WINS, by_person=False)])
     assert source.provenance == Provenance.AUTOMATIC

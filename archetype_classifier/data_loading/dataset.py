@@ -98,6 +98,24 @@ def split_decks(snapshot: Snapshot, deck_cards: Iterable[DeckCardRow], scheme: S
             other_maindecks[c.deck_id].append(c)
     return {deck_id: DeckSplit(deck_id, split, sum(c.n for c in other_maindecks[deck_id] if c.card not in seen_cards)) for deck_id, split in splits.items()}
 
+@dataclass(frozen=True)
+class DatasetDeck:
+    """One deck as an experiment sees it: its frozen snapshot record and its split under a scheme."""
+    deck_id: int
+    season_id: int
+    archetype_id: int
+    provenance: Provenance
+    guess_archetype_id: int | None
+    ground_truth: bool
+    maindeck_hash: str
+    split: Split
+    unseen_maindeck_copies: int
+
+@dataclass(frozen=True)
+class Dataset:
+    decks: dict[int, DatasetDeck]
+    archetypes: dict[int, ArchetypeSnapshot]
+
 HASH_MODULUS = 2 ** 160
 
 def line_digest(c: DeckCardRow) -> int:

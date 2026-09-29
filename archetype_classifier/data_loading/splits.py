@@ -1,7 +1,7 @@
 import zlib
 from dataclasses import dataclass, field, fields
-from typing import Any
 from enum import Enum
+from typing import Any
 
 
 class Split(Enum):
@@ -28,7 +28,8 @@ class SplitScheme:
     def from_params(cls, name: str, params: dict[str, Any]) -> 'SplitScheme':
         """The inverse of to_params. Parameters missing from older schemes take their defaults."""
         season_fields = {f.name for f in fields(cls) if f.name.endswith('_seasons')}
-        return cls(name, **{k: frozenset(v) if k in season_fields else v for k, v in params.items()})
+        values: dict[str, Any] = {k: frozenset(v) if k in season_fields else v for k, v in params.items()}
+        return cls(name, **values)
 
 def assign_split(season_id: int, maindeck_hash: str, scheme: SplitScheme) -> Split | None:
     """The split a deck belongs to, or None if its season is outside the scheme."""

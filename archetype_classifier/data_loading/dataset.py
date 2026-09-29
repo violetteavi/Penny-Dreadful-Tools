@@ -43,10 +43,11 @@ def snapshot_decks(decks: Sequence[DeckRow], label_history: Iterable[LabelChange
     history_by_deck: dict[int, list[LabelChange]] = defaultdict(list)
     for change in label_history:
         history_by_deck[change.deck_id].append(change)
+    decks_with_cards = {c.deck_id for c in deck_cards}
     excluded_ids = {a.id for a in archetypes if a.name in EXCLUDED_ARCHETYPES}
     snapshots = {}
     for d in decks:
-        if d.source not in INCLUDED_SOURCES or d.archetype_id in excluded_ids:
+        if d.source not in INCLUDED_SOURCES or d.archetype_id in excluded_ids or d.id not in decks_with_cards:
             continue
         source = label_source(history_by_deck[d.id])
         ground_truth = source.provenance in HUMAN_PROVENANCES and source.latest_archetype_id == d.archetype_id

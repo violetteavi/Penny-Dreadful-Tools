@@ -60,3 +60,8 @@ def test_decks_labelled_unclassified_or_commander_are_left_out() -> None:
     cards = [c for i in (30, 31, 32) for c in burn(i)]
     snapshot = snapshot_decks(decks, [], cards, [*ARCHETYPES, unclassified, commander])
     assert set(snapshot.decks) == {30}
+
+def test_decks_with_no_cards_are_left_out() -> None:
+    sideboard_only = [DeckCardRow(42, 'Smash to Smithereens', 3, True)]
+    snapshot = snapshot_decks([deck(40, PRISONER.id), deck(41, PRISONER.id), deck(42, PRISONER.id)], [], burn(40) + sideboard_only, ARCHETYPES)
+    assert set(snapshot.decks) == {40, 42}

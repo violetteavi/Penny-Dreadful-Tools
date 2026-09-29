@@ -40,6 +40,15 @@ def test_the_snapshot_freezes_season_and_current_label() -> None:
     assert snapshot.decks[14].season_id == 39
     assert snapshot.decks[14].archetype_id == RED_DECK_WINS.id
 
+def test_identical_maindecks_share_a_hash_whatever_their_sideboards() -> None:
+    first = burn(50) + [DeckCardRow(50, 'Smash to Smithereens', 3, True)]
+    same_maindeck_other_order = list(reversed(burn(51))) + [DeckCardRow(51, 'Pyroblast', 2, True)]
+    different_maindeck = [DeckCardRow(52, 'Lightning Bolt', 3, False), DeckCardRow(52, 'Mountain', 21, False)]
+    decks = [deck(50, PRISONER.id), deck(51, PRISONER.id), deck(52, PRISONER.id)]
+    snapshot = snapshot_decks(decks, [], first + same_maindeck_other_order + different_maindeck, ARCHETYPES)
+    assert snapshot.decks[50].maindeck_hash == snapshot.decks[51].maindeck_hash
+    assert snapshot.decks[50].maindeck_hash != snapshot.decks[52].maindeck_hash
+
 def test_a_guess_a_person_kept_is_a_validated_guess_and_ground_truth() -> None:
     history = [LabelChange(11, PRISONER.id, by_person=False), LabelChange(11, PRISONER.id, by_person=True)]
     snapshot = snapshot_decks([deck(11, PRISONER.id)], history, burn(11), ARCHETYPES)

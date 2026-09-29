@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from archetype_classifier.data_loading.labels import HUMAN_PROVENANCES, LabelChange, Provenance, label_source
 
+INCLUDED_SOURCES = frozenset({'League', 'Gatherling'})
 
 @dataclass(frozen=True)
 class ArchetypeRow:
@@ -43,6 +44,8 @@ def snapshot_decks(decks: Sequence[DeckRow], label_history: Iterable[LabelChange
         history_by_deck[change.deck_id].append(change)
     snapshots = {}
     for d in decks:
+        if d.source not in INCLUDED_SOURCES:
+            continue
         source = label_source(history_by_deck[d.id])
         ground_truth = source.provenance in HUMAN_PROVENANCES and source.latest_archetype_id == d.archetype_id
         snapshots[d.id] = DeckSnapshot(d.id, source.provenance, source.guess_archetype_id, ground_truth)

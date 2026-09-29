@@ -131,6 +131,7 @@ select = [
 "rotation_script/*" = ["T201"]
 "shared/*" = ["T201"]
 "maintenance/*" = ["T201"]
+"archetype_classifier/*" = ["T201"]
 "magic/*" = ["T201"]
 "price_grabber/*" = ["T201"]
 "dev.py" = ["T201"]

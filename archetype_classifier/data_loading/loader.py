@@ -161,3 +161,29 @@ def insert_rows(edb: Database, table: str, columns: Sequence[str], rows: Sequenc
         batch = rows[start:start + INSERT_BATCH]
         sql = f'INSERT INTO {table} ({", ".join(columns)}) VALUES ' + ', '.join([placeholders] * len(batch))
         edb.execute(sql, [value for row in batch for value in row])
+
+def main() -> None:
+    """Create a snapshot, a scheme, or a split from the command line, and print a summary."""
+    import argparse
+    parser = argparse.ArgumentParser(description=main.__doc__)
+    commands = parser.add_subparsers(dest='command', required=True)
+    commands.add_parser('snapshot', help='freeze the current labels').add_argument('--notes', default='')
+    commands.add_parser('scheme', help='store the default split scheme under a name').add_argument('name')
+    for command in ('split', 'summary'):
+        p = commands.add_parser(command, help='materialise a split' if command == 'split' else 'summarise a dataset')
+        p.add_argument('snapshot_id', type=int)
+        p.add_argument('scheme_id', type=int)
+    args = parser.parse_args()
+    edb = experiments_db()
+    if args.command == 'snapshot':
+        print(f'Created snapshot {create_snapshot(edb, args.notes)}')
+    elif args.command == 'scheme':
+        print(f'Created scheme {create_scheme(edb, SplitScheme(args.name))}')
+    elif args.command == 'split':
+        print(f'Split {materialise_split(edb, args.snapshot_id, args.scheme_id)} decks')
+    else:
+        for name, counts in summary(load_dataset(edb, args.snapshot_id, args.scheme_id)).items():
+            print(name, dict(sorted(counts.items())))
+
+if __name__ == '__main__':
+    main()

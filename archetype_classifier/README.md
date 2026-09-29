@@ -35,3 +35,15 @@ Today decks are labelled by a guess (hand-written rules, or the archetype of the
 ## Running
 
 Needs a local decksite database and cards database; see the setup instructions in the repository's top-level [README](../README.md).
+
+The dataset lives in a separate `archetype_experiments` database on the same MariaDB server; the site's databases are only read. The app user needs rights on `archetype_experiments%` databases (the integration tests also use `archetype_experiments_test` and the repo's `decksite_test_seeded`).
+
+```sh
+L="uv run --frozen python -m archetype_classifier.data_loading.loader"
+$L snapshot --notes "why this snapshot"   # freeze labels and the archetype tree; prints its id
+$L scheme default                         # store the default split scheme; prints its id
+$L split <snapshot id> <scheme id>        # store every deck's split and unseen-card count
+$L summary <snapshot id> <scheme id>      # counts by split and label source
+```
+
+Experiments load data with `loader.load_dataset(loader.experiments_db(), snapshot_id, scheme_id)`, and read deck contents with `loader.iter_deck_cards()`.

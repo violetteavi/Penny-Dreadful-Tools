@@ -49,6 +49,10 @@ def test_identical_maindecks_share_a_hash_whatever_their_sideboards() -> None:
     assert snapshot.decks[50].maindeck_hash == snapshot.decks[51].maindeck_hash
     assert snapshot.decks[50].maindeck_hash != snapshot.decks[52].maindeck_hash
 
+def test_the_snapshot_freezes_the_archetype_tree_with_depths() -> None:
+    snapshot = snapshot_decks([], [], [], ARCHETYPES)
+    assert [(a.name, a.parent_id, a.depth) for a in snapshot.archetypes.values()] == [('Aggro', None, 0), ('Red Deck Wins', AGGRO.id, 1), ('Prisoner', RED_DECK_WINS.id, 2)]
+
 def test_a_guess_a_person_kept_is_a_validated_guess_and_ground_truth() -> None:
     history = [LabelChange(11, PRISONER.id, by_person=False), LabelChange(11, PRISONER.id, by_person=True)]
     snapshot = snapshot_decks([deck(11, PRISONER.id)], history, burn(11), ARCHETYPES)

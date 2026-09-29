@@ -39,8 +39,16 @@ class DeckSnapshot:
     maindeck_hash: str  # Equal for decks with identical maindecks, whatever their sideboards.
 
 @dataclass(frozen=True)
+class ArchetypeSnapshot:
+    id: int
+    name: str
+    parent_id: int | None
+    depth: int  # 0 for a top-level archetype.
+
+@dataclass(frozen=True)
 class Snapshot:
     decks: dict[int, DeckSnapshot]
+    archetypes: dict[int, ArchetypeSnapshot]
 
 def snapshot_decks(decks: Sequence[DeckRow], label_history: Iterable[LabelChange], deck_cards: Iterable[DeckCardRow], archetypes: Sequence[ArchetypeRow]) -> Snapshot:
     """Freeze each deck's label and where it came from."""
@@ -62,10 +70,17 @@ def snapshot_decks(decks: Sequence[DeckRow], label_history: Iterable[LabelChange
         ground_truth = source.provenance in HUMAN_PROVENANCES and source.latest_archetype_id == d.archetype_id
         maindeck_hash = f'{maindeck_sums[d.id] % HASH_MODULUS:040x}'
         snapshots[d.id] = DeckSnapshot(d.id, d.season_id, d.archetype_id, source.provenance, source.guess_archetype_id, ground_truth, maindeck_hash)
-    return Snapshot(snapshots)
+    return Snapshot(snapshots, freeze_archetypes(archetypes))
 
 HASH_MODULUS = 2 ** 160
 
 def line_digest(c: DeckCardRow) -> int:
     """One maindeck line's contribution to its deck's hash. Summing these makes the hash independent of card order."""
     return int.from_bytes(hashlib.sha1(f'{c.n} {c.card}'.encode()).digest(), 'big')
+
+def freeze_archetypes(archetypes: Sequence[ArchetypeRow]) -> dict[int, ArchetypeSnapshot]:
+    parents = {a.id: a.parent_id for a in archetypes}
+    def depth(archetype_id: int) -> int:
+        parent_id = parents[archetype_id]
+        return 0 if parent_id is None else depth(parent_id) + 1
+    return {a.id: ArchetypeSnapshot(a.id, a.name, a.parent_id, depth(a.id)) for a in archetypes}

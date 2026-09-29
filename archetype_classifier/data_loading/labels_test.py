@@ -10,6 +10,11 @@ def test_a_person_changing_the_guess_is_a_corrected_guess() -> None:
     assert source.guess_archetype_id == RED_DECK_WINS
     assert source.latest_archetype_id == PRISONER
 
+def test_a_person_keeping_the_guess_is_a_validated_guess() -> None:
+    source = label_source([LabelChange(11, PRISONER, by_person=False), LabelChange(11, PRISONER, by_person=True)])
+    assert source.provenance == Provenance.VALIDATED_GUESS
+    assert source.guess_archetype_id == PRISONER
+
 def test_no_history() -> None:
     source = label_source([])
     assert source.provenance == Provenance.NO_HISTORY

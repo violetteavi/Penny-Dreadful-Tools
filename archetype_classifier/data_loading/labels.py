@@ -4,11 +4,12 @@ from enum import Enum
 
 
 class Provenance(Enum):
+    VALIDATED_GUESS = 'validated_guess'  # A person kept the automatic guess before it.
     CORRECTED_GUESS = 'corrected_guess'  # A person changed the automatic guess before it.
     AUTOMATIC = 'automatic'  # The latest label is an automatic guess nobody has reviewed.
     NO_HISTORY = 'no_history'  # The deck predates the label history.
 
-HUMAN_PROVENANCES = frozenset({Provenance.CORRECTED_GUESS})
+HUMAN_PROVENANCES = frozenset({Provenance.VALIDATED_GUESS, Provenance.CORRECTED_GUESS})
 
 @dataclass(frozen=True)
 class LabelChange:
@@ -30,4 +31,5 @@ def label_source(history: Sequence[LabelChange]) -> LabelSource:
     if not latest.by_person:
         return LabelSource(Provenance.AUTOMATIC, None, latest.archetype_id)
     previous = history[-2]
-    return LabelSource(Provenance.CORRECTED_GUESS, previous.archetype_id, latest.archetype_id)
+    provenance = Provenance.VALIDATED_GUESS if previous.archetype_id == latest.archetype_id else Provenance.CORRECTED_GUESS
+    return LabelSource(provenance, previous.archetype_id, latest.archetype_id)

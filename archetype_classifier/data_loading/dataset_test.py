@@ -1,5 +1,5 @@
 from archetype_classifier.data_loading.dataset import ArchetypeRow, DeckCardRow, DeckRow, snapshot_decks
-from archetype_classifier.data_loading.labels import LabelChange
+from archetype_classifier.data_loading.labels import LabelChange, Provenance
 
 AGGRO = ArchetypeRow(1, 'Aggro', None)
 RED_DECK_WINS = ArchetypeRow(2, 'Red Deck Wins', 1)
@@ -34,3 +34,10 @@ def test_a_deck_with_no_label_history_is_not_ground_truth() -> None:
     snapshot = snapshot_decks([deck(10, PRISONER.id)], [], burn(10), ARCHETYPES)
     assert not snapshot.decks[10].ground_truth
     assert snapshot.decks[10].guess_archetype_id is None
+
+def test_a_guess_a_person_kept_is_a_validated_guess_and_ground_truth() -> None:
+    history = [LabelChange(11, PRISONER.id, by_person=False), LabelChange(11, PRISONER.id, by_person=True)]
+    snapshot = snapshot_decks([deck(11, PRISONER.id)], history, burn(11), ARCHETYPES)
+    assert snapshot.decks[11].provenance == Provenance.VALIDATED_GUESS
+    assert snapshot.decks[11].ground_truth
+    assert snapshot.decks[11].guess_archetype_id == PRISONER.id

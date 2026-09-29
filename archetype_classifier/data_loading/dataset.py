@@ -2,7 +2,7 @@ from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
-from archetype_classifier.data_loading.labels import HUMAN_PROVENANCES, LabelChange, label_source
+from archetype_classifier.data_loading.labels import HUMAN_PROVENANCES, LabelChange, Provenance, label_source
 
 
 @dataclass(frozen=True)
@@ -28,6 +28,7 @@ class DeckCardRow:
 @dataclass(frozen=True)
 class DeckSnapshot:
     deck_id: int
+    provenance: Provenance
     guess_archetype_id: int | None
     ground_truth: bool
 
@@ -44,5 +45,5 @@ def snapshot_decks(decks: Sequence[DeckRow], label_history: Iterable[LabelChange
     for d in decks:
         source = label_source(history_by_deck[d.id])
         ground_truth = source.provenance in HUMAN_PROVENANCES and source.latest_archetype_id == d.archetype_id
-        snapshots[d.id] = DeckSnapshot(d.id, source.guess_archetype_id, ground_truth)
+        snapshots[d.id] = DeckSnapshot(d.id, source.provenance, source.guess_archetype_id, ground_truth)
     return Snapshot(snapshots)

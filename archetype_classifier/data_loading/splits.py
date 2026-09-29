@@ -1,5 +1,6 @@
 import zlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
+from typing import Any
 from enum import Enum
 
 
@@ -18,6 +19,16 @@ class SplitScheme:
     test_seasons: frozenset[int] = frozenset({40, 41, 42})
     held_out_percent: int = 10  # Share of training-season decklists held out, identical maindecks together.
     salt: str = ''  # Mixed into the hash; a different salt gives a different held-out set.
+
+    def to_params(self) -> dict[str, Any]:
+        """Every parameter except the name, as JSON-ready values."""
+        return {f.name: sorted(v) if isinstance(v := getattr(self, f.name), frozenset) else v for f in fields(self) if f.name != 'name'}
+
+    @classmethod
+    def from_params(cls, name: str, params: dict[str, Any]) -> 'SplitScheme':
+        """The inverse of to_params. Parameters missing from older schemes take their defaults."""
+        season_fields = {f.name for f in fields(cls) if f.name.endswith('_seasons')}
+        return cls(name, **{k: frozenset(v) if k in season_fields else v for k, v in params.items()})
 
 def assign_split(season_id: int, maindeck_hash: str, scheme: SplitScheme) -> Split | None:
     """The split a deck belongs to, or None if its season is outside the scheme."""

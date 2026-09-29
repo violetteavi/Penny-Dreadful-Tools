@@ -28,5 +28,12 @@ def test_a_salt_reshuffles_the_held_out_hashes() -> None:
     assert unsalted == explicitly_unsalted
     assert unsalted != salted
 
+def test_a_scheme_survives_being_stored_as_params() -> None:
+    scheme = SplitScheme('custom', train_seasons=frozenset({1, 2}), validation_seasons=frozenset({3}), test_seasons=frozenset({4, 5}), held_out_percent=20, salt='x')
+    assert SplitScheme.from_params('custom', scheme.to_params()) == scheme
+
+def test_a_scheme_stored_before_a_parameter_existed_gets_its_default() -> None:
+    assert SplitScheme.from_params('old', {'test_seasons': [40, 41, 42]}) == SplitScheme('old')
+
 def test_seasons_outside_the_scheme_get_no_split() -> None:
     assert assign_split(43, A_HASH, DEFAULT) is None

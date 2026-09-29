@@ -4,6 +4,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
 from archetype_classifier.data_loading.labels import HUMAN_PROVENANCES, LabelChange, Provenance, label_source
+from archetype_classifier.data_loading.splits import Split, SplitScheme, assign_split
 
 INCLUDED_SOURCES = frozenset({'League', 'Gatherling'})
 EXCLUDED_ARCHETYPES = frozenset({'Unclassified', 'Commander'})  # Placeholders, not strategies.
@@ -71,6 +72,20 @@ def snapshot_decks(decks: Sequence[DeckRow], label_history: Iterable[LabelChange
         maindeck_hash = f'{maindeck_sums[d.id] % HASH_MODULUS:040x}'
         snapshots[d.id] = DeckSnapshot(d.id, d.season_id, d.archetype_id, source.provenance, source.guess_archetype_id, ground_truth, maindeck_hash)
     return Snapshot(snapshots, freeze_archetypes(archetypes))
+
+@dataclass(frozen=True)
+class DeckSplit:
+    deck_id: int
+    split: Split
+
+def split_decks(snapshot: Snapshot, deck_cards: Iterable[DeckCardRow], scheme: SplitScheme) -> dict[int, DeckSplit]:
+    """Apply a split scheme to a snapshot. Decks whose season is outside the scheme are left out."""
+    splits = {}
+    for d in snapshot.decks.values():
+        split = assign_split(d.season_id, d.maindeck_hash, scheme)
+        if split is not None:
+            splits[d.deck_id] = DeckSplit(d.deck_id, split)
+    return splits
 
 HASH_MODULUS = 2 ** 160
 

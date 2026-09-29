@@ -1,5 +1,6 @@
-from archetype_classifier.data_loading.dataset import ArchetypeRow, DeckCardRow, DeckRow, snapshot_decks
+from archetype_classifier.data_loading.dataset import ArchetypeRow, DeckCardRow, DeckRow, snapshot_decks, split_decks
 from archetype_classifier.data_loading.labels import LabelChange, Provenance
+from archetype_classifier.data_loading.splits import Split, SplitScheme
 
 AGGRO = ArchetypeRow(1, 'Aggro', None)
 RED_DECK_WINS = ArchetypeRow(2, 'Red Deck Wins', 1)
@@ -52,6 +53,14 @@ def test_identical_maindecks_share_a_hash_whatever_their_sideboards() -> None:
 def test_the_snapshot_freezes_the_archetype_tree_with_depths() -> None:
     snapshot = snapshot_decks([], [], [], ARCHETYPES)
     assert [(a.name, a.parent_id, a.depth) for a in snapshot.archetypes.values()] == [('Aggro', None, 0), ('Red Deck Wins', AGGRO.id, 1), ('Prisoner', RED_DECK_WINS.id, 2)]
+
+def test_seasons_decide_the_split_and_the_reserved_season_is_left_out() -> None:
+    seasons = {60: 38, 61: 39, 62: 40, 63: 42, 64: 43}
+    decks = [deck(i, PRISONER.id, season_id=s) for i, s in seasons.items()]
+    cards = [c for i in seasons for c in burn(i)]
+    snapshot = snapshot_decks(decks, [], cards, ARCHETYPES)
+    splits = split_decks(snapshot, cards, SplitScheme('default'))
+    assert {i: s.split for i, s in splits.items()} == {60: Split.TRAIN, 61: Split.VALIDATION, 62: Split.TEST, 63: Split.TEST}
 
 def test_a_guess_a_person_kept_is_a_validated_guess_and_ground_truth() -> None:
     history = [LabelChange(11, PRISONER.id, by_person=False), LabelChange(11, PRISONER.id, by_person=True)]

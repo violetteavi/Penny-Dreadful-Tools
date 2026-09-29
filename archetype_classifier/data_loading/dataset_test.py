@@ -89,6 +89,22 @@ def test_a_different_salt_gives_a_different_held_out_set() -> None:
     assert first != second
     assert 0.8 <= len(second) / len(first) <= 1.25
 
+def test_unseen_copies_count_maindeck_cards_missing_from_training_maindecks() -> None:
+    training = [DeckCardRow(70, 'Lightning Bolt', 4, False), DeckCardRow(70, 'Mountain', 20, False), DeckCardRow(70, 'Pyroblast', 2, True)]
+    new_season = [DeckCardRow(71, 'Lightning Bolt', 4, False), DeckCardRow(71, 'Pyroblast', 3, False), DeckCardRow(71, 'Grounded for Life', 2, False),
+                  DeckCardRow(71, 'Mountain', 17, False), DeckCardRow(71, "Ajani's Response", 1, True)]
+    cards = training + new_season
+    snapshot = snapshot_decks([deck(70, PRISONER.id, season_id=20), deck(71, PRISONER.id, season_id=40)], [], cards, ARCHETYPES)
+    splits = split_decks(snapshot, cards, SplitScheme('no held-out', held_out_percent=0))
+    assert splits[70].unseen_maindeck_copies == 0
+    assert splits[71].unseen_maindeck_copies == 5  # Pyroblast was only in a training sideboard; the sideboard's Ajani's Response doesn't count.
+
+def test_a_card_only_in_held_out_decks_is_unseen_for_them() -> None:
+    decks, cards = distinct_training_decks(500)
+    splits = split_decks(snapshot_decks(decks, [], cards, ARCHETYPES), cards, SplitScheme('default'))
+    assert {s.unseen_maindeck_copies for s in splits.values() if s.split == Split.HELD_OUT} == {4}
+    assert {s.unseen_maindeck_copies for s in splits.values() if s.split == Split.TRAIN} == {0}
+
 def test_a_guess_a_person_kept_is_a_validated_guess_and_ground_truth() -> None:
     history = [LabelChange(11, PRISONER.id, by_person=False), LabelChange(11, PRISONER.id, by_person=True)]
     snapshot = snapshot_decks([deck(11, PRISONER.id)], history, burn(11), ARCHETYPES)

@@ -77,6 +77,7 @@ def snapshot_decks(decks: Sequence[DeckRow], label_history: Iterable[LabelChange
 class DeckSplit:
     deck_id: int
     split: Split
+    unseen_maindeck_copies: int  # Maindeck copies of cards that appear in no training maindeck.
 
 def split_decks(snapshot: Snapshot, deck_cards: Iterable[DeckCardRow], scheme: SplitScheme) -> dict[int, DeckSplit]:
     """Apply a split scheme to a snapshot. Decks whose season is outside the scheme are left out."""
@@ -84,8 +85,18 @@ def split_decks(snapshot: Snapshot, deck_cards: Iterable[DeckCardRow], scheme: S
     for d in snapshot.decks.values():
         split = assign_split(d.season_id, d.maindeck_hash, scheme)
         if split is not None:
-            splits[d.deck_id] = DeckSplit(d.deck_id, split)
-    return splits
+            splits[d.deck_id] = split
+    seen_cards: set[str] = set()
+    other_maindecks: dict[int, list[DeckCardRow]] = defaultdict(list)
+    for c in deck_cards:
+        split = splits.get(c.deck_id)
+        if split is None or c.sideboard:
+            continue
+        if split == Split.TRAIN:
+            seen_cards.add(c.card)
+        else:
+            other_maindecks[c.deck_id].append(c)
+    return {deck_id: DeckSplit(deck_id, split, sum(c.n for c in other_maindecks[deck_id] if c.card not in seen_cards)) for deck_id, split in splits.items()}
 
 HASH_MODULUS = 2 ** 160
 

@@ -19,3 +19,8 @@ def test_a_corrected_guess_is_ground_truth_and_keeps_its_guess() -> None:
     snapshot = snapshot_decks([deck(7, PRISONER.id)], history, burn(7), ARCHETYPES)
     assert snapshot.decks[7].ground_truth
     assert snapshot.decks[7].guess_archetype_id == RED_DECK_WINS.id
+
+def test_an_unreviewed_guess_is_not_ground_truth() -> None:
+    history = [LabelChange(8, RED_DECK_WINS.id, by_person=False)]
+    snapshot = snapshot_decks([deck(8, RED_DECK_WINS.id)], history, burn(8), ARCHETYPES)
+    assert not snapshot.decks[8].ground_truth

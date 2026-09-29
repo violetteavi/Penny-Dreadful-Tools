@@ -35,6 +35,11 @@ def test_a_deck_with_no_label_history_is_not_ground_truth() -> None:
     assert not snapshot.decks[10].ground_truth
     assert snapshot.decks[10].guess_archetype_id is None
 
+def test_the_snapshot_freezes_season_and_current_label() -> None:
+    snapshot = snapshot_decks([deck(14, RED_DECK_WINS.id, season_id=39)], [], burn(14), ARCHETYPES)
+    assert snapshot.decks[14].season_id == 39
+    assert snapshot.decks[14].archetype_id == RED_DECK_WINS.id
+
 def test_a_guess_a_person_kept_is_a_validated_guess_and_ground_truth() -> None:
     history = [LabelChange(11, PRISONER.id, by_person=False), LabelChange(11, PRISONER.id, by_person=True)]
     snapshot = snapshot_decks([deck(11, PRISONER.id)], history, burn(11), ARCHETYPES)

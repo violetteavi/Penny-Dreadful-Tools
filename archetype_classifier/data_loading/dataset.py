@@ -30,6 +30,8 @@ class DeckCardRow:
 @dataclass(frozen=True)
 class DeckSnapshot:
     deck_id: int
+    season_id: int
+    archetype_id: int  # The deck's label when the snapshot was taken.
     provenance: Provenance
     guess_archetype_id: int | None
     ground_truth: bool
@@ -51,5 +53,5 @@ def snapshot_decks(decks: Sequence[DeckRow], label_history: Iterable[LabelChange
             continue
         source = label_source(history_by_deck[d.id])
         ground_truth = source.provenance in HUMAN_PROVENANCES and source.latest_archetype_id == d.archetype_id
-        snapshots[d.id] = DeckSnapshot(d.id, source.provenance, source.guess_archetype_id, ground_truth)
+        snapshots[d.id] = DeckSnapshot(d.id, d.season_id, d.archetype_id, source.provenance, source.guess_archetype_id, ground_truth)
     return Snapshot(snapshots)

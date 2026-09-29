@@ -1,3 +1,4 @@
+import zlib
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -15,6 +16,7 @@ class SplitScheme:
     train_seasons: frozenset[int] = field(default_factory=lambda: frozenset(range(1, 39)))
     validation_seasons: frozenset[int] = frozenset({39})
     test_seasons: frozenset[int] = frozenset({40, 41, 42})
+    held_out_percent: int = 10  # Share of training-season decklists held out, identical maindecks together.
 
 def assign_split(season_id: int, maindeck_hash: str, scheme: SplitScheme) -> Split | None:
     """The split a deck belongs to, or None if its season is outside the scheme."""
@@ -23,5 +25,6 @@ def assign_split(season_id: int, maindeck_hash: str, scheme: SplitScheme) -> Spl
     if season_id in scheme.validation_seasons:
         return Split.VALIDATION
     if season_id in scheme.train_seasons:
-        return Split.TRAIN
+        held_out = zlib.crc32(maindeck_hash.encode()) % 100 < scheme.held_out_percent
+        return Split.HELD_OUT if held_out else Split.TRAIN
     return None

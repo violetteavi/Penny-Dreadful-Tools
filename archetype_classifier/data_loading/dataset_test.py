@@ -62,6 +62,25 @@ def test_seasons_decide_the_split_and_the_reserved_season_is_left_out() -> None:
     splits = split_decks(snapshot, cards, SplitScheme('default'))
     assert {i: s.split for i, s in splits.items()} == {60: Split.TRAIN, 61: Split.VALIDATION, 62: Split.TEST, 63: Split.TEST}
 
+def distinct_training_decks(count: int) -> tuple[list[DeckRow], list[DeckCardRow]]:
+    """`count` distinct maindecks, each with a twin that has the same maindeck and a different sideboard."""
+    decks, cards = [], []
+    for i in range(count):
+        original, twin = 1000 + 2 * i, 1001 + 2 * i
+        decks += [deck(original, PRISONER.id, season_id=20), deck(twin, PRISONER.id, season_id=30)]
+        cards += [DeckCardRow(original, f'Card {i}', 4, False), DeckCardRow(original, 'Pyroblast', 1, True)]
+        cards += [DeckCardRow(twin, f'Card {i}', 4, False), DeckCardRow(twin, 'Smash to Smithereens', 2, True)]
+    return decks, cards
+
+def test_about_ten_percent_of_training_decklists_are_held_out_and_twins_stay_together() -> None:
+    decks, cards = distinct_training_decks(2000)
+    splits = split_decks(snapshot_decks(decks, [], cards, ARCHETYPES), cards, SplitScheme('default'))
+    originals = [splits[1000 + 2 * i].split for i in range(2000)]
+    twins = [splits[1001 + 2 * i].split for i in range(2000)]
+    assert originals == twins
+    assert set(originals) == {Split.TRAIN, Split.HELD_OUT}
+    assert 8 <= 100 * originals.count(Split.HELD_OUT) / 2000 <= 12
+
 def test_a_guess_a_person_kept_is_a_validated_guess_and_ground_truth() -> None:
     history = [LabelChange(11, PRISONER.id, by_person=False), LabelChange(11, PRISONER.id, by_person=True)]
     snapshot = snapshot_decks([deck(11, PRISONER.id)], history, burn(11), ARCHETYPES)

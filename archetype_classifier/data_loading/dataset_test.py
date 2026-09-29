@@ -53,3 +53,10 @@ def test_only_league_and_gatherling_decks_are_included() -> None:
     cards = [c for i in (20, 21, 22, 23) for c in burn(i)]
     snapshot = snapshot_decks(decks, [], cards, ARCHETYPES)
     assert set(snapshot.decks) == {20, 21}
+
+def test_decks_labelled_unclassified_or_commander_are_left_out() -> None:
+    unclassified, commander = ArchetypeRow(90, 'Unclassified', None), ArchetypeRow(91, 'Commander', None)
+    decks = [deck(30, PRISONER.id), deck(31, unclassified.id), deck(32, commander.id)]
+    cards = [c for i in (30, 31, 32) for c in burn(i)]
+    snapshot = snapshot_decks(decks, [], cards, [*ARCHETYPES, unclassified, commander])
+    assert set(snapshot.decks) == {30}

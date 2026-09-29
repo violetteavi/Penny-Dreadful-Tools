@@ -81,6 +81,14 @@ def test_about_ten_percent_of_training_decklists_are_held_out_and_twins_stay_tog
     assert set(originals) == {Split.TRAIN, Split.HELD_OUT}
     assert 8 <= 100 * originals.count(Split.HELD_OUT) / 2000 <= 12
 
+def test_a_different_salt_gives_a_different_held_out_set() -> None:
+    decks, cards = distinct_training_decks(2000)
+    snapshot = snapshot_decks(decks, [], cards, ARCHETYPES)
+    first = {i for i, s in split_decks(snapshot, cards, SplitScheme('default')).items() if s.split == Split.HELD_OUT}
+    second = {i for i, s in split_decks(snapshot, cards, SplitScheme('resampled', salt='2')).items() if s.split == Split.HELD_OUT}
+    assert first != second
+    assert 0.8 <= len(second) / len(first) <= 1.25
+
 def test_a_guess_a_person_kept_is_a_validated_guess_and_ground_truth() -> None:
     history = [LabelChange(11, PRISONER.id, by_person=False), LabelChange(11, PRISONER.id, by_person=True)]
     snapshot = snapshot_decks([deck(11, PRISONER.id)], history, burn(11), ARCHETYPES)

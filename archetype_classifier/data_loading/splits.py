@@ -17,6 +17,7 @@ class SplitScheme:
     validation_seasons: frozenset[int] = frozenset({39})
     test_seasons: frozenset[int] = frozenset({40, 41, 42})
     held_out_percent: int = 10  # Share of training-season decklists held out, identical maindecks together.
+    salt: str = ''  # Mixed into the hash; a different salt gives a different held-out set.
 
 def assign_split(season_id: int, maindeck_hash: str, scheme: SplitScheme) -> Split | None:
     """The split a deck belongs to, or None if its season is outside the scheme."""
@@ -25,6 +26,6 @@ def assign_split(season_id: int, maindeck_hash: str, scheme: SplitScheme) -> Spl
     if season_id in scheme.validation_seasons:
         return Split.VALIDATION
     if season_id in scheme.train_seasons:
-        held_out = zlib.crc32(maindeck_hash.encode()) % 100 < scheme.held_out_percent
+        held_out = zlib.crc32((scheme.salt + maindeck_hash).encode()) % 100 < scheme.held_out_percent
         return Split.HELD_OUT if held_out else Split.TRAIN
     return None

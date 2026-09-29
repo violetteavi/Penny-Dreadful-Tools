@@ -43,5 +43,6 @@ def snapshot_decks(decks: Sequence[DeckRow], label_history: Iterable[LabelChange
     snapshots = {}
     for d in decks:
         source = label_source(history_by_deck[d.id])
-        snapshots[d.id] = DeckSnapshot(d.id, source.guess_archetype_id, ground_truth=source.provenance in HUMAN_PROVENANCES)
+        ground_truth = source.provenance in HUMAN_PROVENANCES and source.latest_archetype_id == d.archetype_id
+        snapshots[d.id] = DeckSnapshot(d.id, source.guess_archetype_id, ground_truth)
     return Snapshot(snapshots)

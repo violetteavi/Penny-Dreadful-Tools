@@ -24,3 +24,8 @@ def test_an_unreviewed_guess_is_not_ground_truth() -> None:
     history = [LabelChange(8, RED_DECK_WINS.id, by_person=False)]
     snapshot = snapshot_decks([deck(8, RED_DECK_WINS.id)], history, burn(8), ARCHETYPES)
     assert not snapshot.decks[8].ground_truth
+
+def test_a_label_changed_since_a_person_gave_it_is_not_ground_truth() -> None:
+    history = [LabelChange(9, RED_DECK_WINS.id, by_person=False), LabelChange(9, PRISONER.id, by_person=True)]
+    snapshot = snapshot_decks([deck(9, RED_DECK_WINS.id)], history, burn(9), ARCHETYPES)
+    assert not snapshot.decks[9].ground_truth

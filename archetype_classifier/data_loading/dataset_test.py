@@ -41,3 +41,9 @@ def test_a_guess_a_person_kept_is_a_validated_guess_and_ground_truth() -> None:
     assert snapshot.decks[11].provenance == Provenance.VALIDATED_GUESS
     assert snapshot.decks[11].ground_truth
     assert snapshot.decks[11].guess_archetype_id == PRISONER.id
+
+def test_a_deck_a_person_labelled_without_a_guess_is_ground_truth_with_no_guess() -> None:
+    snapshot = snapshot_decks([deck(12, PRISONER.id)], [LabelChange(12, PRISONER.id, by_person=True)], burn(12), ARCHETYPES)
+    assert snapshot.decks[12].provenance == Provenance.PERSON_DIRECT
+    assert snapshot.decks[12].ground_truth
+    assert snapshot.decks[12].guess_archetype_id is None

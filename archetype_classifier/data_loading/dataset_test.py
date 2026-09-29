@@ -65,3 +65,8 @@ def test_decks_with_no_cards_are_left_out() -> None:
     sideboard_only = [DeckCardRow(42, 'Smash to Smithereens', 3, True)]
     snapshot = snapshot_decks([deck(40, PRISONER.id), deck(41, PRISONER.id), deck(42, PRISONER.id)], [], burn(40) + sideboard_only, ARCHETYPES)
     assert set(snapshot.decks) == {40, 42}
+
+def test_decks_with_no_archetype_are_left_out() -> None:
+    decks = [deck(43, PRISONER.id), DeckRow(44, 30, 'League', None)]
+    snapshot = snapshot_decks(decks, [], burn(43) + burn(44), ARCHETYPES)
+    assert set(snapshot.decks) == {43}

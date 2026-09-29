@@ -18,7 +18,7 @@ class DeckRow:
     id: int
     season_id: int
     source: str
-    archetype_id: int
+    archetype_id: int | None
 
 @dataclass(frozen=True)
 class DeckCardRow:
@@ -47,7 +47,7 @@ def snapshot_decks(decks: Sequence[DeckRow], label_history: Iterable[LabelChange
     excluded_ids = {a.id for a in archetypes if a.name in EXCLUDED_ARCHETYPES}
     snapshots = {}
     for d in decks:
-        if d.source not in INCLUDED_SOURCES or d.archetype_id in excluded_ids or d.id not in decks_with_cards:
+        if d.archetype_id is None or d.archetype_id in excluded_ids or d.source not in INCLUDED_SOURCES or d.id not in decks_with_cards:
             continue
         source = label_source(history_by_deck[d.id])
         ground_truth = source.provenance in HUMAN_PROVENANCES and source.latest_archetype_id == d.archetype_id

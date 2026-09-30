@@ -145,3 +145,21 @@ def test_a_model_compared_with_itself_differs_by_nothing() -> None:
     for name in ('hp', 'hr', 'hf', 'exact_match_rate'):
         assert getattr(c.difference, name) == 0.0
         assert (getattr(c.intervals, name).low, getattr(c.intervals, name).high) == (0.0, 0.0)
+
+def model_b() -> list[ScoredDeck]:
+    """The scenario set, except that 60 of the 120 Prisoner decks guessed as Mono Red Devotion are guessed as Prisoner."""
+    decks, fixed = [], 0
+    for d in scenario_decks():
+        if (d.label_id, d.guess_id) == (PRISONER, MONO_RED_DEVOTION) and fixed < 60:
+            d, fixed = dataclasses.replace(d, guess_id=PRISONER), fixed + 1
+        decks.append(d)
+    return decks
+
+def test_a_consistent_small_improvement_is_detected() -> None:
+    a, b = score(TREE, scenario_decks(), min_decks=1, seed=7), score(TREE, model_b(), min_decks=1, seed=7)
+    assert (a.micro.hf, b.micro.hf) == approx((0.887, 0.893), abs=THREE_PLACES)
+    assert (a.exact_match_rate, b.exact_match_rate) == approx((0.690, 0.703), abs=THREE_PLACES)
+    assert b.micro_intervals.hf.low < a.micro_intervals.hf.high  # The separate intervals overlap...
+    c = compare(TREE, scenario_decks(), model_b(), seed=7)
+    assert c.intervals.hf.low > 0  # ...but the paired difference is clear of 0.
+    assert (c.intervals.hf.low, c.intervals.hf.high) == approx((0.004, 0.007), abs=0.001)

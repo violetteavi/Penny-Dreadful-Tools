@@ -69,7 +69,7 @@ A deck is labelled **Prisoner**, and the model gives no guess, because it isn't 
 - **Expect:** no guess is scored as a guess of the root. It expands to the empty set, so the deck's hP is undefined (it has no guessed archetypes to be right or wrong about), hR is 0.00, hF is 0.00, and it is not an exact match.
 - **Why it matters:** no answer isn't a wrong answer, but it isn't help to a reviewer either. It costs recall and leaves precision alone, so a model can't look better by declining to answer; coverage (below) shows how often it does.
 - **Check:** score no guess against the Prisoner label.
-- **Proposed 2026-09-30, for review.**
+- **Confirmed 2026-09-30.**
 
 ### Depth difference says whether a guess leans up or down the tree
 
@@ -78,7 +78,7 @@ Depth difference is the guess's depth minus the label's depth. Top-level archety
 - **Expect:** each pair in the table below gives the depth difference and path shown. For example, Red Deck Wins guessed for a Prisoner deck is −1 on-path (a parent fallback), Prisoner guessed for a Red Deck Wins deck is +1 on-path (too specific), and Mono Red Devotion guessed for a Prisoner deck is 0 off-path (a sibling).
 - **Why it matters:** negative on-path differences are parent fallbacks and positive ones are too-specific guesses. This is the report the Tentative too-specific scenario says to watch. It is a diagnostic, not something to optimise.
 - **Check:** score each pair.
-- **Proposed 2026-09-30, for review.**
+- **Confirmed 2026-09-30.**
 
 ## Summarising a set of guesses
 
@@ -126,7 +126,7 @@ Summed over all 4,350 decks, weighting each row by its deck count: ∩ = 9,170, 
 - **Expect:** micro hP = 9,170 / 10,070 = **0.911**; micro hR = 9,170 / 10,600 = **0.865**; micro hF = **0.887**.
 - **Why it matters:** this is the headline number (ADR 0001). The 240 decks with no guess add nothing to hP and lower hR.
 - **Check:** score the set.
-- **Proposed 2026-09-30, for review.**
+- **Confirmed 2026-09-30.**
 
 ### Macro averaging weighs every labelled archetype equally
 
@@ -151,14 +151,14 @@ Group the decks by label, compute micro hP, hR and hF within each group, then ta
 - **Also:** an archetype whose decks all got no guess has undefined hP. It is left out of macro hP but counts in macro hR and hF (both 0).
 - **Why it matters:** micro averaging is dominated by the most common archetypes. Macro shows whether rarer ones, like Aggro here, are handled too. The minimum is required on every call and echoed in the result, with the count of archetypes that qualified, so two reports can't quietly differ.
 - **Check:** score the set with minimums of 1, 500 and 800.
-- **Proposed 2026-09-30, for review.**
+- **Confirmed 2026-09-30.**
 
 ### Coverage and exact-match rate
 
 - **Expect:** coverage (the share of decks with a guess) is 4,110 / 4,350 = **0.945**. Exact-match rate is 3,000 / 4,350 = **0.690**; the 240 decks with no guess count as not matching.
 - **Why it matters:** one minus the exact-match rate is the share of guesses a reviewer would change, comparable with the historical correction rate.
 - **Check:** score the set.
-- **Proposed 2026-09-30, for review.**
+- **Confirmed 2026-09-30.**
 
 ### Depth differences are counted separately on and off the path
 
@@ -171,7 +171,7 @@ Group the decks by label, compute micro hP, hR and hF within each group, then ta
 
 - **Why it matters:** here parent fallbacks (630 decks below 0 on-path) and too-specific guesses (400 above 0) largely cancel, so the mean alone hides both. The counts show them.
 - **Check:** score the set.
-- **Proposed 2026-09-30, for review.**
+- **Confirmed 2026-09-30.**
 
 ### Confusions are counted by label and guess
 
@@ -189,7 +189,7 @@ Group the decks by label, compute micro hP, hR and hF within each group, then ta
   Exact matches count toward exact matches, not confusions.
 - **Why it matters:** the most common confusions, shown by name, are the quickest way to see what a model gets wrong. Here the red archetypes blur into each other.
 - **Check:** score the set.
-- **Proposed 2026-09-30, for review.**
+- **Confirmed 2026-09-30.**
 
 ### A deck outside the tree is skipped with a warning
 
@@ -198,7 +198,7 @@ Add one more deck, labelled Prisoner and guessed as an archetype id that isn't i
 - **Expect:** the scorer logs a warning naming the missing archetype id, skips the deck and carries on. Every metric equals the 4,350-deck result; the result reports **1** skipped deck and the missing id. The same happens when the label, rather than the guess, is missing from the tree.
 - **Why it matters:** a missing archetype means the experiment is wired wrongly (for example, a perturbed tree without a mapping). Stopping the run would waste it; scoring the deck anyway would give numbers that are hard to interpret.
 - **Check:** score the set plus the extra deck.
-- **Proposed 2026-09-30, for review.**
+- **Confirmed 2026-09-30.**
 
 ## How much a number could move
 
@@ -211,14 +211,14 @@ Take the set, then add a twin of every deck: the same maindeck, label and guess.
 - **Expect:** every point estimate and, with the same seed, every interval is unchanged. Micro hF stays 0.887, with an interval of about [0.881, 0.893].
 - **Why it matters:** ten copies of one list are one piece of evidence about the classifier, not ten. Resampling single decks would make the intervals falsely narrow.
 - **Check:** score both sets with the same seed.
-- **Proposed 2026-09-30, for review.**
+- **Confirmed 2026-09-30.**
 
 ### Intervals are repeatable and recorded
 
 - **Expect:** the same decks and the same seed give the same intervals. The result records the seed and the number of resamples. When every deck is an exact match, hF is 1.00 with interval [1.00, 1.00].
 - **Why it matters:** anyone re-scoring stored guesses gets the same table.
 - **Check:** score the set twice with one seed.
-- **Proposed 2026-09-30, for review.**
+- **Confirmed 2026-09-30.**
 
 ### Fewer maindecks give a wider interval
 
@@ -227,7 +227,7 @@ Take the set again, but make every ten decks in a row share one maindeck, giving
 - **Expect:** the point estimates are unchanged, but the micro hF interval widens from about [0.881, 0.893] to about [0.867, 0.906].
 - **Why it matters:** small rows of the results table, such as decks with 13 or more unseen cards, and rows full of copied decks, should look uncertain.
 - **Check:** score both versions with one seed and compare interval widths.
-- **Proposed 2026-09-30, for review.**
+- **Confirmed 2026-09-30.**
 
 ## Comparing two models
 
@@ -237,7 +237,7 @@ A comparison scores two models' guesses on the same decks. Each bootstrap draw s
 
 - **Expect:** the difference in micro hF, hP, hR and exact-match rate is 0.00 with interval [0.00, 0.00].
 - **Check:** compare the set's guesses with themselves.
-- **Proposed 2026-09-30, for review.**
+- **Confirmed 2026-09-30.**
 
 ### A consistent small improvement is detected
 
@@ -246,7 +246,7 @@ Model A's guesses are the set's. Model B's are the same, except that 60 of the 1
 - **Expect:** micro hF rises from 0.887 to 0.893, and exact-match rate from 0.690 to 0.703. A's and B's separate hF intervals overlap (about [0.881, 0.893] and [0.887, 0.899]), but the paired difference's interval, about [+0.004, +0.007], lies entirely above 0.
 - **Why it matters:** this is how we decide whether a model beats today's guesser. Setting two separate intervals side by side would miss a real improvement.
 - **Check:** score A and B separately, then compare them, with one seed.
-- **Proposed 2026-09-30, for review.**
+- **Confirmed 2026-09-30.**
 
 ### Decks only one model scored are left out of the comparison
 
@@ -255,7 +255,7 @@ Model A's guesses cover all 4,350 decks. Model B's cover 4,349, because one deck
 - **Expect:** the comparison uses the 4,349 decks both models scored, logs a warning, and reports **1** deck left out.
 - **Why it matters:** as with skipped decks, the run should carry on, and the difference should only ever be measured on decks both models were scored on.
 - **Check:** compare the two sets.
-- **Proposed 2026-09-30, for review.**
+- **Confirmed 2026-09-30.**
 
 ## Parent fallback
 

@@ -133,3 +133,9 @@ def test_intervals_are_repeatable_and_recorded() -> None:
     assert (first.seed, first.resamples) == (7, 200)
     exact = score(TREE, [d for d in scenario_decks() if d.guess_id == d.label_id], min_decks=1)
     assert (exact.micro.hf, exact.micro_intervals.hf.low, exact.micro_intervals.hf.high) == (1.0, 1.0, 1.0)
+
+def test_fewer_maindecks_give_a_wider_interval() -> None:
+    many, few = score(TREE, scenario_decks(), min_decks=1, seed=7), score(TREE, scenario_decks(decks_per_maindeck=10), min_decks=1, seed=7)
+    assert few.micro == many.micro
+    assert (few.micro_intervals.hf.low, few.micro_intervals.hf.high) == approx((0.867, 0.906), abs=ABOUT)
+    assert few.micro_intervals.hf.high - few.micro_intervals.hf.low > 2 * (many.micro_intervals.hf.high - many.micro_intervals.hf.low)

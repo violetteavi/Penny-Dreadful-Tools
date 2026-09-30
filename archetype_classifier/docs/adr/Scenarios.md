@@ -153,6 +153,15 @@ Group the decks by label, compute micro hP, hR and hF within each group, then ta
 - **Check:** score the set with minimums of 1, 500 and 800.
 - **Confirmed 2026-09-30.**
 
+### No archetype meets the macro minimum
+
+Score the set with a minimum of 2,000 decks per archetype. The most common label, Prisoner, has 1,380.
+
+- **Expect:** 0 of 5 archetypes qualify, macro hP, hR and hF are all undefined, and the scorer logs a warning saying that no archetype has 2,000 decks. Every other metric equals the result at any other minimum.
+- **Why it matters:** a minimum set for the full test seasons can be too high for a small row, such as decks with 13 or more unseen cards. That row's macro averages have nothing to average, but its other metrics are still worth reading, so the run carries on.
+- **Check:** score the set with a minimum of 2,000.
+- **Proposed 2026-09-30, for review.**
+
 ### Coverage and exact-match rate
 
 - **Expect:** coverage (the share of decks with a guess) is 4,110 / 4,350 = **0.945**. Exact-match rate is 3,000 / 4,350 = **0.690**; the 240 decks with no guess count as not matching.

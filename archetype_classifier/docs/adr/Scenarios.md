@@ -71,14 +71,6 @@ A deck is labelled **Prisoner**, and the model gives no guess, because it isn't 
 - **Check:** score no guess against the Prisoner label.
 - **Proposed 2026-09-30, for review.**
 
-### A deck labelled with the root
-
-A deck whose label is the root belongs to no archetype. Real data has none, because Unclassified and Commander decks are left out of the dataset, but the scorer must still handle it consistently (for example, under a perturbed tree).
-
-- **Expect:** the label expands to the empty set, so the deck's hR and hF are undefined. Any real guess has hP 0.00. No guess is an exact match, with hP, hR and hF all undefined.
-- **Check:** score each guess against a root label; the rows labelled *root* in the table below.
-- **Proposed 2026-09-30, for review.**
-
 ### Depth difference says whether a guess leans up or down the tree
 
 Depth difference is the guess's depth minus the label's depth. Top-level archetypes have depth 0 and the root has depth −1. A guess is **on-path** when it is the label, one of its ancestors (including the root) or one of its descendants, and **off-path** otherwise.
@@ -90,7 +82,7 @@ Depth difference is the guess's depth minus the label's depth. Top-level archety
 
 ## Summarising a set of guesses
 
-These scenarios score a whole set of decks. Unless a scenario says otherwise, they use the set below: every (label, guess) pair among six archetypes (the root, Aggro, Red Deck Wins, Prisoner, Mono Red Devotion and Azorius Control), 4,490 decks in all, each with its own maindeck. The deck counts are invented but plausible for a decent guesser: exact guesses are the most common, then nearby archetypes on the same branch, then no guess, with guesses on the wrong branch rarest.
+These scenarios score a whole set of decks. Unless a scenario says otherwise, they use the set below: every (label, guess) pair among five labels (Aggro, Red Deck Wins, Prisoner, Mono Red Devotion and Azorius Control) and six guesses (those five, or no guess), 30 pairs and 4,350 decks in all, each with its own maindeck. The deck counts are invented but plausible for a decent guesser: exact guesses are the most common, then nearby archetypes on the same branch, then no guess, with guesses on the wrong branch rarest.
 
 In each row, ∩, Guessed and Label count archetypes after expanding the guess and the label with their ancestors (not the root). hP, hR, hF, depth difference and path are the scores of one deck in that row; — marks an undefined value.
 
@@ -126,19 +118,13 @@ In each row, ∩, Guessed and Label count archetypes after expanding the guess a
 | Azorius Control | Aggro | 10 | 0 | 1 | 2 | 0.000 | 0.000 | 0.000 | −1 | off |
 | Azorius Control | Azorius Control | 800 | 2 | 2 | 2 | 1.000 | 1.000 | 1.000 | 0 | on |
 | Azorius Control | *root* | 70 | 0 | 0 | 2 | — | 0.000 | 0.000 | −2 | on |
-| *root* | Prisoner | 10 | 0 | 3 | 0 | 0.000 | — | — | +3 | on |
-| *root* | Mono Red Devotion | 10 | 0 | 3 | 0 | 0.000 | — | — | +3 | on |
-| *root* | Red Deck Wins | 20 | 0 | 2 | 0 | 0.000 | — | — | +2 | on |
-| *root* | Aggro | 20 | 0 | 1 | 0 | 0.000 | — | — | +1 | on |
-| *root* | Azorius Control | 30 | 0 | 2 | 0 | 0.000 | — | — | +2 | on |
-| *root* | *root* | 50 | 0 | 0 | 0 | — | — | — | 0 | on |
 
 ### Micro averaging sums over decks
 
-Summed over all 4,490 decks, weighting each row by its deck count: ∩ = 9,170, Guessed = 10,250, Label = 10,600.
+Summed over all 4,350 decks, weighting each row by its deck count: ∩ = 9,170, Guessed = 10,070, Label = 10,600.
 
-- **Expect:** micro hP = 9,170 / 10,250 = **0.895**; micro hR = 9,170 / 10,600 = **0.865**; micro hF = **0.880**.
-- **Why it matters:** this is the headline number (ADR 0001). Decks with no guess add nothing to hP and lower hR; decks labelled with the root add to hP's denominator only.
+- **Expect:** micro hP = 9,170 / 10,070 = **0.911**; micro hR = 9,170 / 10,600 = **0.865**; micro hF = **0.887**.
+- **Why it matters:** this is the headline number (ADR 0001). The 240 decks with no guess add nothing to hP and lower hR.
 - **Check:** score the set.
 - **Proposed 2026-09-30, for review.**
 
@@ -153,24 +139,23 @@ Group the decks by label, compute micro hP, hR and hF within each group, then ta
 | Red Deck Wins | 760 | 0.827 | 0.914 | 0.869 |
 | Aggro | 390 | 0.579 | 0.846 | 0.688 |
 | Azorius Control | 910 | 0.947 | 0.879 | 0.912 |
-| *root* | 140 | 0.000 | — | — |
 
 - **Expect:**
 
   | Minimum decks | Archetypes that qualify | Macro hP | Macro hR | Macro hF |
   |---|---|---|---|---|
-  | 1 | 6 of 6 | 0.710 | 0.867 | 0.852 |
-  | 200 | 5 of 6 (root left out) | 0.851 | 0.867 | 0.852 |
-  | 500 | 4 of 6 (Aggro and root left out) | 0.920 | 0.872 | 0.894 |
+  | 1 | 5 of 5 | 0.851 | 0.867 | 0.852 |
+  | 500 | 4 of 5 (Aggro left out) | 0.920 | 0.872 | 0.894 |
+  | 800 | 3 of 5 (Aggro and Red Deck Wins left out) | 0.950 | 0.858 | 0.902 |
 
-- **Also:** an undefined value is left out of that average only. The root group has no hR or hF, so macro hR and hF average five groups at a minimum of 1, while macro hP averages six. An archetype whose decks all got no guess would likewise have undefined hP.
+- **Also:** an archetype whose decks all got no guess has undefined hP. It is left out of macro hP but counts in macro hR and hF (both 0).
 - **Why it matters:** micro averaging is dominated by the most common archetypes. Macro shows whether rarer ones, like Aggro here, are handled too. The minimum is required on every call and echoed in the result, with the count of archetypes that qualified, so two reports can't quietly differ.
-- **Check:** score the set with minimums of 1, 200 and 500.
+- **Check:** score the set with minimums of 1, 500 and 800.
 - **Proposed 2026-09-30, for review.**
 
 ### Coverage and exact-match rate
 
-- **Expect:** coverage (the share of decks with a guess) is 4,200 / 4,490 = **0.935**. Exact-match rate is 3,050 / 4,490 = **0.679**. The 50 decks labelled with the root and given no guess count as exact matches; the other 240 decks with no guess don't.
+- **Expect:** coverage (the share of decks with a guess) is 4,110 / 4,350 = **0.945**. Exact-match rate is 3,000 / 4,350 = **0.690**; the 240 decks with no guess count as not matching.
 - **Why it matters:** one minus the exact-match rate is the share of guesses a reviewer would change, comparable with the historical correction rate.
 - **Check:** score the set.
 - **Proposed 2026-09-30, for review.**
@@ -181,16 +166,16 @@ Group the decks by label, compute micro hP, hR and hF within each group, then ta
 
   | Path | −3 | −2 | −1 | 0 | +1 | +2 | +3 | Decks | Mean |
   |---|---|---|---|---|---|---|---|---|---|
-  | On | 100 | 170 | 360 | 3,050 | 350 | 120 | 20 | 4,170 | −0.084 |
+  | On | 100 | 170 | 360 | 3,000 | 330 | 70 | | 4,030 | −0.132 |
   | Off | | | 40 | 240 | 40 | | | 320 | 0.000 |
 
-- **Why it matters:** here parent fallbacks (630 decks below 0 on-path) and too-specific guesses (490 above 0) nearly balance, so the mean alone hides both. The counts show them.
+- **Why it matters:** here parent fallbacks (630 decks below 0 on-path) and too-specific guesses (400 above 0) largely cancel, so the mean alone hides both. The counts show them.
 - **Check:** score the set.
 - **Proposed 2026-09-30, for review.**
 
 ### Confusions are counted by label and guess
 
-- **Expect:** every non-exact (label, guess) pair is counted, 1,440 decks over 30 pairs, each with its path. The six most common are:
+- **Expect:** every non-exact (label, guess) pair is counted, 1,350 decks over 25 pairs, each with its path. The six most common are:
 
   | Label | Guess | Decks | Path |
   |---|---|---|---|
@@ -201,7 +186,7 @@ Group the decks by label, compute micro hP, hR and hF within each group, then ta
   | Mono Red Devotion | Prisoner | 100 | off |
   | Red Deck Wins | Mono Red Devotion | 90 | on |
 
-  Exact matches, including the root guessed for a root label, count toward exact matches, not confusions.
+  Exact matches count toward exact matches, not confusions.
 - **Why it matters:** the most common confusions, shown by name, are the quickest way to see what a model gets wrong. Here the red archetypes blur into each other.
 - **Check:** score the set.
 - **Proposed 2026-09-30, for review.**
@@ -210,7 +195,7 @@ Group the decks by label, compute micro hP, hR and hF within each group, then ta
 
 Add one more deck, labelled Prisoner and guessed as an archetype id that isn't in the tree the scorer was given (for example, one created after the snapshot).
 
-- **Expect:** the scorer logs a warning naming the missing archetype id, skips the deck and carries on. Every metric equals the 4,490-deck result; the result reports **1** skipped deck and the missing id. The same happens when the label, rather than the guess, is missing from the tree.
+- **Expect:** the scorer logs a warning naming the missing archetype id, skips the deck and carries on. Every metric equals the 4,350-deck result; the result reports **1** skipped deck and the missing id. The same happens when the label, rather than the guess, is missing from the tree.
 - **Why it matters:** a missing archetype means the experiment is wired wrongly (for example, a perturbed tree without a mapping). Stopping the run would waste it; scoring the deck anyway would give numbers that are hard to interpret.
 - **Check:** score the set plus the extra deck.
 - **Proposed 2026-09-30, for review.**
@@ -223,7 +208,7 @@ Intervals come from a bootstrap: draw maindeck groups at random with replacement
 
 Take the set, then add a twin of every deck: the same maindeck, label and guess.
 
-- **Expect:** every point estimate and, with the same seed, every interval is unchanged. Micro hF stays 0.880, with an interval of about [0.873, 0.886].
+- **Expect:** every point estimate and, with the same seed, every interval is unchanged. Micro hF stays 0.887, with an interval of about [0.881, 0.893].
 - **Why it matters:** ten copies of one list are one piece of evidence about the classifier, not ten. Resampling single decks would make the intervals falsely narrow.
 - **Check:** score both sets with the same seed.
 - **Proposed 2026-09-30, for review.**
@@ -237,9 +222,9 @@ Take the set, then add a twin of every deck: the same maindeck, label and guess.
 
 ### Fewer maindecks give a wider interval
 
-Take the set again, but make every ten decks in a row share one maindeck, giving 449 maindeck groups instead of 4,490. Each row's count is a multiple of ten, so a group never mixes rows.
+Take the set again, but make every ten decks in a row share one maindeck, giving 435 maindeck groups instead of 4,350. Each row's count is a multiple of ten, so a group never mixes rows.
 
-- **Expect:** the point estimates are unchanged, but the micro hF interval widens from about [0.873, 0.886] to about [0.86, 0.90].
+- **Expect:** the point estimates are unchanged, but the micro hF interval widens from about [0.881, 0.893] to about [0.867, 0.906].
 - **Why it matters:** small rows of the results table, such as decks with 13 or more unseen cards, and rows full of copied decks, should look uncertain.
 - **Check:** score both versions with one seed and compare interval widths.
 - **Proposed 2026-09-30, for review.**
@@ -258,16 +243,16 @@ A comparison scores two models' guesses on the same decks. Each bootstrap draw s
 
 Model A's guesses are the set's. Model B's are the same, except that 60 of the 120 Prisoner decks A guessed as Mono Red Devotion are guessed as Prisoner.
 
-- **Expect:** micro hF rises from 0.880 to 0.885, and exact-match rate from 0.679 to 0.693. A's and B's separate hF intervals overlap (about [0.873, 0.886] and [0.879, 0.891]), but the paired difference's interval, about [+0.004, +0.007], lies entirely above 0.
+- **Expect:** micro hF rises from 0.887 to 0.893, and exact-match rate from 0.690 to 0.703. A's and B's separate hF intervals overlap (about [0.881, 0.893] and [0.887, 0.899]), but the paired difference's interval, about [+0.004, +0.007], lies entirely above 0.
 - **Why it matters:** this is how we decide whether a model beats today's guesser. Setting two separate intervals side by side would miss a real improvement.
 - **Check:** score A and B separately, then compare them, with one seed.
 - **Proposed 2026-09-30, for review.**
 
 ### Decks only one model scored are left out of the comparison
 
-Model A's guesses cover all 4,490 decks. Model B's cover 4,489, because one deck was skipped (its guess isn't in the tree).
+Model A's guesses cover all 4,350 decks. Model B's cover 4,349, because one deck was skipped (its guess isn't in the tree).
 
-- **Expect:** the comparison uses the 4,489 decks both models scored, logs a warning, and reports **1** deck left out.
+- **Expect:** the comparison uses the 4,349 decks both models scored, logs a warning, and reports **1** deck left out.
 - **Why it matters:** as with skipped decks, the run should carry on, and the difference should only ever be measured on decks both models were scored on.
 - **Check:** compare the two sets.
 - **Proposed 2026-09-30, for review.**

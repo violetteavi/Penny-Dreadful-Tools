@@ -4,7 +4,7 @@ import logging
 import pytest
 from pytest import approx
 
-from archetype_classifier.evaluation.metrics import ScoredDeck, score, score_deck
+from archetype_classifier.evaluation.metrics import ScoredDeck, compare, score, score_deck
 from archetype_classifier.evaluation.scenario_set import AGGRO, AZORIUS_CONTROL, MONO_RED_DEVOTION, NO_GUESS, PRISONER, RED_DECK_WINS, TREE, scenario_decks
 
 THREE_PLACES = 0.0005  # Scenarios.md gives scores to three decimal places.
@@ -139,3 +139,9 @@ def test_fewer_maindecks_give_a_wider_interval() -> None:
     assert few.micro == many.micro
     assert (few.micro_intervals.hf.low, few.micro_intervals.hf.high) == approx((0.867, 0.906), abs=ABOUT)
     assert few.micro_intervals.hf.high - few.micro_intervals.hf.low > 2 * (many.micro_intervals.hf.high - many.micro_intervals.hf.low)
+
+def test_a_model_compared_with_itself_differs_by_nothing() -> None:
+    c = compare(TREE, scenario_decks(), scenario_decks(), resamples=200)
+    for name in ('hp', 'hr', 'hf', 'exact_match_rate'):
+        assert getattr(c.difference, name) == 0.0
+        assert (getattr(c.intervals, name).low, getattr(c.intervals, name).high) == (0.0, 0.0)

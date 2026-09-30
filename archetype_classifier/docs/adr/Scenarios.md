@@ -71,96 +71,159 @@ A deck is labelled **Prisoner**, and the model gives no guess, because it isn't 
 - **Check:** score no guess against the Prisoner label.
 - **Proposed 2026-09-30, for review.**
 
+### A deck labelled with the root
+
+A deck whose label is the root belongs to no archetype. Real data has none, because Unclassified and Commander decks are left out of the dataset, but the scorer must still handle it consistently (for example, under a perturbed tree).
+
+- **Expect:** the label expands to the empty set, so the deck's hR and hF are undefined. Any real guess has hP 0.00. No guess is an exact match, with hP, hR and hF all undefined.
+- **Check:** score each guess against a root label; the rows labelled *root* in the table below.
+- **Proposed 2026-09-30, for review.**
+
 ### Depth difference says whether a guess leans up or down the tree
 
-Depth difference is the guess's depth minus the label's depth. Top-level archetypes have depth 0 and the root (no guess) has depth −1. A guess is **on-path** when it is the label, one of its ancestors (including the root) or one of its descendants, and **off-path** otherwise.
+Depth difference is the guess's depth minus the label's depth. Top-level archetypes have depth 0 and the root has depth −1. A guess is **on-path** when it is the label, one of its ancestors (including the root) or one of its descendants, and **off-path** otherwise.
 
-| Label | Guess | Depth difference | Path |
-|---|---|---|---|
-| Prisoner | Prisoner | 0 | on |
-| Prisoner | Red Deck Wins | −1 | on |
-| Prisoner | no guess | −3 | on |
-| Red Deck Wins | Prisoner | +1 | on |
-| Azorius Control | Mono Red Devotion | +1 | off |
-
-- **Expect:** each pair gives the depth difference and path shown.
-- **Why it matters:** negative on-path differences are parent fallbacks, positive ones are too-specific guesses. This is the report the Tentative too-specific scenario says to watch. It is a diagnostic, not something to optimise.
+- **Expect:** each pair in the table below gives the depth difference and path shown. For example, Red Deck Wins guessed for a Prisoner deck is −1 on-path (a parent fallback), Prisoner guessed for a Red Deck Wins deck is +1 on-path (too specific), and Mono Red Devotion guessed for a Prisoner deck is 0 off-path (a sibling).
+- **Why it matters:** negative on-path differences are parent fallbacks and positive ones are too-specific guesses. This is the report the Tentative too-specific scenario says to watch. It is a diagnostic, not something to optimise.
 - **Check:** score each pair.
 - **Proposed 2026-09-30, for review.**
 
 ## Summarising a set of guesses
 
-These scenarios score a whole set of decks. Unless a scenario says otherwise, they use these four decks, one maindeck each:
+These scenarios score a whole set of decks. Unless a scenario says otherwise, they use the set below: every (label, guess) pair among six archetypes (the root, Aggro, Red Deck Wins, Prisoner, Mono Red Devotion and Azorius Control), 4,490 decks in all, each with its own maindeck. The deck counts are invented but plausible for a decent guesser: exact guesses are the most common, then nearby archetypes on the same branch, then no guess, with guesses on the wrong branch rarest.
 
-| Deck | Label | Guess | Guessed ∩ label | Guessed | Label |
-|---|---|---|---|---|---|
-| 1 | Prisoner | Prisoner | 3 | 3 | 3 |
-| 2 | Prisoner | Red Deck Wins | 2 | 2 | 3 |
-| 3 | Azorius Control | Mono Red Devotion | 0 | 3 | 2 |
-| 4 | Prisoner | no guess | 0 | 0 | 3 |
+In each row, ∩, Guessed and Label count archetypes after expanding the guess and the label with their ancestors (not the root). hP, hR, hF, depth difference and path are the scores of one deck in that row; — marks an undefined value.
 
-The last three columns count archetypes after expanding each side with its ancestors (not the root).
+| Label | Guess | Decks | ∩ | Guessed | Label | hP | hR | hF | Depth diff | Path |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Prisoner | Prisoner | 1000 | 3 | 3 | 3 | 1.000 | 1.000 | 1.000 | 0 | on |
+| Prisoner | Mono Red Devotion | 120 | 2 | 3 | 3 | 0.667 | 0.667 | 0.667 | 0 | off |
+| Prisoner | Red Deck Wins | 150 | 2 | 2 | 3 | 1.000 | 0.667 | 0.800 | −1 | on |
+| Prisoner | Aggro | 40 | 1 | 1 | 3 | 1.000 | 0.333 | 0.500 | −2 | on |
+| Prisoner | Azorius Control | 10 | 0 | 2 | 3 | 0.000 | 0.000 | 0.000 | −1 | off |
+| Prisoner | *root* | 60 | 0 | 0 | 3 | — | 0.000 | 0.000 | −3 | on |
+| Mono Red Devotion | Prisoner | 100 | 2 | 3 | 3 | 0.667 | 0.667 | 0.667 | 0 | off |
+| Mono Red Devotion | Mono Red Devotion | 600 | 3 | 3 | 3 | 1.000 | 1.000 | 1.000 | 0 | on |
+| Mono Red Devotion | Red Deck Wins | 120 | 2 | 2 | 3 | 1.000 | 0.667 | 0.800 | −1 | on |
+| Mono Red Devotion | Aggro | 30 | 1 | 1 | 3 | 1.000 | 0.333 | 0.500 | −2 | on |
+| Mono Red Devotion | Azorius Control | 20 | 0 | 2 | 3 | 0.000 | 0.000 | 0.000 | −1 | off |
+| Mono Red Devotion | *root* | 40 | 0 | 0 | 3 | — | 0.000 | 0.000 | −3 | on |
+| Red Deck Wins | Prisoner | 180 | 2 | 3 | 2 | 0.667 | 1.000 | 0.800 | +1 | on |
+| Red Deck Wins | Mono Red Devotion | 90 | 2 | 3 | 2 | 0.667 | 1.000 | 0.800 | +1 | on |
+| Red Deck Wins | Red Deck Wins | 400 | 2 | 2 | 2 | 1.000 | 1.000 | 1.000 | 0 | on |
+| Red Deck Wins | Aggro | 50 | 1 | 1 | 2 | 1.000 | 0.500 | 0.667 | −1 | on |
+| Red Deck Wins | Azorius Control | 10 | 0 | 2 | 2 | 0.000 | 0.000 | 0.000 | 0 | off |
+| Red Deck Wins | *root* | 30 | 0 | 0 | 2 | — | 0.000 | 0.000 | −2 | on |
+| Aggro | Prisoner | 40 | 1 | 3 | 1 | 0.333 | 1.000 | 0.500 | +2 | on |
+| Aggro | Mono Red Devotion | 30 | 1 | 3 | 1 | 0.333 | 1.000 | 0.500 | +2 | on |
+| Aggro | Red Deck Wins | 60 | 1 | 2 | 1 | 0.500 | 1.000 | 0.667 | +1 | on |
+| Aggro | Aggro | 200 | 1 | 1 | 1 | 1.000 | 1.000 | 1.000 | 0 | on |
+| Aggro | Azorius Control | 20 | 0 | 2 | 1 | 0.000 | 0.000 | 0.000 | +1 | off |
+| Aggro | *root* | 40 | 0 | 0 | 1 | — | 0.000 | 0.000 | −1 | on |
+| Azorius Control | Prisoner | 10 | 0 | 3 | 2 | 0.000 | 0.000 | 0.000 | +1 | off |
+| Azorius Control | Mono Red Devotion | 10 | 0 | 3 | 2 | 0.000 | 0.000 | 0.000 | +1 | off |
+| Azorius Control | Red Deck Wins | 10 | 0 | 2 | 2 | 0.000 | 0.000 | 0.000 | 0 | off |
+| Azorius Control | Aggro | 10 | 0 | 1 | 2 | 0.000 | 0.000 | 0.000 | −1 | off |
+| Azorius Control | Azorius Control | 800 | 2 | 2 | 2 | 1.000 | 1.000 | 1.000 | 0 | on |
+| Azorius Control | *root* | 70 | 0 | 0 | 2 | — | 0.000 | 0.000 | −2 | on |
+| *root* | Prisoner | 10 | 0 | 3 | 0 | 0.000 | — | — | +3 | on |
+| *root* | Mono Red Devotion | 10 | 0 | 3 | 0 | 0.000 | — | — | +3 | on |
+| *root* | Red Deck Wins | 20 | 0 | 2 | 0 | 0.000 | — | — | +2 | on |
+| *root* | Aggro | 20 | 0 | 1 | 0 | 0.000 | — | — | +1 | on |
+| *root* | Azorius Control | 30 | 0 | 2 | 0 | 0.000 | — | — | +2 | on |
+| *root* | *root* | 50 | 0 | 0 | 0 | — | — | — | 0 | on |
 
 ### Micro averaging sums over decks
 
-- **Expect:** micro hP = (3 + 2 + 0 + 0) / (3 + 2 + 3 + 0) = 5/8 = **0.625**; micro hR = 5 / (3 + 3 + 2 + 3) = 5/11 = **0.455**; micro hF = **0.526**.
-- **Why it matters:** this is the headline number (ADR 0001). Deck 4's missing guess leaves hP unchanged and lowers hR.
-- **Check:** score the four decks.
+Summed over all 4,490 decks, weighting each row by its deck count: ∩ = 9,170, Guessed = 10,250, Label = 10,600.
+
+- **Expect:** micro hP = 9,170 / 10,250 = **0.895**; micro hR = 9,170 / 10,600 = **0.865**; micro hF = **0.880**.
+- **Why it matters:** this is the headline number (ADR 0001). Decks with no guess add nothing to hP and lower hR; decks labelled with the root add to hP's denominator only.
+- **Check:** score the set.
 - **Proposed 2026-09-30, for review.**
 
 ### Macro averaging weighs every labelled archetype equally
 
-Group the decks by label, compute micro hP, hR and hF within each group, then take the plain mean over groups.
+Group the decks by label, compute micro hP, hR and hF within each group, then take the plain mean over the groups where each value is defined.
 
 | Label | Decks | hP | hR | hF |
 |---|---|---|---|---|
-| Prisoner | 1, 2, 4 | 1.00 | 0.556 | 0.714 |
-| Azorius Control | 3 | 0.00 | 0.00 | 0.00 |
+| Prisoner | 1,380 | 0.962 | 0.865 | 0.911 |
+| Mono Red Devotion | 910 | 0.942 | 0.832 | 0.883 |
+| Red Deck Wins | 760 | 0.827 | 0.914 | 0.869 |
+| Aggro | 390 | 0.579 | 0.846 | 0.688 |
+| Azorius Control | 910 | 0.947 | 0.879 | 0.912 |
+| *root* | 140 | 0.000 | — | — |
 
-- **Expect:** with a minimum of 1 deck per archetype, macro hP = **0.50**, macro hR = **0.278**, macro hF = **0.357**, over 2 of 2 archetypes. With a minimum of 2 decks, Azorius Control is left out: macro hP = **1.00**, hR = **0.556**, hF = **0.714**, over 1 of 2 archetypes.
-- **Also:** an archetype whose decks all got no guess has undefined hP. It is left out of macro hP but counts in macro hR and hF (both 0).
-- **Why it matters:** micro averaging is dominated by the most common archetypes. Macro shows whether rarer archetypes are handled too. The minimum is required on every call and echoed in the result, with the count of archetypes that qualified, so two reports can't quietly differ.
-- **Check:** score the four decks with minimums of 1 and 2.
+- **Expect:**
+
+  | Minimum decks | Archetypes that qualify | Macro hP | Macro hR | Macro hF |
+  |---|---|---|---|---|
+  | 1 | 6 of 6 | 0.710 | 0.867 | 0.852 |
+  | 200 | 5 of 6 (root left out) | 0.851 | 0.867 | 0.852 |
+  | 500 | 4 of 6 (Aggro and root left out) | 0.920 | 0.872 | 0.894 |
+
+- **Also:** an undefined value is left out of that average only. The root group has no hR or hF, so macro hR and hF average five groups at a minimum of 1, while macro hP averages six. An archetype whose decks all got no guess would likewise have undefined hP.
+- **Why it matters:** micro averaging is dominated by the most common archetypes. Macro shows whether rarer ones, like Aggro here, are handled too. The minimum is required on every call and echoed in the result, with the count of archetypes that qualified, so two reports can't quietly differ.
+- **Check:** score the set with minimums of 1, 200 and 500.
 - **Proposed 2026-09-30, for review.**
 
 ### Coverage and exact-match rate
 
-- **Expect:** coverage (the share of decks with a guess) is 3/4 = **0.75**. Exact-match rate is 1/4 = **0.25**; deck 4's missing guess counts as not matching.
+- **Expect:** coverage (the share of decks with a guess) is 4,200 / 4,490 = **0.935**. Exact-match rate is 3,050 / 4,490 = **0.679**. The 50 decks labelled with the root and given no guess count as exact matches; the other 240 decks with no guess don't.
 - **Why it matters:** one minus the exact-match rate is the share of guesses a reviewer would change, comparable with the historical correction rate.
-- **Check:** score the four decks.
+- **Check:** score the set.
 - **Proposed 2026-09-30, for review.**
 
 ### Depth differences are counted separately on and off the path
 
-- **Expect:** on-path depth differences are {−3: 1, −1: 1, 0: 1} (mean −1.33); off-path are {+1: 1} (mean +1.00).
-- **Check:** score the four decks.
+- **Expect:**
+
+  | Path | −3 | −2 | −1 | 0 | +1 | +2 | +3 | Decks | Mean |
+  |---|---|---|---|---|---|---|---|---|---|
+  | On | 100 | 170 | 360 | 3,050 | 350 | 120 | 20 | 4,170 | −0.084 |
+  | Off | | | 40 | 240 | 40 | | | 320 | 0.000 |
+
+- **Why it matters:** here parent fallbacks (630 decks below 0 on-path) and too-specific guesses (490 above 0) nearly balance, so the mean alone hides both. The counts show them.
+- **Check:** score the set.
 - **Proposed 2026-09-30, for review.**
 
 ### Confusions are counted by label and guess
 
-- **Expect:** the non-exact (label → guess) pairs are counted: Prisoner → Red Deck Wins 1 (on-path), Azorius Control → Mono Red Devotion 1 (off-path), Prisoner → no guess 1. The exact match (deck 1) counts toward exact matches, not confusions.
-- **Why it matters:** the most common confusions, shown by name, are the quickest way to see what a model gets wrong.
-- **Check:** score the four decks.
+- **Expect:** every non-exact (label, guess) pair is counted, 1,440 decks over 30 pairs, each with its path. The six most common are:
+
+  | Label | Guess | Decks | Path |
+  |---|---|---|---|
+  | Red Deck Wins | Prisoner | 180 | on |
+  | Prisoner | Red Deck Wins | 150 | on |
+  | Prisoner | Mono Red Devotion | 120 | off |
+  | Mono Red Devotion | Red Deck Wins | 120 | on |
+  | Mono Red Devotion | Prisoner | 100 | off |
+  | Red Deck Wins | Mono Red Devotion | 90 | on |
+
+  Exact matches, including the root guessed for a root label, count toward exact matches, not confusions.
+- **Why it matters:** the most common confusions, shown by name, are the quickest way to see what a model gets wrong. Here the red archetypes blur into each other.
+- **Check:** score the set.
 - **Proposed 2026-09-30, for review.**
 
 ### A deck outside the tree is skipped with a warning
 
-Add a fifth deck, labelled Prisoner and guessed as an archetype id that isn't in the tree the scorer was given (for example, one created after the snapshot).
+Add one more deck, labelled Prisoner and guessed as an archetype id that isn't in the tree the scorer was given (for example, one created after the snapshot).
 
-- **Expect:** the scorer logs a warning naming the missing archetype id, skips the deck and carries on. Every metric equals the four-deck result; the result reports **1** skipped deck and the missing id. The same happens when the label, rather than the guess, is missing from the tree.
+- **Expect:** the scorer logs a warning naming the missing archetype id, skips the deck and carries on. Every metric equals the 4,490-deck result; the result reports **1** skipped deck and the missing id. The same happens when the label, rather than the guess, is missing from the tree.
 - **Why it matters:** a missing archetype means the experiment is wired wrongly (for example, a perturbed tree without a mapping). Stopping the run would waste it; scoring the deck anyway would give numbers that are hard to interpret.
-- **Check:** score the five decks.
+- **Check:** score the set plus the extra deck.
 - **Proposed 2026-09-30, for review.**
 
 ## How much a number could move
 
-Intervals come from a bootstrap: draw maindeck groups at random with replacement until there are as many as in the original, re-score, and repeat 1,000 times. A maindeck group is every deck with the same maindeck (same cards in the same quantities, whatever the sideboard, card order or player). The 95% interval is the middle 95% of the re-scored values.
+Intervals come from a bootstrap: draw maindeck groups at random with replacement until there are as many as in the original, re-score, and repeat 1,000 times. A maindeck group is every deck with the same maindeck (same cards in the same quantities, whatever the sideboard, card order or player). The 95% interval is the middle 95% of the re-scored values. Intervals vary slightly with the seed, so the figures below are approximate; the checks compare intervals rather than match them exactly.
 
 ### Identical maindecks don't narrow the interval
 
-Take a set of decks, then add a twin of every deck: the same maindeck, label and guess.
+Take the set, then add a twin of every deck: the same maindeck, label and guess.
 
-- **Expect:** every point estimate and, with the same seed, every interval is unchanged.
+- **Expect:** every point estimate and, with the same seed, every interval is unchanged. Micro hF stays 0.880, with an interval of about [0.873, 0.886].
 - **Why it matters:** ten copies of one list are one piece of evidence about the classifier, not ten. Resampling single decks would make the intervals falsely narrow.
 - **Check:** score both sets with the same seed.
 - **Proposed 2026-09-30, for review.**
@@ -169,14 +232,16 @@ Take a set of decks, then add a twin of every deck: the same maindeck, label and
 
 - **Expect:** the same decks and the same seed give the same intervals. The result records the seed and the number of resamples. When every deck is an exact match, hF is 1.00 with interval [1.00, 1.00].
 - **Why it matters:** anyone re-scoring stored guesses gets the same table.
-- **Check:** score the same decks twice with one seed.
+- **Check:** score the set twice with one seed.
 - **Proposed 2026-09-30, for review.**
 
 ### Fewer maindecks give a wider interval
 
-- **Expect:** 20 maindeck groups, 12 of them exact matches and 8 wrong-branch guesses, give a wider hF interval than 2,000 groups in the same proportions. The point estimates are equal.
-- **Why it matters:** small rows of the results table, such as decks with 13 or more unseen cards, should look uncertain.
-- **Check:** score both sets with one seed and compare interval widths.
+Take the set again, but make every ten decks in a row share one maindeck, giving 449 maindeck groups instead of 4,490. Each row's count is a multiple of ten, so a group never mixes rows.
+
+- **Expect:** the point estimates are unchanged, but the micro hF interval widens from about [0.873, 0.886] to about [0.86, 0.90].
+- **Why it matters:** small rows of the results table, such as decks with 13 or more unseen cards, and rows full of copied decks, should look uncertain.
+- **Check:** score both versions with one seed and compare interval widths.
 - **Proposed 2026-09-30, for review.**
 
 ## Comparing two models
@@ -186,23 +251,23 @@ A comparison scores two models' guesses on the same decks. Each bootstrap draw s
 ### A model compared with itself differs by nothing
 
 - **Expect:** the difference in micro hF, hP, hR and exact-match rate is 0.00 with interval [0.00, 0.00].
-- **Check:** compare a set of guesses with itself.
+- **Check:** compare the set's guesses with themselves.
 - **Proposed 2026-09-30, for review.**
 
 ### A consistent small improvement is detected
 
-100 decks labelled Prisoner, one maindeck each. Model A guesses Prisoner for 60 and Azorius Control for 40. Model B guesses the same, except it gets 10 of A's wrong decks right: 70 exact matches.
+Model A's guesses are the set's. Model B's are the same, except that 60 of the 120 Prisoner decks A guessed as Mono Red Devotion are guessed as Prisoner.
 
-- **Expect:** A's and B's separate hF intervals overlap, but the paired difference's interval lies entirely above 0.
+- **Expect:** micro hF rises from 0.880 to 0.885, and exact-match rate from 0.679 to 0.693. A's and B's separate hF intervals overlap (about [0.873, 0.886] and [0.879, 0.891]), but the paired difference's interval, about [+0.004, +0.007], lies entirely above 0.
 - **Why it matters:** this is how we decide whether a model beats today's guesser. Setting two separate intervals side by side would miss a real improvement.
 - **Check:** score A and B separately, then compare them, with one seed.
 - **Proposed 2026-09-30, for review.**
 
 ### Decks only one model scored are left out of the comparison
 
-Model A's guesses cover decks 1–100. Model B's cover decks 1–99, because deck 100 was skipped (its guess isn't in the tree).
+Model A's guesses cover all 4,490 decks. Model B's cover 4,489, because one deck was skipped (its guess isn't in the tree).
 
-- **Expect:** the comparison uses decks 1–99, logs a warning, and reports **1** deck left out.
+- **Expect:** the comparison uses the 4,489 decks both models scored, logs a warning, and reports **1** deck left out.
 - **Why it matters:** as with skipped decks, the run should carry on, and the difference should only ever be measured on decks both models were scored on.
 - **Check:** compare the two sets.
 - **Proposed 2026-09-30, for review.**

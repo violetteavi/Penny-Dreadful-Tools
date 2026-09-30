@@ -1,7 +1,7 @@
 from pytest import approx
 
 from archetype_classifier.evaluation.metrics import score_deck
-from archetype_classifier.evaluation.scenario_set import AGGRO, AZORIUS_CONTROL, MONO_RED_DEVOTION, PRISONER, RED_DECK_WINS, TREE
+from archetype_classifier.evaluation.scenario_set import AGGRO, AZORIUS_CONTROL, MONO_RED_DEVOTION, NO_GUESS, PRISONER, RED_DECK_WINS, TREE
 
 THREE_PLACES = 0.0005  # Scenarios.md gives scores to three decimal places.
 
@@ -28,3 +28,8 @@ def test_a_too_specific_guess_on_a_parent_label_is_penalised() -> None:
 def test_a_wrong_child_on_the_right_branch_beats_a_top_level_fallback() -> None:
     assert score_deck(TREE, PRISONER, MONO_RED_DEVOTION).hf == approx(0.667, abs=THREE_PLACES)
     assert score_deck(TREE, PRISONER, AGGRO).hf == approx(0.5, abs=THREE_PLACES)
+
+def test_no_guess_scores_as_a_guess_of_the_root() -> None:
+    s = score_deck(TREE, PRISONER, NO_GUESS)
+    assert (s.hp, s.hr, s.hf) == (None, 0.0, 0.0)
+    assert not s.exact

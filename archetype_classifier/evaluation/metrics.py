@@ -31,12 +31,14 @@ class DeckScore:
     hr: float
     hf: float
     exact: bool
+    depth_difference: int  # Guess depth minus label depth. Top-level archetypes have depth 0 and the root -1.
+    on_path: bool  # The guess is the label, one of its ancestors (the root included) or one of its descendants.
 
 def score_deck(tree: ArchetypeTree, label_id: int, guess_id: int | None) -> DeckScore:
     label, guess = tree.lineage(label_id), tree.lineage(guess_id)
     shared = len(label & guess)
     hp, hr = (shared / len(guess) if guess else None), shared / len(label)
-    return DeckScore(hp, hr, f_measure(hp, hr), guess_id == label_id)
+    return DeckScore(hp, hr, f_measure(hp, hr), guess_id == label_id, len(guess) - len(label), guess <= label or label <= guess)
 
 def f_measure(hp: float | None, hr: float) -> float:
     return 0.0 if hp is None or hp + hr == 0 else 2 * hp * hr / (hp + hr)

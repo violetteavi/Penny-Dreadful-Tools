@@ -1,3 +1,4 @@
+import pytest
 from pytest import approx
 
 from archetype_classifier.evaluation.metrics import score_deck
@@ -33,3 +34,26 @@ def test_no_guess_scores_as_a_guess_of_the_root() -> None:
     s = score_deck(TREE, PRISONER, NO_GUESS)
     assert (s.hp, s.hr, s.hf) == (None, 0.0, 0.0)
     assert not s.exact
+
+P, MRD, RDW, A, AC, NONE = PRISONER, MONO_RED_DEVOTION, RED_DECK_WINS, AGGRO, AZORIUS_CONTROL, NO_GUESS
+ON, OFF = True, False
+# The table under "Summarising a set of guesses": label, guess, hP, hR, hF, depth difference, on-path.
+SCENARIO_TABLE = [
+    (P, P, 1.0, 1.0, 1.0, 0, ON), (P, MRD, 0.667, 0.667, 0.667, 0, OFF), (P, RDW, 1.0, 0.667, 0.8, -1, ON),
+    (P, A, 1.0, 0.333, 0.5, -2, ON), (P, AC, 0.0, 0.0, 0.0, -1, OFF), (P, NONE, None, 0.0, 0.0, -3, ON),
+    (MRD, P, 0.667, 0.667, 0.667, 0, OFF), (MRD, MRD, 1.0, 1.0, 1.0, 0, ON), (MRD, RDW, 1.0, 0.667, 0.8, -1, ON),
+    (MRD, A, 1.0, 0.333, 0.5, -2, ON), (MRD, AC, 0.0, 0.0, 0.0, -1, OFF), (MRD, NONE, None, 0.0, 0.0, -3, ON),
+    (RDW, P, 0.667, 1.0, 0.8, 1, ON), (RDW, MRD, 0.667, 1.0, 0.8, 1, ON), (RDW, RDW, 1.0, 1.0, 1.0, 0, ON),
+    (RDW, A, 1.0, 0.5, 0.667, -1, ON), (RDW, AC, 0.0, 0.0, 0.0, 0, OFF), (RDW, NONE, None, 0.0, 0.0, -2, ON),
+    (A, P, 0.333, 1.0, 0.5, 2, ON), (A, MRD, 0.333, 1.0, 0.5, 2, ON), (A, RDW, 0.5, 1.0, 0.667, 1, ON),
+    (A, A, 1.0, 1.0, 1.0, 0, ON), (A, AC, 0.0, 0.0, 0.0, 1, OFF), (A, NONE, None, 0.0, 0.0, -1, ON),
+    (AC, P, 0.0, 0.0, 0.0, 1, OFF), (AC, MRD, 0.0, 0.0, 0.0, 1, OFF), (AC, RDW, 0.0, 0.0, 0.0, 0, OFF),
+    (AC, A, 0.0, 0.0, 0.0, -1, OFF), (AC, AC, 1.0, 1.0, 1.0, 0, ON), (AC, NONE, None, 0.0, 0.0, -2, ON),
+]
+
+@pytest.mark.parametrize(('label', 'guess', 'hp', 'hr', 'hf', 'depth_difference', 'on_path'), SCENARIO_TABLE)
+def test_every_pair_in_the_scenario_table_scores_as_listed(label: int, guess: int | None, hp: float | None, hr: float, hf: float, depth_difference: int, on_path: bool) -> None:
+    s = score_deck(TREE, label, guess)
+    assert s.hp == (None if hp is None else approx(hp, abs=THREE_PLACES))
+    assert (s.hr, s.hf) == approx((hr, hf), abs=THREE_PLACES)
+    assert (s.depth_difference, s.on_path) == (depth_difference, on_path)

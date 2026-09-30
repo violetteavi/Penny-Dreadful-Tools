@@ -71,6 +71,13 @@ class DepthSummary:
         return sum(k * n for k, n in self.counts.items()) / total if total else None
 
 @dataclass(frozen=True)
+class Confusion:
+    label_id: int
+    guess_id: int | None
+    decks: int
+    on_path: bool
+
+@dataclass(frozen=True)
 class Scores:
     micro: Hierarchical
     macro: Hierarchical  # The mean over labelled archetypes with at least min_decks decks, of each value that is defined.
@@ -81,6 +88,7 @@ class Scores:
     exact_match_rate: float  # One minus this is the share of guesses a reviewer would change.
     on_path_depths: DepthSummary  # Below 0 are parent fallbacks, above 0 too-specific guesses.
     off_path_depths: DepthSummary
+    confusions: list[Confusion]  # Every non-exact (label, guess) pair, most common first.
 
 def score(tree: ArchetypeTree, decks: Sequence[ScoredDeck], min_decks: int) -> Scores:
     overlaps = [(d, overlap(tree, d.label_id, d.guess_id)) for d in decks]
@@ -94,7 +102,9 @@ def score(tree: ArchetypeTree, decks: Sequence[ScoredDeck], min_decks: int) -> S
     deck_scores = [score_deck(tree, d.label_id, d.guess_id) for d in decks]
     on_path = DepthSummary(Counter(s.depth_difference for s in deck_scores if s.on_path))
     off_path = DepthSummary(Counter(s.depth_difference for s in deck_scores if not s.on_path))
-    return Scores(sum_overlaps(o for _, o in overlaps).hierarchical(), macro, min_decks, len(qualifying), len(by_label), coverage, exact_match_rate, on_path, off_path)
+    pairs = Counter((d.label_id, d.guess_id) for d in decks if d.guess_id != d.label_id)
+    confusions = [Confusion(label_id, guess_id, n, score_deck(tree, label_id, guess_id).on_path) for (label_id, guess_id), n in pairs.most_common()]
+    return Scores(sum_overlaps(o for _, o in overlaps).hierarchical(), macro, min_decks, len(qualifying), len(by_label), coverage, exact_match_rate, on_path, off_path, confusions)
 
 def sum_overlaps(overlaps: Iterable[Overlap]) -> Overlap:
     return sum(overlaps, Overlap(0, 0, 0))

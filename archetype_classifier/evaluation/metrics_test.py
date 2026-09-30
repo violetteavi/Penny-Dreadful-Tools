@@ -88,3 +88,11 @@ def test_depth_differences_are_counted_separately_on_and_off_the_path() -> None:
     assert scores.on_path_depths.mean == approx(-0.132, abs=THREE_PLACES)
     assert scores.off_path_depths.counts == {-1: 40, 0: 240, 1: 40}
     assert scores.off_path_depths.mean == 0.0
+
+def test_confusions_are_counted_by_label_and_guess() -> None:
+    confusions = score(TREE, scenario_decks(), min_decks=1).confusions
+    assert (len(confusions), sum(c.decks for c in confusions)) == (25, 1350)
+    assert [c.decks for c in confusions] == sorted((c.decks for c in confusions), reverse=True)
+    assert {(c.label_id, c.guess_id, c.decks, c.on_path) for c in confusions[:6]} == {
+        (RDW, P, 180, ON), (P, RDW, 150, ON), (P, MRD, 120, OFF), (MRD, RDW, 120, ON), (MRD, P, 100, OFF), (RDW, MRD, 90, ON),
+    }

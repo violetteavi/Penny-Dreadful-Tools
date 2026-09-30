@@ -109,7 +109,7 @@ class Scores:
     micro_intervals: HierarchicalIntervals
     seed: int
     resamples: int
-    macro: Hierarchical  # The mean over labelled archetypes with at least min_decks decks, of each value that is defined.
+    macro: Hierarchical | None  # The mean over labelled archetypes with at least min_decks decks, of each value that is defined. None when no archetype qualifies.
     min_decks: int
     macro_archetypes: int  # Labelled archetypes with at least min_decks decks.
     labelled_archetypes: int
@@ -128,7 +128,9 @@ def score(tree: ArchetypeTree, decks: Sequence[ScoredDeck], min_decks: int, seed
     for d, o in overlaps:
         by_label[d.label_id].append(o)
     qualifying = [sum_overlaps(os).hierarchical() for os in by_label.values() if len(os) >= min_decks]
-    macro = Hierarchical(fmean(h.hp for h in qualifying if h.hp is not None), fmean(h.hr for h in qualifying), fmean(h.hf for h in qualifying))
+    macro = macro_average(qualifying)
+    if macro is None:
+        logger.warning('No labelled archetype has %d decks, so macro averages are undefined', min_decks)
     coverage = sum(d.guess_id is not None for d in decks) / len(decks)
     exact_match_rate = sum(d.guess_id == d.label_id for d in decks) / len(decks)
     deck_scores = [score_deck(tree, d.label_id, d.guess_id) for d in decks]
@@ -183,6 +185,12 @@ def in_tree(tree: ArchetypeTree, decks: Sequence[ScoredDeck]) -> tuple[list[Scor
     if missing:
         logger.warning('Skipped %d decks whose label or guess is not in the archetype tree; missing archetype ids: %s', len(decks) - len(kept), sorted(missing))
     return kept, len(decks) - len(kept), missing
+
+def macro_average(per_archetype: Sequence[Hierarchical]) -> Hierarchical | None:
+    if not per_archetype:
+        return None
+    hps = [h.hp for h in per_archetype if h.hp is not None]
+    return Hierarchical(fmean(hps) if hps else None, fmean(h.hr for h in per_archetype), fmean(h.hf for h in per_archetype))
 
 def sum_overlaps(overlaps: Iterable[Overlap]) -> Overlap:
     return sum(overlaps, Overlap(0, 0, 0))

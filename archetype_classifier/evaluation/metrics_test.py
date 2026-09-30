@@ -79,12 +79,14 @@ def test_coverage_and_exact_match_rate() -> None:
 ])
 def test_macro_averaging_weighs_every_labelled_archetype_equally(min_decks: int, qualifying: int, hp: float, hr: float, hf: float) -> None:
     scores = score(TREE, scenario_decks(), min_decks=min_decks)
+    assert scores.macro is not None
     assert (scores.macro.hp, scores.macro.hr, scores.macro.hf) == approx((hp, hr, hf), abs=THREE_PLACES)
     assert (scores.min_decks, scores.macro_archetypes, scores.labelled_archetypes) == (min_decks, qualifying, 5)
 
 def test_an_archetype_with_no_guesses_is_left_out_of_macro_precision_only() -> None:
     decks = [ScoredDeck(1, PRISONER, PRISONER, 'a'), ScoredDeck(2, AZORIUS_CONTROL, NO_GUESS, 'b')]
     macro = score(TREE, decks, min_decks=1).macro
+    assert macro is not None
     assert (macro.hp, macro.hr, macro.hf) == (1.0, 0.5, 0.5)
 
 def test_depth_differences_are_counted_separately_on_and_off_the_path() -> None:
@@ -172,3 +174,11 @@ def test_decks_only_one_model_scored_are_left_out_of_the_comparison(caplog: pyte
     assert (c.decks, c.left_out) == (4349, 1)
     assert 'left out' in caplog.text
     assert c == dataclasses.replace(compare(TREE, a[:-1], b[:-1], resamples=200), left_out=1)
+
+def test_no_archetype_meets_the_macro_minimum(caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.WARNING):
+        scores = score(TREE, scenario_decks(), min_decks=2000, resamples=200)
+    assert (scores.macro, scores.macro_archetypes) == (None, 0)
+    assert '2000' in caplog.text
+    expected = score(TREE, scenario_decks(), min_decks=1, resamples=200)
+    assert dataclasses.replace(scores, macro=expected.macro, min_decks=1, macro_archetypes=expected.macro_archetypes) == expected

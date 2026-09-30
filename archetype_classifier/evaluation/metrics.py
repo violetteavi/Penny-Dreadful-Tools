@@ -5,9 +5,14 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from statistics import fmean
 
+import numpy as np
+
 from archetype_classifier.data_loading.dataset import ArchetypeSnapshot
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_SEED = 20260930
+DEFAULT_RESAMPLES = 1000
 
 
 @dataclass(frozen=True)
@@ -68,6 +73,18 @@ def score_deck(tree: ArchetypeTree, label_id: int, guess_id: int | None) -> Deck
     return DeckScore(h.hp, h.hr, h.hf, guess_id == label_id, len(guess) - len(label), guess <= label or label <= guess)
 
 @dataclass(frozen=True)
+class Interval:
+    """The middle 95% of the bootstrap values."""
+    low: float
+    high: float
+
+@dataclass(frozen=True)
+class HierarchicalIntervals:
+    hp: Interval
+    hr: Interval
+    hf: Interval
+
+@dataclass(frozen=True)
 class DepthSummary:
     counts: Counter[int]  # Decks by depth difference.
 
@@ -88,6 +105,9 @@ class Scores:
     decks: int
     maindecks: int  # Distinct maindecks among the decks: the units the bootstrap resamples.
     micro: Hierarchical
+    micro_intervals: HierarchicalIntervals
+    seed: int
+    resamples: int
     macro: Hierarchical  # The mean over labelled archetypes with at least min_decks decks, of each value that is defined.
     min_decks: int
     macro_archetypes: int  # Labelled archetypes with at least min_decks decks.
@@ -100,7 +120,7 @@ class Scores:
     skipped_decks: int  # Decks whose label or guess isn't in the tree. Nothing else counts them.
     missing_archetype_ids: frozenset[int]
 
-def score(tree: ArchetypeTree, decks: Sequence[ScoredDeck], min_decks: int) -> Scores:
+def score(tree: ArchetypeTree, decks: Sequence[ScoredDeck], min_decks: int, seed: int = DEFAULT_SEED, resamples: int = DEFAULT_RESAMPLES) -> Scores:
     decks, skipped, missing = in_tree(tree, decks)
     overlaps = [(d, overlap(tree, d.label_id, d.guess_id)) for d in decks]
     by_label: dict[int, list[Overlap]] = defaultdict(list)
@@ -115,7 +135,38 @@ def score(tree: ArchetypeTree, decks: Sequence[ScoredDeck], min_decks: int) -> S
     off_path = DepthSummary(Counter(s.depth_difference for s in deck_scores if not s.on_path))
     pairs = Counter((d.label_id, d.guess_id) for d in decks if d.guess_id != d.label_id)
     confusions = [Confusion(label_id, guess_id, n, score_deck(tree, label_id, guess_id).on_path) for (label_id, guess_id), n in pairs.most_common()]
-    return Scores(len(decks), len({d.group_key for d in decks}), sum_overlaps(o for _, o in overlaps).hierarchical(), macro, min_decks, len(qualifying), len(by_label), coverage, exact_match_rate, on_path, off_path, confusions, skipped, missing)
+    groups = maindeck_sums(decks, [o for _, o in overlaps])
+    draws = bootstrap_sums(groups, seed, resamples)
+    return Scores(len(decks), len(groups), sum_overlaps(o for _, o in overlaps).hierarchical(), micro_intervals(draws), seed, resamples, macro, min_decks, len(qualifying), len(by_label), coverage, exact_match_rate, on_path, off_path, confusions, skipped, missing)
+
+SHARED, GUESSED, LABELLED = range(3)
+
+def maindeck_sums(decks: Sequence[ScoredDeck], overlaps: Sequence[Overlap]) -> np.ndarray:
+    """One row per maindeck: the shared, guessed and labelled counts summed over its decks."""
+    rows: dict[str, list[int]] = {}
+    for d, o in zip(decks, overlaps, strict=True):
+        row = rows.setdefault(d.group_key, [0, 0, 0])
+        row[SHARED] += o.shared
+        row[GUESSED] += o.guessed
+        row[LABELLED] += o.labelled
+    return np.array(list(rows.values()), dtype=float).reshape(-1, 3)
+
+def bootstrap_sums(groups: np.ndarray, seed: int, resamples: int) -> np.ndarray:
+    """One row per resample: the column sums over as many maindecks as there are, drawn with replacement."""
+    rng = np.random.default_rng(seed)
+    n = len(groups)
+    return np.array([np.bincount(rng.integers(0, n, n), minlength=n) @ groups for _ in range(resamples)])
+
+def micro_intervals(draws: np.ndarray) -> HierarchicalIntervals:
+    with np.errstate(divide='ignore', invalid='ignore'):
+        hp = draws[:, SHARED] / draws[:, GUESSED]
+        hr = draws[:, SHARED] / draws[:, LABELLED]
+        hf = np.where(hp + hr > 0, 2 * hp * hr / (hp + hr), 0.0)
+    return HierarchicalIntervals(interval(hp), interval(hr), interval(hf))
+
+def interval(values: np.ndarray) -> Interval:
+    low, high = np.nanpercentile(values, [2.5, 97.5])
+    return Interval(float(low), float(high))
 
 def in_tree(tree: ArchetypeTree, decks: Sequence[ScoredDeck]) -> tuple[list[ScoredDeck], int, frozenset[int]]:
     """The decks whose label and guess are both in the tree, how many were skipped, and the missing archetype ids. Skipping is logged, not fatal."""

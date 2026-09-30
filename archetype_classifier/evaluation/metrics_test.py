@@ -116,3 +116,13 @@ def test_a_deck_outside_the_tree_is_skipped_with_a_warning(extra: ScoredDeck, ca
 def test_scores_report_how_many_decks_and_maindecks_they_cover() -> None:
     assert (score(TREE, scenario_decks(), min_decks=1).decks, score(TREE, scenario_decks(), min_decks=1).maindecks) == (4350, 4350)
     assert score(TREE, scenario_decks(decks_per_maindeck=10), min_decks=1).maindecks == 435
+
+ABOUT = 0.005  # Scenarios.md gives interval ends approximately: they move by about 0.001 with the seed.
+
+def test_identical_maindecks_dont_narrow_the_interval() -> None:
+    decks = scenario_decks()
+    twins = [dataclasses.replace(d, deck_id=d.deck_id + 10_000) for d in decks]
+    single, doubled = score(TREE, decks, min_decks=1, seed=7), score(TREE, decks + twins, min_decks=1, seed=7)
+    assert single.micro.hf == approx(0.887, abs=THREE_PLACES)
+    assert (single.micro_intervals.hf.low, single.micro_intervals.hf.high) == approx((0.881, 0.893), abs=ABOUT)
+    assert (doubled.micro, doubled.micro_intervals) == (single.micro, single.micro_intervals)

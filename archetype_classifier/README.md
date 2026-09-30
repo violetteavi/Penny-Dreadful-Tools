@@ -21,9 +21,11 @@ Today decks are labelled by a guess (hand-written rules, or the archetype of the
 
 ## Evaluation
 
-- Hold out the two or three most recent seasons entirely. These are the main test of unseen cards.
-- Also hold out decks within the training seasons.
-- Score predictions against the archetype tree, not by exact match: a prediction that is correct but less specific than the label should score better than one on the wrong branch.
+- **Seasons:** train on seasons 1–38, validate and tune on season 39, and test on seasons 40–42. The test seasons are the main test of unseen cards, and are looked at rarely.
+- **Season 43 is reserved** for a later final check. It is the current season, so its decks and labels are still changing; past seasons barely change.
+- Also hold out 10% of decklists within the training seasons, keeping identical maindecks together.
+- Splits are recorded as named schemes, so experiments can be re-run exactly and different splits compared.
+- Score predictions against the archetype tree, not by exact match: see [ADR 0001](docs/adr/0001-score-guesses-with-hierarchical-f.md).
 
 ## Ground rules
 

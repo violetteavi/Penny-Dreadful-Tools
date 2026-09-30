@@ -163,3 +163,12 @@ def test_a_consistent_small_improvement_is_detected() -> None:
     c = compare(TREE, scenario_decks(), model_b(), seed=7)
     assert c.intervals.hf.low > 0  # ...but the paired difference is clear of 0.
     assert (c.intervals.hf.low, c.intervals.hf.high) == approx((0.004, 0.007), abs=0.001)
+
+def test_decks_only_one_model_scored_are_left_out_of_the_comparison(caplog: pytest.LogCaptureFixture) -> None:
+    a = scenario_decks()
+    b = [*a[:-1], dataclasses.replace(a[-1], guess_id=NOT_IN_TREE)]
+    with caplog.at_level(logging.WARNING):
+        c = compare(TREE, a, b, resamples=200)
+    assert (c.decks, c.left_out) == (4349, 1)
+    assert 'left out' in caplog.text
+    assert c == dataclasses.replace(compare(TREE, a[:-1], b[:-1], resamples=200), left_out=1)

@@ -213,12 +213,21 @@ class DifferenceIntervals:
 class Comparison:
     difference: Difference
     intervals: DifferenceIntervals  # Each resample draws the same maindecks for both models.
+    decks: int  # Decks both models were scored on.
+    left_out: int  # Decks only one model was scored on: skipped for the other, or missing from its guesses.
     seed: int
     resamples: int
 
 def compare(tree: ArchetypeTree, a: Sequence[ScoredDeck], b: Sequence[ScoredDeck], seed: int = DEFAULT_SEED, resamples: int = DEFAULT_RESAMPLES) -> Comparison:
     """Model B's micro scores minus model A's on the same decks, with paired bootstrap intervals."""
-    b_by_id = {d.deck_id: d for d in b}
+    a, _, _ = in_tree(tree, a)
+    b_kept, _, _ = in_tree(tree, b)
+    b_by_id = {d.deck_id: d for d in b_kept}
+    shared_ids = b_by_id.keys() & {d.deck_id for d in a}
+    left_out = len(a) + len(b_kept) - 2 * len(shared_ids)
+    if left_out:
+        logger.warning('Comparison: %d decks scored for only one model were left out', left_out)
+    a = [d for d in a if d.deck_id in shared_ids]
     b_aligned = [dataclasses.replace(b_by_id[d.deck_id], group_key=d.group_key) for d in a]
     groups_a = maindeck_sums(a, [overlap(tree, d.label_id, d.guess_id) for d in a])
     groups_b = maindeck_sums(b_aligned, [overlap(tree, d.label_id, d.guess_id) for d in b_aligned])
@@ -229,4 +238,4 @@ def compare(tree: ArchetypeTree, a: Sequence[ScoredDeck], b: Sequence[ScoredDeck
     names = ('hp', 'hr', 'hf', 'exact_match_rate')
     difference = Difference(*(float(point_b[n][0] - point_a[n][0]) for n in names))
     intervals = DifferenceIntervals(*(interval(draws_b[n] - draws_a[n]) for n in names))
-    return Comparison(difference, intervals, seed, resamples)
+    return Comparison(difference, intervals, len(a), left_out, seed, resamples)

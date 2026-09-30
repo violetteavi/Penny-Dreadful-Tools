@@ -123,6 +123,8 @@ class Scores:
 
 def score(tree: ArchetypeTree, decks: Sequence[ScoredDeck], min_decks: int, seed: int = DEFAULT_SEED, resamples: int = DEFAULT_RESAMPLES) -> Scores:
     decks, skipped, missing = in_tree(tree, decks)
+    if not decks:
+        raise ValueError(f'No decks to score: {skipped} were given, and all were skipped')
     overlaps = [(d, overlap(tree, d.label_id, d.guess_id)) for d in decks]
     by_label: dict[int, list[Overlap]] = defaultdict(list)
     for d, o in overlaps:
@@ -236,6 +238,8 @@ def compare(tree: ArchetypeTree, a: Sequence[ScoredDeck], b: Sequence[ScoredDeck
     if left_out:
         logger.warning('Comparison: %d decks scored for only one model were left out', left_out)
     a = [d for d in a if d.deck_id in shared_ids]
+    if not a:
+        raise ValueError('No decks to compare: the two models have no scored decks in common')
     b_aligned = [dataclasses.replace(b_by_id[d.deck_id], group_key=d.group_key) for d in a]
     groups_a = maindeck_sums(a, [overlap(tree, d.label_id, d.guess_id) for d in a])
     groups_b = maindeck_sums(b_aligned, [overlap(tree, d.label_id, d.guess_id) for d in b_aligned])

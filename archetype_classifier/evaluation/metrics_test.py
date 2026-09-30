@@ -182,3 +182,13 @@ def test_no_archetype_meets_the_macro_minimum(caplog: pytest.LogCaptureFixture) 
     assert '2000' in caplog.text
     expected = score(TREE, scenario_decks(), min_decks=1, resamples=200)
     assert dataclasses.replace(scores, macro=expected.macro, min_decks=1, macro_archetypes=expected.macro_archetypes) == expected
+
+# A program error rather than a scenario: there is nothing to score.
+@pytest.mark.parametrize('decks', [[], [ScoredDeck(1, NOT_IN_TREE, PRISONER, 'a'), ScoredDeck(2, PRISONER, NOT_IN_TREE, 'b')]], ids=['empty', 'all-skipped'])
+def test_scoring_no_decks_is_an_error(decks: list[ScoredDeck]) -> None:
+    with pytest.raises(ValueError, match='No decks to score'):
+        score(TREE, decks, min_decks=1)
+
+def test_comparing_models_with_no_decks_in_common_is_an_error() -> None:
+    with pytest.raises(ValueError, match='No decks to compare'):
+        compare(TREE, [ScoredDeck(1, PRISONER, PRISONER, 'a')], [ScoredDeck(2, PRISONER, PRISONER, 'b')])

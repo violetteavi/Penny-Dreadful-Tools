@@ -126,3 +126,10 @@ def test_identical_maindecks_dont_narrow_the_interval() -> None:
     assert single.micro.hf == approx(0.887, abs=THREE_PLACES)
     assert (single.micro_intervals.hf.low, single.micro_intervals.hf.high) == approx((0.881, 0.893), abs=ABOUT)
     assert (doubled.micro, doubled.micro_intervals) == (single.micro, single.micro_intervals)
+
+def test_intervals_are_repeatable_and_recorded() -> None:
+    first, second = score(TREE, scenario_decks(), min_decks=1, seed=7, resamples=200), score(TREE, scenario_decks(), min_decks=1, seed=7, resamples=200)
+    assert first.micro_intervals == second.micro_intervals
+    assert (first.seed, first.resamples) == (7, 200)
+    exact = score(TREE, [d for d in scenario_decks() if d.guess_id == d.label_id], min_decks=1)
+    assert (exact.micro.hf, exact.micro_intervals.hf.low, exact.micro_intervals.hf.high) == (1.0, 1.0, 1.0)

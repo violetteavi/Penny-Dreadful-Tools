@@ -1,6 +1,8 @@
 """Scores archetype guesses against the archetype tree with hierarchical precision, recall and F (ADR 0001)."""
-from collections.abc import Mapping, Sequence
+from collections import defaultdict
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from statistics import fmean
 
 from archetype_classifier.data_loading.dataset import ArchetypeSnapshot
 
@@ -62,14 +64,26 @@ def score_deck(tree: ArchetypeTree, label_id: int, guess_id: int | None) -> Deck
 @dataclass(frozen=True)
 class Scores:
     micro: Hierarchical
+    macro: Hierarchical  # The mean over labelled archetypes with at least min_decks decks, of each value that is defined.
+    min_decks: int
+    macro_archetypes: int  # Labelled archetypes with at least min_decks decks.
+    labelled_archetypes: int
     coverage: float  # The share of decks with a guess.
     exact_match_rate: float  # One minus this is the share of guesses a reviewer would change.
 
-def score(tree: ArchetypeTree, decks: Sequence[ScoredDeck]) -> Scores:
-    total = sum((overlap(tree, d.label_id, d.guess_id) for d in decks), Overlap(0, 0, 0))
+def score(tree: ArchetypeTree, decks: Sequence[ScoredDeck], min_decks: int) -> Scores:
+    overlaps = [(d, overlap(tree, d.label_id, d.guess_id)) for d in decks]
+    by_label: dict[int, list[Overlap]] = defaultdict(list)
+    for d, o in overlaps:
+        by_label[d.label_id].append(o)
+    qualifying = [sum_overlaps(os).hierarchical() for os in by_label.values() if len(os) >= min_decks]
+    macro = Hierarchical(fmean(h.hp for h in qualifying if h.hp is not None), fmean(h.hr for h in qualifying), fmean(h.hf for h in qualifying))
     coverage = sum(d.guess_id is not None for d in decks) / len(decks)
     exact_match_rate = sum(d.guess_id == d.label_id for d in decks) / len(decks)
-    return Scores(total.hierarchical(), coverage, exact_match_rate)
+    return Scores(sum_overlaps(o for _, o in overlaps).hierarchical(), macro, min_decks, len(qualifying), len(by_label), coverage, exact_match_rate)
+
+def sum_overlaps(overlaps: Iterable[Overlap]) -> Overlap:
+    return sum(overlaps, Overlap(0, 0, 0))
 
 def overlap(tree: ArchetypeTree, label_id: int, guess_id: int | None) -> Overlap:
     label, guess = tree.lineage(label_id), tree.lineage(guess_id)

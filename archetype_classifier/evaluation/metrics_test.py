@@ -1,7 +1,7 @@
 import pytest
 from pytest import approx
 
-from archetype_classifier.evaluation.metrics import score, score_deck
+from archetype_classifier.evaluation.metrics import ScoredDeck, score, score_deck
 from archetype_classifier.evaluation.scenario_set import AGGRO, AZORIUS_CONTROL, MONO_RED_DEVOTION, NO_GUESS, PRISONER, RED_DECK_WINS, TREE, scenario_decks
 
 THREE_PLACES = 0.0005  # Scenarios.md gives scores to three decimal places.
@@ -59,10 +59,25 @@ def test_every_pair_in_the_scenario_table_scores_as_listed(label: int, guess: in
     assert (s.depth_difference, s.on_path) == (depth_difference, on_path)
 
 def test_micro_averaging_sums_over_decks() -> None:
-    micro = score(TREE, scenario_decks()).micro
+    micro = score(TREE, scenario_decks(), min_decks=1).micro
     assert (micro.hp, micro.hr, micro.hf) == approx((0.911, 0.865, 0.887), abs=THREE_PLACES)
 
 def test_coverage_and_exact_match_rate() -> None:
-    scores = score(TREE, scenario_decks())
+    scores = score(TREE, scenario_decks(), min_decks=1)
     assert scores.coverage == approx(4110 / 4350)
     assert scores.exact_match_rate == approx(3000 / 4350)
+
+@pytest.mark.parametrize(('min_decks', 'qualifying', 'hp', 'hr', 'hf'), [
+    (1, 5, 0.851, 0.867, 0.852),
+    (500, 4, 0.920, 0.872, 0.894),  # Aggro left out.
+    (800, 3, 0.950, 0.858, 0.902),  # Aggro and Red Deck Wins left out.
+])
+def test_macro_averaging_weighs_every_labelled_archetype_equally(min_decks: int, qualifying: int, hp: float, hr: float, hf: float) -> None:
+    scores = score(TREE, scenario_decks(), min_decks=min_decks)
+    assert (scores.macro.hp, scores.macro.hr, scores.macro.hf) == approx((hp, hr, hf), abs=THREE_PLACES)
+    assert (scores.min_decks, scores.macro_archetypes, scores.labelled_archetypes) == (min_decks, qualifying, 5)
+
+def test_an_archetype_with_no_guesses_is_left_out_of_macro_precision_only() -> None:
+    decks = [ScoredDeck(1, PRISONER, PRISONER, 'a'), ScoredDeck(2, AZORIUS_CONTROL, NO_GUESS, 'b')]
+    macro = score(TREE, decks, min_decks=1).macro
+    assert (macro.hp, macro.hr, macro.hf) == (1.0, 0.5, 0.5)

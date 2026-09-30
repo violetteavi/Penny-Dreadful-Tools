@@ -1,5 +1,5 @@
 """Scores archetype guesses against the archetype tree with hierarchical precision, recall and F (ADR 0001)."""
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from statistics import fmean
@@ -62,6 +62,15 @@ def score_deck(tree: ArchetypeTree, label_id: int, guess_id: int | None) -> Deck
     return DeckScore(h.hp, h.hr, h.hf, guess_id == label_id, len(guess) - len(label), guess <= label or label <= guess)
 
 @dataclass(frozen=True)
+class DepthSummary:
+    counts: Counter[int]  # Decks by depth difference.
+
+    @property
+    def mean(self) -> float | None:
+        total = self.counts.total()
+        return sum(k * n for k, n in self.counts.items()) / total if total else None
+
+@dataclass(frozen=True)
 class Scores:
     micro: Hierarchical
     macro: Hierarchical  # The mean over labelled archetypes with at least min_decks decks, of each value that is defined.
@@ -70,6 +79,8 @@ class Scores:
     labelled_archetypes: int
     coverage: float  # The share of decks with a guess.
     exact_match_rate: float  # One minus this is the share of guesses a reviewer would change.
+    on_path_depths: DepthSummary  # Below 0 are parent fallbacks, above 0 too-specific guesses.
+    off_path_depths: DepthSummary
 
 def score(tree: ArchetypeTree, decks: Sequence[ScoredDeck], min_decks: int) -> Scores:
     overlaps = [(d, overlap(tree, d.label_id, d.guess_id)) for d in decks]
@@ -80,7 +91,10 @@ def score(tree: ArchetypeTree, decks: Sequence[ScoredDeck], min_decks: int) -> S
     macro = Hierarchical(fmean(h.hp for h in qualifying if h.hp is not None), fmean(h.hr for h in qualifying), fmean(h.hf for h in qualifying))
     coverage = sum(d.guess_id is not None for d in decks) / len(decks)
     exact_match_rate = sum(d.guess_id == d.label_id for d in decks) / len(decks)
-    return Scores(sum_overlaps(o for _, o in overlaps).hierarchical(), macro, min_decks, len(qualifying), len(by_label), coverage, exact_match_rate)
+    deck_scores = [score_deck(tree, d.label_id, d.guess_id) for d in decks]
+    on_path = DepthSummary(Counter(s.depth_difference for s in deck_scores if s.on_path))
+    off_path = DepthSummary(Counter(s.depth_difference for s in deck_scores if not s.on_path))
+    return Scores(sum_overlaps(o for _, o in overlaps).hierarchical(), macro, min_decks, len(qualifying), len(by_label), coverage, exact_match_rate, on_path, off_path)
 
 def sum_overlaps(overlaps: Iterable[Overlap]) -> Overlap:
     return sum(overlaps, Overlap(0, 0, 0))

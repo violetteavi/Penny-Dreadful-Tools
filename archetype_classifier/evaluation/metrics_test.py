@@ -81,3 +81,10 @@ def test_an_archetype_with_no_guesses_is_left_out_of_macro_precision_only() -> N
     decks = [ScoredDeck(1, PRISONER, PRISONER, 'a'), ScoredDeck(2, AZORIUS_CONTROL, NO_GUESS, 'b')]
     macro = score(TREE, decks, min_decks=1).macro
     assert (macro.hp, macro.hr, macro.hf) == (1.0, 0.5, 0.5)
+
+def test_depth_differences_are_counted_separately_on_and_off_the_path() -> None:
+    scores = score(TREE, scenario_decks(), min_decks=1)
+    assert scores.on_path_depths.counts == {-3: 100, -2: 170, -1: 360, 0: 3000, 1: 330, 2: 70}
+    assert scores.on_path_depths.mean == approx(-0.132, abs=THREE_PLACES)
+    assert scores.off_path_depths.counts == {-1: 40, 0: 240, 1: 40}
+    assert scores.off_path_depths.mean == 0.0

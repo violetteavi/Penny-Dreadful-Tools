@@ -62,10 +62,14 @@ def score_deck(tree: ArchetypeTree, label_id: int, guess_id: int | None) -> Deck
 @dataclass(frozen=True)
 class Scores:
     micro: Hierarchical
+    coverage: float  # The share of decks with a guess.
+    exact_match_rate: float  # One minus this is the share of guesses a reviewer would change.
 
 def score(tree: ArchetypeTree, decks: Sequence[ScoredDeck]) -> Scores:
     total = sum((overlap(tree, d.label_id, d.guess_id) for d in decks), Overlap(0, 0, 0))
-    return Scores(total.hierarchical())
+    coverage = sum(d.guess_id is not None for d in decks) / len(decks)
+    exact_match_rate = sum(d.guess_id == d.label_id for d in decks) / len(decks)
+    return Scores(total.hierarchical(), coverage, exact_match_rate)
 
 def overlap(tree: ArchetypeTree, label_id: int, guess_id: int | None) -> Overlap:
     label, guess = tree.lineage(label_id), tree.lineage(guess_id)

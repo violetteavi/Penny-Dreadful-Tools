@@ -61,3 +61,8 @@ def test_every_pair_in_the_scenario_table_scores_as_listed(label: int, guess: in
 def test_micro_averaging_sums_over_decks() -> None:
     micro = score(TREE, scenario_decks()).micro
     assert (micro.hp, micro.hr, micro.hf) == approx((0.911, 0.865, 0.887), abs=THREE_PLACES)
+
+def test_coverage_and_exact_match_rate() -> None:
+    scores = score(TREE, scenario_decks())
+    assert scores.coverage == approx(4110 / 4350)
+    assert scores.exact_match_rate == approx(3000 / 4350)

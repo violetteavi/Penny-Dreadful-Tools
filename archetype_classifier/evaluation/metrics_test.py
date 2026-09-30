@@ -1,8 +1,8 @@
 import pytest
 from pytest import approx
 
-from archetype_classifier.evaluation.metrics import score_deck
-from archetype_classifier.evaluation.scenario_set import AGGRO, AZORIUS_CONTROL, MONO_RED_DEVOTION, NO_GUESS, PRISONER, RED_DECK_WINS, TREE
+from archetype_classifier.evaluation.metrics import score, score_deck
+from archetype_classifier.evaluation.scenario_set import AGGRO, AZORIUS_CONTROL, MONO_RED_DEVOTION, NO_GUESS, PRISONER, RED_DECK_WINS, TREE, scenario_decks
 
 THREE_PLACES = 0.0005  # Scenarios.md gives scores to three decimal places.
 
@@ -57,3 +57,7 @@ def test_every_pair_in_the_scenario_table_scores_as_listed(label: int, guess: in
     assert s.hp == (None if hp is None else approx(hp, abs=THREE_PLACES))
     assert (s.hr, s.hf) == approx((hr, hf), abs=THREE_PLACES)
     assert (s.depth_difference, s.on_path) == (depth_difference, on_path)
+
+def test_micro_averaging_sums_over_decks() -> None:
+    micro = score(TREE, scenario_decks()).micro
+    assert (micro.hp, micro.hr, micro.hf) == approx((0.911, 0.865, 0.887), abs=THREE_PLACES)

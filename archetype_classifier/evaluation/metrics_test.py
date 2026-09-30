@@ -1,3 +1,6 @@
+import dataclasses
+import logging
+
 import pytest
 from pytest import approx
 
@@ -24,7 +27,9 @@ def test_a_too_specific_guess_on_a_parent_label_is_penalised() -> None:
     assert (too_specific.hp, too_specific.hr) == approx((0.667, 1.0), abs=THREE_PLACES)
     assert score_deck(TREE, RED_DECK_WINS, RED_DECK_WINS).hf > too_specific.hf > score_deck(TREE, RED_DECK_WINS, AZORIUS_CONTROL).hf
     # Tentative: a too-specific guess costs more precision than a parent fallback the same distance off.
-    assert too_specific.hp < score_deck(TREE, PRISONER, RED_DECK_WINS).hp
+    parent_fallback = score_deck(TREE, PRISONER, RED_DECK_WINS)
+    assert too_specific.hp is not None and parent_fallback.hp is not None
+    assert too_specific.hp < parent_fallback.hp
 
 def test_a_wrong_child_on_the_right_branch_beats_a_top_level_fallback() -> None:
     assert score_deck(TREE, PRISONER, MONO_RED_DEVOTION).hf == approx(0.667, abs=THREE_PLACES)
@@ -96,3 +101,14 @@ def test_confusions_are_counted_by_label_and_guess() -> None:
     assert {(c.label_id, c.guess_id, c.decks, c.on_path) for c in confusions[:6]} == {
         (RDW, P, 180, ON), (P, RDW, 150, ON), (P, MRD, 120, OFF), (MRD, RDW, 120, ON), (MRD, P, 100, OFF), (RDW, MRD, 90, ON),
     }
+
+NOT_IN_TREE = 99
+
+@pytest.mark.parametrize('extra', [ScoredDeck(9999, PRISONER, NOT_IN_TREE, 'extra'), ScoredDeck(9999, NOT_IN_TREE, PRISONER, 'extra')], ids=['guess', 'label'])
+def test_a_deck_outside_the_tree_is_skipped_with_a_warning(extra: ScoredDeck, caplog: pytest.LogCaptureFixture) -> None:
+    expected = score(TREE, scenario_decks(), min_decks=1)
+    with caplog.at_level(logging.WARNING):
+        scores = score(TREE, [*scenario_decks(), extra], min_decks=1)
+    assert str(NOT_IN_TREE) in caplog.text
+    assert (scores.skipped_decks, scores.missing_archetype_ids) == (1, frozenset({NOT_IN_TREE}))
+    assert dataclasses.replace(scores, skipped_decks=0, missing_archetype_ids=frozenset()) == expected

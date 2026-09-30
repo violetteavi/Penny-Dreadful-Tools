@@ -1,10 +1,13 @@
 """Scores archetype guesses against the archetype tree with hierarchical precision, recall and F (ADR 0001)."""
+import logging
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from statistics import fmean
 
 from archetype_classifier.data_loading.dataset import ArchetypeSnapshot
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -17,6 +20,9 @@ class ScoredDeck:
 class ArchetypeTree:
     def __init__(self, archetypes: Mapping[int, ArchetypeSnapshot]) -> None:
         self.archetypes = archetypes
+
+    def __contains__(self, archetype_id: int | None) -> bool:
+        return archetype_id is None or archetype_id in self.archetypes
 
     def lineage(self, archetype_id: int | None) -> frozenset[int]:
         """The archetype and its ancestors, not counting the root. No guess (the root) has an empty lineage."""
@@ -89,8 +95,11 @@ class Scores:
     on_path_depths: DepthSummary  # Below 0 are parent fallbacks, above 0 too-specific guesses.
     off_path_depths: DepthSummary
     confusions: list[Confusion]  # Every non-exact (label, guess) pair, most common first.
+    skipped_decks: int  # Decks whose label or guess isn't in the tree. Nothing else counts them.
+    missing_archetype_ids: frozenset[int]
 
 def score(tree: ArchetypeTree, decks: Sequence[ScoredDeck], min_decks: int) -> Scores:
+    decks, skipped, missing = in_tree(tree, decks)
     overlaps = [(d, overlap(tree, d.label_id, d.guess_id)) for d in decks]
     by_label: dict[int, list[Overlap]] = defaultdict(list)
     for d, o in overlaps:
@@ -104,7 +113,15 @@ def score(tree: ArchetypeTree, decks: Sequence[ScoredDeck], min_decks: int) -> S
     off_path = DepthSummary(Counter(s.depth_difference for s in deck_scores if not s.on_path))
     pairs = Counter((d.label_id, d.guess_id) for d in decks if d.guess_id != d.label_id)
     confusions = [Confusion(label_id, guess_id, n, score_deck(tree, label_id, guess_id).on_path) for (label_id, guess_id), n in pairs.most_common()]
-    return Scores(sum_overlaps(o for _, o in overlaps).hierarchical(), macro, min_decks, len(qualifying), len(by_label), coverage, exact_match_rate, on_path, off_path, confusions)
+    return Scores(sum_overlaps(o for _, o in overlaps).hierarchical(), macro, min_decks, len(qualifying), len(by_label), coverage, exact_match_rate, on_path, off_path, confusions, skipped, missing)
+
+def in_tree(tree: ArchetypeTree, decks: Sequence[ScoredDeck]) -> tuple[list[ScoredDeck], int, frozenset[int]]:
+    """The decks whose label and guess are both in the tree, how many were skipped, and the missing archetype ids. Skipping is logged, not fatal."""
+    kept = [d for d in decks if d.label_id in tree and d.guess_id in tree]
+    missing = frozenset(a for d in decks for a in (d.label_id, d.guess_id) if a not in tree and a is not None)
+    if missing:
+        logger.warning('Skipped %d decks whose label or guess is not in the archetype tree; missing archetype ids: %s', len(decks) - len(kept), sorted(missing))
+    return kept, len(decks) - len(kept), missing
 
 def sum_overlaps(overlaps: Iterable[Overlap]) -> Overlap:
     return sum(overlaps, Overlap(0, 0, 0))

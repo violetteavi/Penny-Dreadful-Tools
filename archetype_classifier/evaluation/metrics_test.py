@@ -112,3 +112,7 @@ def test_a_deck_outside_the_tree_is_skipped_with_a_warning(extra: ScoredDeck, ca
     assert str(NOT_IN_TREE) in caplog.text
     assert (scores.skipped_decks, scores.missing_archetype_ids) == (1, frozenset({NOT_IN_TREE}))
     assert dataclasses.replace(scores, skipped_decks=0, missing_archetype_ids=frozenset()) == expected
+
+def test_scores_report_how_many_decks_and_maindecks_they_cover() -> None:
+    assert (score(TREE, scenario_decks(), min_decks=1).decks, score(TREE, scenario_decks(), min_decks=1).maindecks) == (4350, 4350)
+    assert score(TREE, scenario_decks(decks_per_maindeck=10), min_decks=1).maindecks == 435

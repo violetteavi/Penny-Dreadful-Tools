@@ -85,6 +85,8 @@ class Confusion:
 
 @dataclass(frozen=True)
 class Scores:
+    decks: int
+    maindecks: int  # Distinct maindecks among the decks: the units the bootstrap resamples.
     micro: Hierarchical
     macro: Hierarchical  # The mean over labelled archetypes with at least min_decks decks, of each value that is defined.
     min_decks: int
@@ -113,7 +115,7 @@ def score(tree: ArchetypeTree, decks: Sequence[ScoredDeck], min_decks: int) -> S
     off_path = DepthSummary(Counter(s.depth_difference for s in deck_scores if not s.on_path))
     pairs = Counter((d.label_id, d.guess_id) for d in decks if d.guess_id != d.label_id)
     confusions = [Confusion(label_id, guess_id, n, score_deck(tree, label_id, guess_id).on_path) for (label_id, guess_id), n in pairs.most_common()]
-    return Scores(sum_overlaps(o for _, o in overlaps).hierarchical(), macro, min_decks, len(qualifying), len(by_label), coverage, exact_match_rate, on_path, off_path, confusions, skipped, missing)
+    return Scores(len(decks), len({d.group_key for d in decks}), sum_overlaps(o for _, o in overlaps).hierarchical(), macro, min_decks, len(qualifying), len(by_label), coverage, exact_match_rate, on_path, off_path, confusions, skipped, missing)
 
 def in_tree(tree: ArchetypeTree, decks: Sequence[ScoredDeck]) -> tuple[list[ScoredDeck], int, frozenset[int]]:
     """The decks whose label and guess are both in the tree, how many were skipped, and the missing archetype ids. Skipping is logged, not fatal."""

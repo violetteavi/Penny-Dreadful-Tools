@@ -388,13 +388,13 @@ Decks A (season 30, VERIFIED) and B (season 31, VERIFIED) have the same maindeck
 
 ### An excluded deck changes nothing else
 
-**Scheme:** the typical scheme. There are three decks:
-- **A:** season 30, not held out, VERIFIED, maindeck 4 Lightning Bolt and 20 Mountain. It becomes TRAIN.
-- **B:** season 30, not held out, UNLABELLED, maindeck 4 Fireblast and 20 Mountain. It becomes EXCLUDED (status not used for training).
-- **C:** season 41, VERIFIED, maindeck 4 Lightning Bolt, 4 Fireblast and 16 Mountain. It becomes TEST.
+**Scheme:** the typical scheme. There are three 60-card decks, and every card in them is legal in both seasons 30 and 41:
+- **A:** season 30, not held out, VERIFIED, maindeck 4 Shock and 56 Mountain. It becomes TRAIN.
+- **B:** season 30, not held out, UNLABELLED, maindeck 4 Burst Lightning and 56 Mountain. It becomes EXCLUDED (status not used for training).
+- **C:** season 41, VERIFIED, maindeck 4 Shock, 4 Burst Lightning and 52 Mountain. It becomes TEST.
 
 - **Expect:**
-  - C has **4** unseen maindeck copies (the four Fireblast). B contains Fireblast but isn't a training deck, so it doesn't make Fireblast seen.
+  - C has **4** unseen maindeck copies (the four Burst Lightning). B contains Burst Lightning but isn't a training deck, so it doesn't make Burst Lightning seen.
   - Removing B from the snapshot leaves A's and C's splits, statuses, labels and unseen counts exactly as they were. The only change in the report is one fewer deck excluded for "status not used for training".
 - **Also, with twins on** (season rule as typical; status rule train {VERIFIED}, eval {VERIFIED}; `allow_held_out_twins` on): A is TRAIN, and its UNLABELLED twin's deck id falls in the held-out group, so the twin is EXCLUDED (status not used for evaluation). A is used exactly as if the twin didn't exist.
 - **Why it matters:** an experiment should be the same whether or not data it doesn't use exists. That holds only if every count that looks at other decks counts included ones.

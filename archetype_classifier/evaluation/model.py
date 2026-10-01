@@ -3,6 +3,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from archetype_classifier.data_loading.dataset import CardCount, DeckContents
+from archetype_classifier.data_loading.labels import LabelStatus
 from archetype_classifier.data_loading.slices import DeckSet, SnapshotDeck
 
 
@@ -15,10 +16,21 @@ class PredictDeck:
     sideboard: tuple[CardCount, ...]
 
 @dataclass(frozen=True)
+class TrainingDeck:
+    deck: PredictDeck
+    season_id: int
+    archetype_id: int | None  # The site's current label, as the site's own guesser searches.
+    reviewed: bool
+    label_status: LabelStatus  # So a model trained on several statuses can tell them apart.
+
+@dataclass(frozen=True)
 class LabelledDeck:
     deck: PredictDeck
     label_id: int  # The label the deck is scored against.
     group_key: str  # The maindeck hash: identical maindecks are one piece of evidence.
+
+def build_training_decks(deck_set: DeckSet, contents: Mapping[int, DeckContents]) -> list[TrainingDeck]:
+    return [TrainingDeck(predict_deck(d, contents[d.deck_id]), d.season_id, d.site_archetype_id, d.reviewed, d.label_status) for d in deck_set.decks.values()]
 
 def build_labelled_decks(deck_set: DeckSet, contents: Mapping[int, DeckContents]) -> list[LabelledDeck]:
     return [LabelledDeck(predict_deck(d, contents[d.deck_id]), d.label_id, d.maindeck_hash) for d in deck_set.decks.values()]  # type: ignore[arg-type]

@@ -2,7 +2,7 @@ from archetype_classifier.data_loading.dataset import CardCount, DeckContents
 from archetype_classifier.data_loading.labels import LabelFacts, LabelStatus
 from archetype_classifier.data_loading.slices import Snapshot, SnapshotDeck, build_deck_set
 from archetype_classifier.data_loading.splits import Split, SplitScheme
-from archetype_classifier.evaluation.model import LabelledDeck, PredictDeck, build_labelled_decks, build_predict_decks
+from archetype_classifier.evaluation.model import LabelledDeck, PredictDeck, TrainingDeck, build_labelled_decks, build_predict_decks, build_training_decks
 
 RED_DECK_WINS = 2
 AZORIUS_CONTROL = 3
@@ -35,3 +35,14 @@ def test_labelled_and_prediction_decks_come_from_the_same_deck_set() -> None:
     assert build_labelled_decks(deck_set, CONTENTS) == [LabelledDeck(deck_1, RED_DECK_WINS, f'{1:040x}'), LabelledDeck(deck_2, AZORIUS_CONTROL, f'{2:040x}')]
     assert build_predict_decks(deck_set, CONTENTS) == [deck_1, deck_2]
     assert sum(c.n for c in deck_1.maindeck) == 60 and sum(c.n for c in deck_1.sideboard) == 2
+
+
+# Scenario: training decks carry the site label and the label status.
+TRAINING_DECKS = snapshot(snapshot_deck(3, 30, Split.TRAIN, LabelStatus.UNVERIFIED, RED_DECK_WINS), snapshot_deck(4, 30, Split.TRAIN, LabelStatus.UNLABELLED, None, reviewed=False))
+
+def test_training_decks_carry_the_site_label_and_the_label_status() -> None:
+    deck_set = build_deck_set(TRAINING_DECKS, frozenset({Split.TRAIN}))
+    assert build_training_decks(deck_set, CONTENTS) == [
+        TrainingDeck(PredictDeck(3, 'League', CONTENTS[3].maindeck, CONTENTS[3].sideboard), 30, RED_DECK_WINS, True, LabelStatus.UNVERIFIED),
+        TrainingDeck(PredictDeck(4, 'League', CONTENTS[4].maindeck, CONTENTS[4].sideboard), 30, None, False, LabelStatus.UNLABELLED),
+    ]

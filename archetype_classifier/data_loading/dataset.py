@@ -32,6 +32,17 @@ class DeckCardRow:
     sideboard: bool
 
 @dataclass(frozen=True)
+class CardCount:
+    card: str
+    n: int
+
+@dataclass(frozen=True)
+class DeckContents:
+    """A deck's cards, read live from the site database: past decks never change, so they're never copied."""
+    maindeck: tuple[CardCount, ...]
+    sideboard: tuple[CardCount, ...]
+
+@dataclass(frozen=True)
 class DeckFacts:
     """One deck as the snapshot freezes it: facts only, before any split scheme decides how it's used."""
     deck_id: int

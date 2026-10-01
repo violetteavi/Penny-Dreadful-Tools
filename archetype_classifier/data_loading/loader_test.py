@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 import pytest
 
 from archetype_classifier.data_loading import loader
-from archetype_classifier.data_loading.dataset import split_decks
+from archetype_classifier.data_loading.dataset import CardCount, split_decks
 from archetype_classifier.data_loading.labels import LabelFacts, LabelStatus
 from archetype_classifier.data_loading.splits import ExclusionReason, Split, SplitScheme
 from decksite.conftest import seeded_db  # noqa: F401  # The repo's seeded site database, reused as-is.
@@ -84,3 +84,25 @@ def test_a_snapshot_loads_back_with_every_decks_split_matching_the_pure_function
     pure = split_decks(loader.load_deck_facts(experiments_db, snapshot_id), loader.iter_deck_cards(), scheme)
     assert {i: (d.split, d.exclusion_reason, d.label_status, d.label_id, d.unseen_maindeck_copies) for i, d in snapshot.decks.items()} == \
            {i: (s.split, s.reason, s.label_status, s.label_id, s.unseen_maindeck_copies) for i, s in pure.decks.items()}
+
+
+# Scenario: a large maindeck loads in full (Scenarios.md, "Splitting decks"). The real deck 217677 is checked once, in the rebuild verification.
+
+@pytest.fixture
+def life_is_ez_seed(labelled_seed: Container) -> Iterator[int]:
+    """The first seeded deck enlarged to a 112-card maindeck (4 Lightning Bolt, 108 Mountain) and a 15-card sideboard, like deck 217677."""
+    deck_id = labelled_seed.deck_ids[0]
+    db().execute("UPDATE deck_card SET n = 108 WHERE deck_id = %s AND card = 'Mountain' AND NOT sideboard", [deck_id])
+    db().execute("INSERT INTO deck_card (deck_id, card, n, sideboard) VALUES (%s, 'Smash to Smithereens', 15, TRUE)", [deck_id])
+    try:
+        yield deck_id
+    finally:
+        db().execute("DELETE FROM deck_card WHERE deck_id = %s AND sideboard", [deck_id])
+        db().execute("UPDATE deck_card SET n = 56 WHERE deck_id = %s AND card = 'Mountain'", [deck_id])
+
+def test_a_112_card_maindeck_loads_in_full(life_is_ez_seed: int, experiments_db: Database) -> None:
+    contents = loader.load_contents([life_is_ez_seed])[life_is_ez_seed]
+    assert sum(c.n for c in contents.maindeck) == 112
+    assert sum(c.n for c in contents.sideboard) == 15
+    assert CardCount('Mountain', 108) in contents.maindeck
+    assert loader.load_deck_facts(experiments_db, loader.create_snapshot(experiments_db)).decks[life_is_ez_seed].maindeck_cards == 112

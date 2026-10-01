@@ -3,11 +3,11 @@
 It holds no decisions of its own; those live in dataset.py, labels.py and splits.py.
 """
 import json
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
-from archetype_classifier.data_loading.dataset import ArchetypeRow, ArchetypeSnapshot, DeckCardRow, DeckFacts, DeckRow, SnapshotFacts, snapshot_decks, split_decks
+from archetype_classifier.data_loading.dataset import ArchetypeRow, ArchetypeSnapshot, CardCount, DeckCardRow, DeckContents, DeckFacts, DeckRow, SnapshotFacts, snapshot_decks, split_decks
 from archetype_classifier.data_loading.labels import LabelChange, LabelFacts, LabelStatus
 from archetype_classifier.data_loading.slices import Snapshot, SnapshotDeck
 from archetype_classifier.data_loading.splits import ExclusionReason, Split, SplitScheme
@@ -104,6 +104,16 @@ def iter_deck_cards() -> Iterator[DeckCardRow]:
         rows = db().select('SELECT deck_id, card, n, sideboard FROM deck_card WHERE deck_id >= %s AND deck_id < %s', [start, start + DECK_CARD_CHUNK])
         for r in rows:
             yield DeckCardRow(r['deck_id'], r['card'], r['n'], bool(r['sideboard']))  # type: ignore[arg-type]
+
+def load_contents(deck_ids: Iterable[int]) -> dict[int, DeckContents]:
+    """The cards of the given decks, read a chunk of decks at a time. Maindecks of any size load in full."""
+    ids = sorted(set(deck_ids))
+    lines: dict[int, dict[bool, list[CardCount]]] = {i: {False: [], True: []} for i in ids}
+    for start in range(0, len(ids), DECK_CARD_CHUNK):
+        chunk = ids[start:start + DECK_CARD_CHUNK]
+        for r in db().select('SELECT deck_id, card, n, sideboard FROM deck_card WHERE deck_id IN %s ORDER BY deck_id, sideboard, card', [tuple(chunk)]):
+            lines[r['deck_id']][bool(r['sideboard'])].append(CardCount(r['card'], r['n']))  # type: ignore[index, arg-type]
+    return {i: DeckContents(tuple(side[False]), tuple(side[True])) for i, side in lines.items()}
 
 # Writing and reading the experiments database
 

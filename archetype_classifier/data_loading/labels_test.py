@@ -4,6 +4,9 @@ from archetype_classifier.data_loading.labels import DeckLabel, LabelChange, Lab
 
 RED_DECK_WINS = 2
 PRISONER = 3
+AZORIUS_CONTROL = 4
+WILDFIRE = 5
+THRYX_WILDFIRE = 6
 MARCH_2 = datetime(2024, 3, 2, tzinfo=UTC)
 MARCH_5 = datetime(2024, 3, 5, tzinfo=UTC)
 BOTH_RULES = (LabelRule.LATEST_ENTRY_IS_HUMAN, LabelRule.SITE_LABEL_IF_EVER_HUMAN)
@@ -25,6 +28,17 @@ def test_a_later_automatic_guess_the_site_refused_only_counts_under_the_latest_e
     history = [LabelChange(2, PRISONER, by_person=True, changed_at=MARCH_2), LabelChange(2, RED_DECK_WINS, by_person=False, changed_at=MARCH_5)]
     assert status(history, PRISONER, 'Prisoner', LabelRule.LATEST_ENTRY_IS_HUMAN) == DeckLabel(LabelStatus.UNVERIFIED, PRISONER)
     assert status(history, PRISONER, 'Prisoner', LabelRule.SITE_LABEL_IF_EVER_HUMAN) == DeckLabel(LabelStatus.VERIFIED, PRISONER)
+
+def test_a_curator_move_without_history_is_verified_only_when_the_site_label_counts() -> None:
+    history = [LabelChange(3, WILDFIRE, by_person=True, changed_at=MARCH_2)]
+    assert status(history, THRYX_WILDFIRE, 'Thryx-Wildfire', LabelRule.LATEST_ENTRY_IS_HUMAN) == DeckLabel(LabelStatus.UNVERIFIED, THRYX_WILDFIRE)
+    assert status(history, THRYX_WILDFIRE, 'Thryx-Wildfire', LabelRule.SITE_LABEL_IF_EVER_HUMAN) == DeckLabel(LabelStatus.VERIFIED, THRYX_WILDFIRE)
+
+def test_a_label_no_person_gave_is_unverified() -> None:
+    machine_only = [LabelChange(4, RED_DECK_WINS, by_person=False, changed_at=MARCH_2)]
+    for rule in BOTH_RULES:
+        assert status(machine_only, RED_DECK_WINS, 'Red Deck Wins', rule) == DeckLabel(LabelStatus.UNVERIFIED, RED_DECK_WINS)
+        assert status([], AZORIUS_CONTROL, 'Azorius Control', rule) == DeckLabel(LabelStatus.UNVERIFIED, AZORIUS_CONTROL)
 
 
 

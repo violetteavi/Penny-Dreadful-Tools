@@ -1,4 +1,5 @@
 """The model and run store against a real experiments database. The site database is replaced at its boundary (deck contents and legal cards), so a deck "deleted from the site" is simply missing from the contents."""
+import dataclasses
 import logging
 import re
 import time
@@ -161,3 +162,20 @@ def test_training_data_that_changed_underneath_gives_a_new_model_and_a_warning(e
         _, reloaded = load_model(experiments_db, 1)
     assert {p.guess_id for p in validation_predictions(experiments_db, reloaded)} == {RED_DECK_WINS}
     assert 'Model 1 is not reproducible: it trained on 5 decks' in caplog.text and 'now rebuild as 3' in caplog.text
+
+
+# Scenario: a different identity is a different model.
+
+def test_a_different_identity_is_a_different_model(experiments_db: Database, site: Site, caplog: pytest.LogCaptureFixture) -> None:
+    other_scheme = loader.create_scheme(experiments_db, SplitScheme('other'))
+    loader.insert_rows(experiments_db, 'deck_split', ['snapshot_id', 'scheme_id', 'deck_id', 'split', 'exclusion_reason', 'label_status', 'label_id', 'unseen_maindeck_copies'],
+                       [[1, other_scheme, i, split.value, None, status.value, label, 0] for i, (_, split, status, label, _) in DECKS.items()])
+    original = MostCommonArchetype({})
+    record = fit(experiments_db, original)
+    assert save_model(experiments_db, original, record) == 1
+    with caplog.at_level(logging.WARNING):
+        for expected_id, kwargs in enumerate([{'seed': 1}, {'validation_splits': frozenset({Split.HELD_OUT, Split.VALIDATION})}, {'scheme_id': other_scheme}], start=2):
+            variant = MostCommonArchetype({})
+            assert save_model(experiments_db, variant, fit(experiments_db, variant, **kwargs)) == expected_id  # type: ignore[arg-type]
+        assert save_model(experiments_db, original, dataclasses.replace(record, version=2)) == 5
+    assert caplog.text == ''

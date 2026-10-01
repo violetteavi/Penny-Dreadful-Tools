@@ -466,3 +466,61 @@ Scheme 1 was stored before the status rule and twins flag existed. Its stored se
 - **Check:**
   - load scheme 1's stored parameters
   - once, after the rebuild, compare against the backup database `archetype_experiments_v0`
+
+## Model inputs
+
+These scenarios belong to the experiment harness (#26). A deck set picks the decks, and conversion functions only change their shape: they attach each deck's cards and keep just the fields a model may see.
+
+The decks used below:
+- **Deck 1:** season 39, League, VERIFIED, labelled Red Deck Wins. Maindeck 4 Shock and 56 Mountain; sideboard 2 Smash to Smithereens.
+- **Deck 2:** season 39, League, VERIFIED, labelled Azorius Control. Maindeck 4 Essence Scatter and 56 Island; sideboard 2 Negate.
+- **Deck 3:** season 30, League, UNVERIFIED (labelled Red Deck Wins by an automatic guess only), reviewed. Maindeck 4 Shock and 56 Mountain.
+- **Deck 4:** season 30, League, UNLABELLED, not reviewed. Maindeck 4 Shock and 56 Mountain.
+
+Every card is legal in seasons 30 and 39.
+
+All scenarios here were proposed 2026-10-01.
+
+### Labelled and prediction decks come from the same deck set
+
+**Scheme:** the typical scheme (season rule 1–38 / 39 / 40–42 with 10% held out; status rule train {VERIFIED}, eval {VERIFIED}; twins off). Decks 1 and 2 are VALIDATION. The deck set is VALIDATION.
+
+- **Expect:**
+  - **Labelled decks:** deck 1 is labelled Red Deck Wins and deck 2 Azorius Control, each with its maindeck hash as its group key.
+  - **Prediction decks:** the same two decks with the same cards and source, and no label at all.
+  - **Both:** each deck's maindeck is its 60 cards and its sideboard its 2 cards, kept apart.
+- **Why it matters:** a model tunes on labelled decks and predicts on label-free ones, so the answer can't leak into a prediction.
+- **Check:** convert the VALIDATION deck set both ways and compare.
+
+### Training decks carry the site label and the label status
+
+**Scheme:** season rule 1–38 / 39 / 40–42 with 10% held out; status rule train {VERIFIED, UNVERIFIED, UNLABELLED}, eval {VERIFIED}; twins off. Decks 3 and 4 are TRAIN. The deck set is TRAIN.
+
+- **Expect:**
+  - **Deck 3:** archetype Red Deck Wins (its site label), status UNVERIFIED, reviewed.
+  - **Deck 4:** no archetype, status UNLABELLED, not reviewed.
+  - **Both:** season 30.
+- **Why it matters:** a model trained on several statuses needs to tell them apart, and one that mimics the site needs the reviewed flag.
+- **Check:** convert the TRAIN deck set.
+
+### The same deck always gives the same input
+
+**Scheme:** the typical scheme. Deck 1's contents are given with their lines in a different order.
+
+- **Expect:** the prediction deck is identical: maindeck and sideboard lines come out sorted by card name.
+- **Why it matters:** a model, and a fingerprint of its inputs, must not depend on the order the database returned rows in.
+- **Check:** convert deck 1 from both orders and compare.
+
+### A deck whose contents are missing is skipped with a warning
+
+**Scheme:** the typical scheme. The deck set has decks 1 and 2, but contents are given only for deck 1, for example because deck 2 was deleted from the site after the snapshot.
+
+- **Expect:** each conversion returns deck 1 only, and logs a warning naming deck 2 and a count of **1** skipped deck. Deck 1's input is exactly as if deck 2 weren't in the set.
+- **Why it matters:** data problems are non-fatal: the run carries on and says what it skipped.
+- **Check:** convert the deck set with deck 2's contents missing.
+
+### A model is found by its name
+
+- **Expect:** a model class registered under a name, such as "most common archetype", can be looked up by that name, and an unknown name raises an error that lists the registered names.
+- **Why it matters:** a stored model records only its name, version and parameters, so loading it needs the class from its name.
+- **Check:** register a model class, then look it up by name, and look up a name that isn't registered.

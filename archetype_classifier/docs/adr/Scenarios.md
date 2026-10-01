@@ -479,7 +479,7 @@ The decks used below:
 
 Every card is legal in seasons 30 and 39.
 
-All scenarios here were proposed 2026-10-01.
+All scenarios here were confirmed 2026-10-01.
 
 ### Labelled and prediction decks come from the same deck set
 

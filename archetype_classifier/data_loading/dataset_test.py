@@ -1,7 +1,7 @@
 from collections import Counter
 from datetime import UTC, datetime
 
-from archetype_classifier.data_loading.dataset import ArchetypeRow, DeckCardRow, DeckRow, snapshot_decks, split_decks
+from archetype_classifier.data_loading.dataset import ArchetypeRow, DeckCardRow, DeckRow, DeckSplit, TwinOverlap, snapshot_decks, split_decks, twin_overlaps
 from archetype_classifier.data_loading.labels import LabelChange, LabelFacts, LabelStatus
 from archetype_classifier.data_loading.splits import ExclusionReason, Split, SplitScheme
 
@@ -98,3 +98,14 @@ def test_a_card_is_unseen_unless_a_training_maindeck_has_it() -> None:
     assert [splits.decks[i].split for i in (1, 2, 3)] == [Split.TRAIN, Split.VALIDATION, Split.TEST]
     assert splits.decks[3].unseen_maindeck_copies == 8  # Smash to Smithereens was only in a training sideboard; Island only in a validation deck.
     assert splits.decks[2].unseen_maindeck_copies == 4
+
+
+# Scenario: a maindeck in both TRAIN and HELD_OUT is reported, not fatal.
+
+def test_a_maindeck_in_both_train_and_held_out_is_reported_unless_twins_are_allowed() -> None:
+    def deck_split(deck_id: int, split: Split) -> DeckSplit:
+        return DeckSplit(deck_id, split, None, LabelStatus.VERIFIED, RED_DECK_WINS.id, 0)
+    splits = {1: deck_split(1, Split.TRAIN), 2: deck_split(2, Split.HELD_OUT), 3: deck_split(3, Split.HELD_OUT)}  # Built by hand: the default can't produce this.
+    hashes = {1: 'a' * 40, 2: 'a' * 40, 3: 'b' * 40}
+    assert twin_overlaps(splits, hashes, SplitScheme('typical')) == [TwinOverlap('a' * 40, frozenset({1}), frozenset({2}))]
+    assert twin_overlaps(splits, hashes, SplitScheme('twins', allow_held_out_twins=True)) == []

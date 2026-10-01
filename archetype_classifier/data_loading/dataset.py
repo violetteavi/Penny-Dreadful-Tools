@@ -1,10 +1,13 @@
 import hashlib
+import logging
 from collections import Counter, defaultdict
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 from archetype_classifier.data_loading.labels import DeckLabel, LabelChange, LabelFacts, LabelStatus, label_facts, label_status
 from archetype_classifier.data_loading.splits import ExclusionReason, Split, SplitDecision, SplitScheme, assign_split
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -80,9 +83,17 @@ class DeckSplit:
     unseen_maindeck_copies: int  # Maindeck copies of cards that appear in no training maindeck.
 
 @dataclass(frozen=True)
+class TwinOverlap:
+    """A maindeck that is both trained on and held out, which the default scheme should never produce."""
+    maindeck_hash: str
+    train_deck_ids: frozenset[int]
+    held_out_deck_ids: frozenset[int]
+
+@dataclass(frozen=True)
 class SplitReport:
     by_split: Counter[Split]
     by_reason: Counter[ExclusionReason]
+    twin_overlaps: list[TwinOverlap]
 
 @dataclass(frozen=True)
 class Splits:
@@ -110,8 +121,22 @@ def split_decks(snapshot: Snapshot, deck_cards: Iterable[DeckCardRow], scheme: S
     decks = {deck_id: DeckSplit(deck_id, decision.split, decision.reason, labels[deck_id].status, labels[deck_id].label_id,
                                 sum(c.n for c in other_maindecks[deck_id] if c.card not in seen_cards))
              for deck_id, decision in decisions.items()}
-    report = SplitReport(Counter(s.split for s in decks.values()), Counter(s.reason for s in decks.values() if s.reason is not None))
+    hashes = {d.deck_id: d.maindeck_hash for d in snapshot.decks.values() if d.maindeck_hash is not None}
+    report = SplitReport(Counter(s.split for s in decks.values()), Counter(s.reason for s in decks.values() if s.reason is not None), twin_overlaps(decks, hashes, scheme))
     return Splits(decks, report)
+
+def twin_overlaps(splits: Mapping[int, DeckSplit], maindeck_hashes: Mapping[int, str], scheme: SplitScheme) -> list[TwinOverlap]:
+    """Maindecks in both TRAIN and HELD_OUT. Expected when twins are allowed; otherwise each is logged, and the split carries on."""
+    if scheme.allow_held_out_twins:
+        return []
+    by_hash: dict[str, dict[Split, set[int]]] = defaultdict(lambda: defaultdict(set))
+    for deck_id, s in splits.items():
+        if s.split in (Split.TRAIN, Split.HELD_OUT) and deck_id in maindeck_hashes:
+            by_hash[maindeck_hashes[deck_id]][s.split].add(deck_id)
+    overlaps = [TwinOverlap(h, frozenset(groups[Split.TRAIN]), frozenset(groups[Split.HELD_OUT])) for h, groups in sorted(by_hash.items()) if groups[Split.TRAIN] and groups[Split.HELD_OUT]]
+    for o in overlaps:
+        logger.warning('Maindeck %s is in both TRAIN (decks %s) and HELD_OUT (decks %s)', o.maindeck_hash, sorted(o.train_deck_ids), sorted(o.held_out_deck_ids))
+    return overlaps
 
 HASH_MODULUS = 2 ** 160
 

@@ -60,17 +60,22 @@ def to_json(value: Any) -> Any:
 
 def assign_split(*, deck_id: int, season_id: int, maindeck_hash: str | None, maindeck_cards: int, status: LabelStatus, scheme: SplitScheme) -> SplitDecision:
     """The split one deck belongs to under a scheme. Uses only the deck's own facts, so no other deck can change it."""
+    role = deck_role(season_id, maindeck_hash, scheme)
+    if role is None:
+        return SplitDecision(Split.EXCLUDED, ExclusionReason.RESERVED_SEASON)
+    if role == Split.TRAIN:
+        allowed, reason = scheme.train_statuses, ExclusionReason.STATUS_NOT_TRAINED_ON
+    else:
+        allowed, reason = scheme.eval_statuses, ExclusionReason.STATUS_NOT_EVALUATED
+    return SplitDecision(role, None) if status in allowed else SplitDecision(Split.EXCLUDED, reason)
+
+def deck_role(season_id: int, maindeck_hash: str | None, scheme: SplitScheme) -> Split | None:
+    """The split a deck's season and held-out group give it before its label status is considered, or None for a reserved season."""
     if season_id in scheme.test_seasons:
-        return SplitDecision(Split.TEST, None)
+        return Split.TEST
     if season_id in scheme.validation_seasons:
-        return SplitDecision(Split.VALIDATION, None)
+        return Split.VALIDATION
     if season_id in scheme.train_seasons:
         held_out = zlib.crc32((scheme.salt + str(maindeck_hash)).encode()) % 100 < scheme.held_out_percent
-        if held_out:
-            if status not in scheme.eval_statuses:
-                return SplitDecision(Split.EXCLUDED, ExclusionReason.STATUS_NOT_EVALUATED)
-            return SplitDecision(Split.HELD_OUT, None)
-        if status not in scheme.train_statuses:
-            return SplitDecision(Split.EXCLUDED, ExclusionReason.STATUS_NOT_TRAINED_ON)
-        return SplitDecision(Split.TRAIN, None)
-    return SplitDecision(Split.EXCLUDED, ExclusionReason.RESERVED_SEASON)
+        return Split.HELD_OUT if held_out else Split.TRAIN
+    return None

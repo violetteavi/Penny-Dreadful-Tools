@@ -27,6 +27,12 @@ def test_a_held_out_deck_is_scored_only_if_its_status_is_evaluated() -> None:
     assert split(30, LabelStatus.VERIFIED, HELD_OUT_HASH) == SplitDecision(Split.HELD_OUT, None)
     assert split(30, LabelStatus.UNVERIFIED, HELD_OUT_HASH) == SplitDecision(Split.EXCLUDED, ExclusionReason.STATUS_NOT_EVALUATED)
 
+def test_validation_and_test_season_decks_are_scored_only_if_their_status_is_evaluated() -> None:
+    assert split(39, LabelStatus.VERIFIED) == SplitDecision(Split.VALIDATION, None)
+    assert split(41, LabelStatus.VERIFIED) == SplitDecision(Split.TEST, None)
+    assert split(41, LabelStatus.UNLABELLED) == SplitDecision(Split.EXCLUDED, ExclusionReason.STATUS_NOT_EVALUATED)
+    assert split(39, LabelStatus.UNVERIFIED) == SplitDecision(Split.EXCLUDED, ExclusionReason.STATUS_NOT_EVALUATED)
+
 
 def test_seasons_map_to_splits() -> None:
     assert split(1, LabelStatus.VERIFIED, A_HASH, scheme=DEFAULT).split in {Split.TRAIN, Split.HELD_OUT}

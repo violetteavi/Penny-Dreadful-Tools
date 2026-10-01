@@ -139,8 +139,8 @@ Every deck a classifier may learn from: all decks from the training seasons, wha
 _Avoid_: Pool, training pool (a pool is the **Legal card pool**)
 
 **Eval set**:
-The decks set aside to score a classifier's predictions: held-out decks from the training seasons, plus decks from the validation and test seasons, each with the label it is scored against.
-_Avoid_: Dataset, test set (the test seasons are only one part of it)
+The decks a classifier's predictions are scored on, each with the label it is scored against, drawn from any combination of training, held-out, validation and test decks.
+_Avoid_: Dataset, test set (the test seasons are only one possible part of it)
 
 ## Relationships
 
@@ -149,7 +149,7 @@ _Avoid_: Dataset, test set (the test seasons are only one part of it)
 - An **Archetype** has at most one parent in the **Archetype tree**; a **Deck** may be labelled at any depth.
 - A **Guess** becomes a trusted **Label** only through **Review**.
 - Each **Rotation** can introduce **Unseen cards** into **Decks** relative to any classifier trained on earlier **Seasons**.
-- A **Deck** is in the **Train set** or the **Eval set**, never both. A deck that repeats a held-out maindeck is held out with it.
+- Held-out, validation and test decks are never in the **Train set**; a deck that repeats a held-out maindeck is held out with it. Training decks may also be in an **Eval set**, where their scores measure fit rather than generalisation.
 
 ## Flagged ambiguities
 

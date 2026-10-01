@@ -20,7 +20,8 @@ class MostCommonArchetype:
     def fit(self, training: Sequence[TrainingDeck], validation: Sequence[LabelledDeck], context: FitContext) -> None:
         counts = Counter(d.archetype_id for d in training if d.archetype_id is not None)
         self.training_decks = len(training)
-        self.archetype_id, self.with_archetype = max(counts.items(), key=lambda item: item[1])
+        if counts:  # The most decks wins; a tie goes to the lower archetype id, so refitting gives the same guess.
+            self.archetype_id, self.with_archetype = min(counts.items(), key=lambda item: (-item[1], item[0]))
 
     def predict(self, decks: Sequence[PredictDeck]) -> list[Prediction]:
         evidence: dict[str, JSON] = {'training_decks_with_archetype': self.with_archetype, 'training_decks': self.training_decks}

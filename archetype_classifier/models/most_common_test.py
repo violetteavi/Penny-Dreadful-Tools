@@ -29,3 +29,14 @@ def test_the_mock_model_guesses_the_most_common_training_archetype_for_every_dec
     evidence = {'training_decks_with_archetype': 3, 'training_decks': 5}
     assert model.predict(VALIDATION) == [Prediction(201, RED_DECK_WINS, evidence), Prediction(202, RED_DECK_WINS, evidence)]
     assert model.state() == {'archetype_id': RED_DECK_WINS, 'training_decks_with_archetype': 3, 'training_decks': 5}
+
+def test_a_tie_goes_to_the_lower_archetype_id_so_refitting_gives_the_same_guess() -> None:
+    for order in ([AZORIUS_CONTROL, AZORIUS_CONTROL, RED_DECK_WINS, RED_DECK_WINS], [RED_DECK_WINS, RED_DECK_WINS, AZORIUS_CONTROL, AZORIUS_CONTROL]):
+        model = MostCommonArchetype({})
+        model.fit([training_deck(101 + i, a) for i, a in enumerate(order)], [], CONTEXT)
+        assert [p.guess_id for p in model.predict(VALIDATION)] == [RED_DECK_WINS, RED_DECK_WINS]  # Red Deck Wins is 16, Azorius Control 49.
+
+def test_with_no_labelled_training_decks_every_deck_gets_no_guess() -> None:
+    model = MostCommonArchetype({})
+    model.fit([training_deck(101, None), training_deck(102, None)], [], CONTEXT)
+    assert [p.guess_id for p in model.predict(VALIDATION)] == [None, None]

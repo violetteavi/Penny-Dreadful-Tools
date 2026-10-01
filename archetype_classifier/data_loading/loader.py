@@ -1,8 +1,9 @@
 """The database adapter: reads the site's databases and reads and writes the experiments database.
 
-It holds no decisions of its own; those live in dataset.py, labels.py and splits.py.
+It holds no decisions of its own; those live in dataset.py, labels.py, splits.py and slices.py.
 """
 import json
+from collections import Counter
 from collections.abc import Iterable, Iterator, Sequence
 from datetime import UTC, datetime
 from typing import Any
@@ -196,16 +197,26 @@ def insert_rows(edb: Database, table: str, columns: Sequence[str], rows: Sequenc
         sql = f'INSERT INTO {table} ({", ".join(columns)}) VALUES ' + ', '.join([placeholders] * len(batch))
         edb.execute(sql, [value for row in batch for value in row])
 
+def summary(snapshot: Snapshot) -> dict[str, Counter[str]]:
+    """Deck counts by split, exclusion reason and label status, for a quick look at a snapshot under a scheme."""
+    decks = snapshot.decks.values()
+    return {
+        'split': Counter(d.split.value for d in decks),
+        'exclusion reason': Counter(d.exclusion_reason.value for d in decks if d.exclusion_reason),
+        'label status': Counter(d.label_status.value for d in decks),
+    }
+
 def main() -> None:
-    """Create a snapshot, a scheme, or a split from the command line, and print a summary."""
+    """Create a snapshot, a scheme or a split from the command line, or summarise a snapshot under a scheme."""
     import argparse
     parser = argparse.ArgumentParser(description=main.__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
-    commands.add_parser('snapshot', help='freeze the current labels').add_argument('--notes', default='')
+    commands.add_parser('snapshot', help='freeze every deck\'s facts').add_argument('--notes', default='')
     commands.add_parser('scheme', help='store the default split scheme under a name').add_argument('name')
-    p = commands.add_parser('split', help='materialise a split')
-    p.add_argument('snapshot_id', type=int)
-    p.add_argument('scheme_id', type=int)
+    for command in ('split', 'summary'):
+        p = commands.add_parser(command, help='put every deck in one split' if command == 'split' else 'count decks by split, reason and status')
+        p.add_argument('snapshot_id', type=int)
+        p.add_argument('scheme_id', type=int)
     args = parser.parse_args()
     edb = experiments_db()
     if args.command == 'snapshot':
@@ -213,7 +224,10 @@ def main() -> None:
     elif args.command == 'scheme':
         print(f'Created scheme {create_scheme(edb, SplitScheme(args.name))}')
     else:
-        print(f'Split {materialise_split(edb, args.snapshot_id, args.scheme_id)} decks')
+        if args.command == 'split':
+            print(f'Split {materialise_split(edb, args.snapshot_id, args.scheme_id)} decks')
+        for name, counts in summary(load_snapshot(edb, args.snapshot_id, args.scheme_id)).items():
+            print(name, dict(sorted(counts.items())))
 
 if __name__ == '__main__':
     main()

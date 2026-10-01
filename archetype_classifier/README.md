@@ -43,10 +43,10 @@ The dataset lives in a separate `archetype_experiments` database on the same Mar
 
 ```sh
 L="uv run --frozen python -m archetype_classifier.data_loading.loader"
-$L snapshot --notes "why this snapshot"   # freeze labels and the archetype tree; prints its id
+$L snapshot --notes "why this snapshot"   # freeze every deck's facts and the archetype tree; prints its id
 $L scheme default                         # store the default split scheme; prints its id
-$L split <snapshot id> <scheme id>        # store every deck's split and unseen-card count
-$L summary <snapshot id> <scheme id>      # counts by split and label source
+$L split <snapshot id> <scheme id>        # put every deck in exactly one split, then summarise
+$L summary <snapshot id> <scheme id>      # counts by split, exclusion reason and label status
 ```
 
-Experiments load data with `loader.load_dataset(loader.experiments_db(), snapshot_id, scheme_id)`, and read deck contents with `loader.iter_deck_cards()`.
+Experiments load every deck once with `loader.load_snapshot(loader.experiments_db(), snapshot_id, scheme_id)`, pick decks by split with `slices.build_deck_set(snapshot, splits)`, and read deck contents with `loader.load_contents(deck_ids)` and card legality with `loader.load_legal_cards(season_ids)`.

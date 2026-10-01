@@ -8,8 +8,9 @@ from datetime import UTC, datetime
 from typing import Any
 
 from archetype_classifier.data_loading.dataset import ArchetypeRow, ArchetypeSnapshot, DeckCardRow, DeckFacts, DeckRow, SnapshotFacts, snapshot_decks, split_decks
-from archetype_classifier.data_loading.labels import LabelChange, LabelFacts
-from archetype_classifier.data_loading.splits import SplitScheme
+from archetype_classifier.data_loading.labels import LabelChange, LabelFacts, LabelStatus
+from archetype_classifier.data_loading.slices import Snapshot, SnapshotDeck
+from archetype_classifier.data_loading.splits import ExclusionReason, Split, SplitScheme
 from decksite.database import db
 from shared.database import Database, get_database
 
@@ -140,6 +141,23 @@ def deck_facts(r: dict[str, Any]) -> DeckFacts:
 def utc(value: datetime | None) -> datetime | None:
     """MariaDB returns naive datetimes; the snapshot stores them in UTC."""
     return value.replace(tzinfo=UTC) if value is not None else None
+
+def load_snapshot(edb: Database, snapshot_id: int, scheme_id: int) -> Snapshot:
+    """Every deck in a snapshot with its split under a scheme: the one database read experiments make for decks."""
+    sql = f"""
+        SELECT {", ".join("ds." + c for c in DECK_FACT_COLUMNS)}, sp.split, sp.exclusion_reason, sp.label_status, sp.label_id, sp.unseen_maindeck_copies
+        FROM deck_snapshot AS ds
+        INNER JOIN deck_split AS sp ON sp.snapshot_id = ds.snapshot_id AND sp.deck_id = ds.deck_id
+        WHERE ds.snapshot_id = %s AND sp.scheme_id = %s
+    """
+    decks = {r['deck_id']: snapshot_deck(r) for r in edb.select(sql, [snapshot_id, scheme_id])}
+    return Snapshot(decks, load_archetype_snapshot(edb, snapshot_id), load_scheme(edb, scheme_id))  # type: ignore[arg-type]
+
+def snapshot_deck(r: dict[str, Any]) -> SnapshotDeck:
+    facts = deck_facts(r)
+    reason = ExclusionReason(r['exclusion_reason']) if r['exclusion_reason'] else None
+    return SnapshotDeck(facts.deck_id, facts.season_id, facts.source, facts.maindeck_hash, facts.reviewed, Split(r['split']), reason,
+                        LabelStatus(r['label_status']), r['label_id'], r['unseen_maindeck_copies'], facts.labels, facts.site_archetype_id)
 
 def load_archetype_snapshot(edb: Database, snapshot_id: int) -> dict[int, ArchetypeSnapshot]:
     return {r['archetype_id']: ArchetypeSnapshot(r['archetype_id'], r['name'], r['parent_id'], r['depth'])  # type: ignore[arg-type, misc]

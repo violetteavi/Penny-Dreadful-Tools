@@ -4,8 +4,9 @@ from datetime import UTC, datetime
 import pytest
 
 from archetype_classifier.data_loading import loader
-from archetype_classifier.data_loading.labels import LabelFacts
-from archetype_classifier.data_loading.splits import SplitScheme
+from archetype_classifier.data_loading.dataset import split_decks
+from archetype_classifier.data_loading.labels import LabelFacts, LabelStatus
+from archetype_classifier.data_loading.splits import ExclusionReason, Split, SplitScheme
 from decksite.conftest import seeded_db  # noqa: F401  # The repo's seeded site database, reused as-is.
 from decksite.database import db
 from shared.container import Container
@@ -66,3 +67,20 @@ def test_a_later_relabel_does_not_change_a_snapshot(labelled_seed: Container, ex
     deck = loader.load_deck_facts(experiments_db, snapshot_id).decks[validated]
     assert deck.site_archetype_id == labelled_seed.aggro_id
     assert deck.labels.human_archetype_id == labelled_seed.aggro_id
+
+def test_a_snapshot_loads_back_with_every_decks_split_matching_the_pure_functions(labelled_seed: Container, experiments_db: Database) -> None:
+    validated, automatic, unlabelled = labelled_seed.deck_ids
+    snapshot_id = loader.create_snapshot(experiments_db)
+    scheme = whole_seed_is_test(labelled_seed)
+    scheme_id = loader.create_scheme(experiments_db, scheme)
+    loader.materialise_split(experiments_db, snapshot_id, scheme_id)
+    snapshot = loader.load_snapshot(experiments_db, snapshot_id, scheme_id)
+
+    assert snapshot.scheme == scheme
+    assert (snapshot.decks[validated].split, snapshot.decks[validated].label_status, snapshot.decks[validated].label_id) == (Split.TEST, LabelStatus.VERIFIED, labelled_seed.aggro_id)
+    assert snapshot.decks[validated].unseen_maindeck_copies == 60  # No training decks, so every maindeck card is unseen.
+    assert (snapshot.decks[automatic].split, snapshot.decks[automatic].exclusion_reason) == (Split.EXCLUDED, ExclusionReason.STATUS_NOT_EVALUATED)
+    assert snapshot.decks[unlabelled].label_status == LabelStatus.UNVERIFIED  # Labelled on the site, but no history.
+    pure = split_decks(loader.load_deck_facts(experiments_db, snapshot_id), loader.iter_deck_cards(), scheme)
+    assert {i: (d.split, d.exclusion_reason, d.label_status, d.label_id, d.unseen_maindeck_copies) for i, d in snapshot.decks.items()} == \
+           {i: (s.split, s.reason, s.label_status, s.label_id, s.unseen_maindeck_copies) for i, s in pure.decks.items()}

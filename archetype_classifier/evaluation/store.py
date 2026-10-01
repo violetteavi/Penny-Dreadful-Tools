@@ -1,16 +1,19 @@
 """The model and run store, in the experiments database. Models are saved as their record and what fitting learned, runs as one guess per deck; never decks, never scores."""
 import hashlib
 import json
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from archetype_classifier.data_loading import loader
-from archetype_classifier.data_loading.slices import build_deck_set
+from archetype_classifier.data_loading.slices import build_deck_set, deck_ids_hash
 from archetype_classifier.data_loading.splits import Split
 from archetype_classifier.evaluation.metrics import ArchetypeTree
 from archetype_classifier.evaluation.model import JSON, FitContext, Model, Prediction, build_training_decks, model_class
 from shared.database import Database
+
+logger = logging.getLogger(__name__)
 
 SCHEMA = [
     """CREATE TABLE IF NOT EXISTS model (
@@ -75,6 +78,9 @@ def save_model(edb: Database, model: Model, record: ModelRecord) -> int:
             raise StoreConflict(f'The same model on the same decks gave a different result: model {stored_id} learned {stored_state}, this fit learned {state}. '
                                 'Make fitting deterministic (the seed must control all randomness), or bump the version.')
         return stored_id
+    earlier = sorted(int(r['id']) for r in edb.select('SELECT id FROM model WHERE identity_hash = %s', [identity]))  # type: ignore[call-overload]
+    for earlier_id in earlier:
+        logger.warning('The training decks changed since model %d, which has the same identity, so model %d can no longer be reproduced. Saving a new model.', earlier_id, earlier_id)
     return edb.insert("""INSERT INTO model (identity_hash, name, version, params, snapshot_id, scheme_id, seed, training_splits, validation_splits, training_count, training_hash,
                                             validation_count, validation_hash, state, fit_seconds) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                       [identity, record.name, record.version, canonical(record.params), record.snapshot_id, record.scheme_id, record.seed, splits_text(record.training_splits),
@@ -94,6 +100,10 @@ def load_model(edb: Database, model_id: int) -> tuple[ModelRecord, Model]:
     snapshot = loader.load_snapshot(edb, record.snapshot_id, record.scheme_id)
     training_set = build_deck_set(snapshot, record.training_splits, include_test=Split.TEST in record.training_splits)
     training = build_training_decks(training_set, loader.load_contents(training_set.decks))
+    rebuilt_hash = deck_ids_hash(d.deck.deck_id for d in training)
+    if rebuilt_hash != record.training_hash:
+        logger.warning('Model %d is not reproducible: it trained on %d decks (fingerprint %s), which now rebuild as %d (fingerprint %s). Loading it anyway.',
+                       model_id, record.training_count, record.training_hash, len(training), rebuilt_hash)
     context = FitContext(ArchetypeTree(snapshot.archetypes), loader.load_legal_cards({d.season_id for d in snapshot.decks.values()}), record.seed)
     return record, model_class(record.name).from_state(record.params, json.loads(str(row['state'])), training, context)
 

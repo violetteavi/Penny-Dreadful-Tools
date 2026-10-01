@@ -139,3 +139,25 @@ def test_a_fit_that_isnt_deterministic_fails_loudly(experiments_db: Database, si
         save_model(experiments_db, second, second_record)
     other_seed = Unrepeatable({})
     assert save_model(experiments_db, other_seed, fit(experiments_db, other_seed, seed=1)) == 2  # Nothing was stored.
+
+
+# Scenario: training data that changed underneath gives a new model and a warning.
+
+def test_training_data_that_changed_underneath_gives_a_new_model_and_a_warning(experiments_db: Database, site: Site, caplog: pytest.LogCaptureFixture) -> None:
+    original = MostCommonArchetype({})
+    assert save_model(experiments_db, original, fit(experiments_db, original)) == 1
+    site.delete(101, 102)  # Two of the three Red Deck Wins decks.
+
+    refit = MostCommonArchetype({})
+    record = fit(experiments_db, refit)
+    assert record.training_count == 3
+    assert {p.guess_id for p in validation_predictions(experiments_db, refit)} == {AZORIUS_CONTROL}
+    with caplog.at_level(logging.WARNING):
+        assert save_model(experiments_db, refit, record) == 2
+    assert 'training decks changed since model 1' in caplog.text and 'model 1 can no longer be reproduced' in caplog.text
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        _, reloaded = load_model(experiments_db, 1)
+    assert {p.guess_id for p in validation_predictions(experiments_db, reloaded)} == {RED_DECK_WINS}
+    assert 'Model 1 is not reproducible: it trained on 5 decks' in caplog.text and 'now rebuild as 3' in caplog.text

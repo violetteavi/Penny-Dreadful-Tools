@@ -39,6 +39,9 @@ def label_source(history: Sequence[LabelChange]) -> LabelSource:
     provenance = Provenance.VALIDATED_GUESS if previous.archetype_id == latest.archetype_id else Provenance.CORRECTED_GUESS
     return LabelSource(provenance, previous.archetype_id, latest.archetype_id)
 
+INCLUDED_SOURCES = frozenset({'League', 'Gatherling'})
+EXCLUDED_ARCHETYPES = frozenset({'Unclassified', 'Commander'})  # Placeholders, not strategies.
+
 class ScopeRule(Enum):
     LEAGUE_AND_GATHERLING = 'league_and_gatherling'  # League and Gatherling decks, not labelled Unclassified or Commander.
 
@@ -74,6 +77,8 @@ def label_facts(history: Sequence[LabelChange]) -> LabelFacts:
 
 def label_status(facts: LabelFacts, site_archetype_id: int | None, site_archetype_name: str | None, source: str, scope_rule: ScopeRule, label_rule: LabelRule) -> DeckLabel:
     """How far a deck's label can be trusted, and the label it is scored against."""
+    if not in_scope(source, site_archetype_name, scope_rule):
+        return DeckLabel(LabelStatus.OUT_OF_SCOPE, None)
     if site_archetype_id is None:
         return DeckLabel(LabelStatus.UNLABELLED, None)
     if label_rule == LabelRule.LATEST_ENTRY_IS_HUMAN:
@@ -81,6 +86,10 @@ def label_status(facts: LabelFacts, site_archetype_id: int | None, site_archetyp
     else:
         verified = facts.human_archetype_id is not None
     return DeckLabel(LabelStatus.VERIFIED if verified else LabelStatus.UNVERIFIED, site_archetype_id)
+
+def in_scope(source: str, site_archetype_name: str | None, scope_rule: ScopeRule) -> bool:
+    """Whether the scope rule evaluates decks like this one. There is one rule so far."""
+    return source in INCLUDED_SOURCES and site_archetype_name not in EXCLUDED_ARCHETYPES
 
 def latest_entry_is_human(facts: LabelFacts) -> bool:
     """Whether a person's label is the deck's latest history entry. A tie with an automatic guess counts as the person's."""

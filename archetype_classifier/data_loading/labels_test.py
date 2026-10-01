@@ -7,6 +7,8 @@ PRISONER = 3
 AZORIUS_CONTROL = 4
 WILDFIRE = 5
 THRYX_WILDFIRE = 6
+COMMANDER = 7
+UNCLASSIFIED = 8
 MARCH_2 = datetime(2024, 3, 2, tzinfo=UTC)
 MARCH_5 = datetime(2024, 3, 5, tzinfo=UTC)
 BOTH_RULES = (LabelRule.LATEST_ENTRY_IS_HUMAN, LabelRule.SITE_LABEL_IF_EVER_HUMAN)
@@ -43,6 +45,16 @@ def test_a_label_no_person_gave_is_unverified() -> None:
 def test_a_deck_without_a_label_is_unlabelled() -> None:
     for rule in BOTH_RULES:
         assert status([], None, None, rule) == DeckLabel(LabelStatus.UNLABELLED, None)
+
+def test_placeholder_archetypes_and_other_sources_are_out_of_scope() -> None:
+    commander = [LabelChange(7, COMMANDER, by_person=True, changed_at=MARCH_2)]
+    unclassified = [LabelChange(8, UNCLASSIFIED, by_person=True, changed_at=MARCH_2)]
+    external = [LabelChange(9, RED_DECK_WINS, by_person=True, changed_at=MARCH_2)]
+    for rule in BOTH_RULES:
+        assert status(commander, COMMANDER, 'Commander', rule) == DeckLabel(LabelStatus.OUT_OF_SCOPE, None)
+        assert status(unclassified, UNCLASSIFIED, 'Unclassified', rule) == DeckLabel(LabelStatus.OUT_OF_SCOPE, None)
+        assert status(external, RED_DECK_WINS, 'Red Deck Wins', rule, source='Tapped Out') == DeckLabel(LabelStatus.OUT_OF_SCOPE, None)
+        assert status([], None, None, rule, source='Tapped Out') == DeckLabel(LabelStatus.OUT_OF_SCOPE, None)
 
 
 

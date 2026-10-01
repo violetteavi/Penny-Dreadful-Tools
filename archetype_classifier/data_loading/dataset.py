@@ -3,11 +3,9 @@ from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
-from archetype_classifier.data_loading.labels import HUMAN_PROVENANCES, LabelChange, Provenance, label_source
+from archetype_classifier.data_loading.labels import EXCLUDED_ARCHETYPES, HUMAN_PROVENANCES, INCLUDED_SOURCES, LabelChange, Provenance, label_source
 from archetype_classifier.data_loading.splits import Split, SplitScheme, assign_split
 
-INCLUDED_SOURCES = frozenset({'League', 'Gatherling'})
-EXCLUDED_ARCHETYPES = frozenset({'Unclassified', 'Commander'})  # Placeholders, not strategies.
 
 @dataclass(frozen=True)
 class ArchetypeRow:

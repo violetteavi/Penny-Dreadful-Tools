@@ -1,10 +1,13 @@
 """What a model sees. A deck set picks the decks; these functions only change their shape, attaching each deck's cards and keeping just the fields a model may use."""
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 
 from archetype_classifier.data_loading.dataset import CardCount, DeckContents
 from archetype_classifier.data_loading.labels import LabelStatus
 from archetype_classifier.data_loading.slices import DeckSet, SnapshotDeck
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -30,13 +33,20 @@ class LabelledDeck:
     group_key: str  # The maindeck hash: identical maindecks are one piece of evidence.
 
 def build_training_decks(deck_set: DeckSet, contents: Mapping[int, DeckContents]) -> list[TrainingDeck]:
-    return [TrainingDeck(predict_deck(d, contents[d.deck_id]), d.season_id, d.site_archetype_id, d.reviewed, d.label_status) for d in deck_set.decks.values()]
+    return [TrainingDeck(predict_deck(d, c), d.season_id, d.site_archetype_id, d.reviewed, d.label_status) for d, c in with_contents(deck_set, contents)]
 
 def build_labelled_decks(deck_set: DeckSet, contents: Mapping[int, DeckContents]) -> list[LabelledDeck]:
-    return [LabelledDeck(predict_deck(d, contents[d.deck_id]), d.label_id, d.maindeck_hash) for d in deck_set.decks.values()]  # type: ignore[arg-type]
+    return [LabelledDeck(predict_deck(d, c), d.label_id, d.maindeck_hash) for d, c in with_contents(deck_set, contents)]  # type: ignore[arg-type]
 
 def build_predict_decks(deck_set: DeckSet, contents: Mapping[int, DeckContents]) -> list[PredictDeck]:
-    return [predict_deck(d, contents[d.deck_id]) for d in deck_set.decks.values()]
+    return [predict_deck(d, c) for d, c in with_contents(deck_set, contents)]
+
+def with_contents(deck_set: DeckSet, contents: Mapping[int, DeckContents]) -> list[tuple[SnapshotDeck, DeckContents]]:
+    """Each deck with its cards. A deck with none, for example one deleted from the site after the snapshot, is skipped with a warning."""
+    missing = sorted(i for i in deck_set.decks if i not in contents)
+    if missing:
+        logger.warning('Skipped %d deck%s with no contents: %s', len(missing), '' if len(missing) == 1 else 's', missing)
+    return [(d, contents[d.deck_id]) for d in deck_set.decks.values() if d.deck_id in contents]
 
 def predict_deck(deck: SnapshotDeck, contents: DeckContents) -> PredictDeck:
     """Card lines sorted by name, so the same deck always gives the same input whatever order its rows were read in."""

@@ -1,3 +1,7 @@
+import logging
+
+import pytest
+
 from archetype_classifier.data_loading.dataset import CardCount, DeckContents
 from archetype_classifier.data_loading.labels import LabelFacts, LabelStatus
 from archetype_classifier.data_loading.slices import Snapshot, SnapshotDeck, build_deck_set
@@ -54,3 +58,16 @@ def test_the_same_deck_always_gives_the_same_input() -> None:
     deck_set = build_deck_set(VALIDATION_DECKS, frozenset({Split.VALIDATION}))
     shuffled = {1: DeckContents((CardCount('Shock', 4), CardCount('Mountain', 56)), (CardCount('Smash to Smithereens', 2),)), 2: CONTENTS[2]}
     assert build_predict_decks(deck_set, shuffled) == build_predict_decks(deck_set, CONTENTS)
+
+
+# Scenario: a deck whose contents are missing is skipped with a warning.
+
+def test_a_deck_whose_contents_are_missing_is_skipped_with_a_warning(caplog: pytest.LogCaptureFixture) -> None:
+    deck_set = build_deck_set(VALIDATION_DECKS, frozenset({Split.VALIDATION}))
+    deck_1_only = {1: CONTENTS[1]}
+    for convert in (build_labelled_decks, build_predict_decks, build_training_decks):
+        caplog.clear()
+        with caplog.at_level(logging.WARNING):
+            converted = convert(deck_set, deck_1_only)
+        assert converted == convert(build_deck_set(snapshot(VALIDATION_DECKS.decks[1]), frozenset({Split.VALIDATION})), CONTENTS)
+        assert 'Skipped 1 deck with no contents: [2]' in caplog.text

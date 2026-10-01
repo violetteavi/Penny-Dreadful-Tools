@@ -147,9 +147,18 @@ class RunRecord:
 def save_run(edb: Database, model_id: int, scope: frozenset[Split], predictions: Sequence[Prediction], seconds: float = 0.0) -> int:
     """Save one guess per deck for a stored model, and return the run's id. Scores are never stored: they're recomputed from guesses."""
     ensure_schema(edb)
-    input_hash = deck_ids_hash(p.deck_id for p in predictions)
+    input_hash, guesses_hash = deck_ids_hash(p.deck_id for p in predictions), prediction_hash(predictions)
+    earlier = edb.select('SELECT id, input_hash, prediction_hash FROM run WHERE model_id = %s AND scope = %s ORDER BY id', [model_id, splits_text(scope)])
+    for r in earlier:
+        if r['input_hash'] == input_hash:
+            if r['prediction_hash'] != guesses_hash:
+                raise StoreConflict(f'The same model on the same decks guessed differently: run {r["id"]} has prediction hash {r["prediction_hash"]}, these predictions {guesses_hash}. '
+                                    'Make prediction deterministic, or bump the model version.')
+            return int(r['id'])  # type: ignore[call-overload]
+    for r in earlier:
+        logger.warning('The decks it predicted on changed since run %s of model %d on %s. Saving a new run.', r['id'], model_id, splits_text(scope))
     run_id = edb.insert('INSERT INTO run (model_id, scope, deck_count, input_hash, prediction_hash, seconds) VALUES (%s, %s, %s, %s, %s, %s)',
-                        [model_id, splits_text(scope), len(predictions), input_hash, prediction_hash(predictions), seconds])
+                        [model_id, splits_text(scope), len(predictions), input_hash, guesses_hash, seconds])
     loader.insert_rows(edb, 'run_guess', ['run_id', 'deck_id', 'guess_archetype_id', 'evidence'], [[run_id, p.deck_id, p.guess_id, canonical(p.evidence)] for p in predictions])
     return run_id
 

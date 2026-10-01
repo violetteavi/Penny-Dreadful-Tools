@@ -202,3 +202,24 @@ def test_a_run_stores_one_guess_per_deck(experiments_db: Database, site: Site) -
     assert run.prediction_hash == prediction_hash(predictions) == prediction_hash(list(reversed(predictions)))
     assert load_guesses(experiments_db, run_id) == {p.deck_id: p for p in predictions}
     assert load_guesses(experiments_db, run_id)[203].guess_id is None
+
+
+# Scenario: the same model on the same decks must guess the same.
+
+def test_the_same_model_on_the_same_decks_must_guess_the_same(experiments_db: Database, site: Site, caplog: pytest.LogCaptureFixture) -> None:
+    model_id = saved_model(experiments_db)
+    predictions = run_predictions(experiments_db, model_id)
+    assert save_run(experiments_db, model_id, VALIDATION, predictions) == 1
+    with caplog.at_level(logging.WARNING):
+        assert save_run(experiments_db, model_id, VALIDATION, list(reversed(predictions))) == 1
+    assert caplog.text == ''
+
+    changed = [p if p.deck_id != 202 else Prediction(202, AZORIUS_CONTROL, p.evidence) for p in predictions]
+    with pytest.raises(StoreConflict, match=f'run 1.*{prediction_hash(predictions)}.*{prediction_hash(changed)}'):
+        save_run(experiments_db, model_id, VALIDATION, changed)
+
+    site.delete(202)
+    with caplog.at_level(logging.WARNING):
+        assert save_run(experiments_db, model_id, VALIDATION, run_predictions(experiments_db, model_id)) == 2  # Run 2: nothing was stored by the conflict.
+    assert 'decks it predicted on changed since run 1' in caplog.text
+    assert set(load_guesses(experiments_db, 1)) == {201, 202, 203}

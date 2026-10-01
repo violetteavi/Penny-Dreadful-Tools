@@ -547,7 +547,7 @@ They use a mock model, **most common archetype**: fitting stores the most common
 - **Data that changed underneath** (a deck since deleted from the site) is a warning. The old record stays valid, and anything new gets a new id.
 - **Ids are never reused.**
 
-All scenarios here were proposed 2026-10-01.
+All scenarios here were confirmed 2026-10-01.
 
 ### The mock model guesses the most common training archetype
 

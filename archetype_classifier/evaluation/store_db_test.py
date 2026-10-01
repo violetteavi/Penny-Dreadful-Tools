@@ -100,3 +100,16 @@ def test_a_saved_model_loads_back_and_predicts_the_same(experiments_db: Database
     assert loaded.state() == model.state() == {'archetype_id': RED_DECK_WINS, 'training_decks_with_archetype': 3, 'training_decks': 5}
     assert validation_predictions(experiments_db, loaded) == validation_predictions(experiments_db, model)
     assert caplog.text == ''
+
+
+# Scenario: saving the same model again returns its id.
+
+def test_saving_the_same_model_again_returns_its_id(experiments_db: Database, site: Site, caplog: pytest.LogCaptureFixture) -> None:
+    first = MostCommonArchetype({})
+    assert save_model(experiments_db, first, fit(experiments_db, first)) == 1
+    again = MostCommonArchetype({})
+    with caplog.at_level(logging.WARNING):
+        assert save_model(experiments_db, again, fit(experiments_db, again)) == 1
+    assert caplog.text == ''
+    other_seed = MostCommonArchetype({})
+    assert save_model(experiments_db, other_seed, fit(experiments_db, other_seed, seed=1)) == 2  # Nothing was stored in between.

@@ -15,6 +15,7 @@ from shared.database import Database
 SCHEMA = [
     """CREATE TABLE IF NOT EXISTS model (
         id INT AUTO_INCREMENT PRIMARY KEY,
+        identity_hash CHAR(40) NOT NULL,
         name VARCHAR(190) NOT NULL,
         version INT NOT NULL,
         params TEXT NOT NULL,
@@ -30,6 +31,7 @@ SCHEMA = [
         state LONGTEXT NOT NULL,
         fit_seconds DOUBLE NOT NULL,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY (identity_hash, training_hash, validation_hash),
         FOREIGN KEY (snapshot_id) REFERENCES snapshot (id),
         FOREIGN KEY (scheme_id) REFERENCES split_scheme (id)
     )""",
@@ -59,13 +61,23 @@ def ensure_schema(edb: Database) -> None:
         edb.execute(statement)
 
 def save_model(edb: Database, model: Model, record: ModelRecord) -> int:
-    """Save a fitted model's record and state. Returns its id."""
+    """Save a fitted model's record and state, and return its id. Saving the same model again returns the stored model's id."""
     ensure_schema(edb)
-    return edb.insert("""INSERT INTO model (name, version, params, snapshot_id, scheme_id, seed, training_splits, validation_splits, training_count, training_hash,
-                                            validation_count, validation_hash, state, fit_seconds) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                      [record.name, record.version, canonical(record.params), record.snapshot_id, record.scheme_id, record.seed, splits_text(record.training_splits),
+    identity = identity_hash(record)
+    same = edb.select('SELECT id FROM model WHERE identity_hash = %s AND training_hash = %s AND validation_hash = %s', [identity, record.training_hash, record.validation_hash])
+    if same:
+        return int(same[0]['id'])  # type: ignore[call-overload]
+    return edb.insert("""INSERT INTO model (identity_hash, name, version, params, snapshot_id, scheme_id, seed, training_splits, validation_splits, training_count, training_hash,
+                                            validation_count, validation_hash, state, fit_seconds) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                      [identity, record.name, record.version, canonical(record.params), record.snapshot_id, record.scheme_id, record.seed, splits_text(record.training_splits),
                        splits_text(record.validation_splits), record.training_count, record.training_hash, record.validation_count, record.validation_hash,
                        canonical(model.state()), record.fit_seconds])
+
+def identity_hash(record: ModelRecord) -> str:
+    """A model's identity: name, version, parameters, snapshot, scheme, training splits, validation splits and seed."""
+    identity: JSON = [record.name, record.version, record.params, record.snapshot_id, record.scheme_id, splits_text(record.training_splits),
+                      splits_text(record.validation_splits), record.seed]
+    return hashlib.sha1(canonical(identity).encode()).hexdigest()
 
 def load_model(edb: Database, model_id: int) -> tuple[ModelRecord, Model]:
     """A stored model, rebuilt from its state. Its training decks are rebuilt from the record (snapshot, scheme and training splits)."""

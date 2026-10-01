@@ -7,7 +7,7 @@ from collections.abc import Iterator, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
-from archetype_classifier.data_loading.dataset import ArchetypeRow, ArchetypeSnapshot, DeckCardRow, DeckFacts, DeckRow, Snapshot, snapshot_decks, split_decks
+from archetype_classifier.data_loading.dataset import ArchetypeRow, ArchetypeSnapshot, DeckCardRow, DeckFacts, DeckRow, SnapshotFacts, snapshot_decks, split_decks
 from archetype_classifier.data_loading.labels import LabelChange, LabelFacts
 from archetype_classifier.data_loading.splits import SplitScheme
 from decksite.database import db
@@ -128,10 +128,10 @@ def load_scheme(edb: Database, scheme_id: int) -> SplitScheme:
     row = edb.select('SELECT name, params FROM split_scheme WHERE id = %s', [scheme_id])[0]
     return SplitScheme.from_params(str(row['name']), json.loads(str(row['params'])))
 
-def load_snapshot(edb: Database, snapshot_id: int) -> Snapshot:
+def load_deck_facts(edb: Database, snapshot_id: int) -> SnapshotFacts:
     sql = f'SELECT {", ".join(DECK_FACT_COLUMNS)} FROM deck_snapshot WHERE snapshot_id = %s'
     decks = {r['deck_id']: deck_facts(r) for r in edb.select(sql, [snapshot_id])}
-    return Snapshot(decks, load_archetype_snapshot(edb, snapshot_id))  # type: ignore[arg-type]
+    return SnapshotFacts(decks, load_archetype_snapshot(edb, snapshot_id))  # type: ignore[arg-type]
 
 def deck_facts(r: dict[str, Any]) -> DeckFacts:
     labels = LabelFacts(r['human_archetype_id'], utc(r['human_labelled_at']), r['machine_archetype_id'], utc(r['machine_labelled_at']))
@@ -147,7 +147,7 @@ def load_archetype_snapshot(edb: Database, snapshot_id: int) -> dict[int, Archet
 
 def materialise_split(edb: Database, snapshot_id: int, scheme_id: int) -> int:
     """Apply a scheme to a snapshot and store every deck's split. Returns the number of decks split."""
-    splits = split_decks(load_snapshot(edb, snapshot_id), iter_deck_cards(), load_scheme(edb, scheme_id))
+    splits = split_decks(load_deck_facts(edb, snapshot_id), iter_deck_cards(), load_scheme(edb, scheme_id))
     insert_rows(edb, 'deck_split', ['snapshot_id', 'scheme_id', 'deck_id', 'split', 'exclusion_reason', 'label_status', 'label_id', 'unseen_maindeck_copies'],
                 [[snapshot_id, scheme_id, s.deck_id, s.split.value, s.reason.value if s.reason else None, s.label_status.value, s.label_id, s.unseen_maindeck_copies]
                  for s in splits.decks.values()])

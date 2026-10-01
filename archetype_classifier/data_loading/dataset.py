@@ -51,11 +51,11 @@ class ArchetypeSnapshot:
     depth: int  # 0 for a top-level archetype.
 
 @dataclass(frozen=True)
-class Snapshot:
+class SnapshotFacts:
     decks: dict[int, DeckFacts]
     archetypes: dict[int, ArchetypeSnapshot]
 
-def snapshot_decks(decks: Sequence[DeckRow], label_history: Iterable[LabelChange], deck_cards: Iterable[DeckCardRow], archetypes: Sequence[ArchetypeRow]) -> Snapshot:
+def snapshot_decks(decks: Sequence[DeckRow], label_history: Iterable[LabelChange], deck_cards: Iterable[DeckCardRow], archetypes: Sequence[ArchetypeRow]) -> SnapshotFacts:
     """Freeze every deck's facts, whatever its source, label or cards. Which decks are used is a split scheme's decision."""
     history_by_deck: dict[int, list[LabelChange]] = defaultdict(list)
     for change in label_history:
@@ -70,7 +70,7 @@ def snapshot_decks(decks: Sequence[DeckRow], label_history: Iterable[LabelChange
     for d in decks:
         maindeck_hash = f'{maindeck_sums[d.id] % HASH_MODULUS:040x}' if maindeck_cards[d.id] else None
         snapshots[d.id] = DeckFacts(d.id, d.season_id, d.source, d.reviewed, maindeck_hash, maindeck_cards[d.id], label_facts(history_by_deck[d.id]), d.archetype_id)
-    return Snapshot(snapshots, freeze_archetypes(archetypes))
+    return SnapshotFacts(snapshots, freeze_archetypes(archetypes))
 
 @dataclass(frozen=True)
 class DeckSplit:
@@ -100,7 +100,7 @@ class Splits:
     decks: dict[int, DeckSplit]
     report: SplitReport
 
-def split_decks(snapshot: Snapshot, deck_cards: Iterable[DeckCardRow], scheme: SplitScheme) -> Splits:
+def split_decks(snapshot: SnapshotFacts, deck_cards: Iterable[DeckCardRow], scheme: SplitScheme) -> Splits:
     """Put every deck in exactly one split. Unseen cards are counted against training maindecks only, so excluded decks change nothing."""
     labels: dict[int, DeckLabel] = {}
     decisions: dict[int, SplitDecision] = {}

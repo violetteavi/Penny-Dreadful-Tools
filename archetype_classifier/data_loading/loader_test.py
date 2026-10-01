@@ -44,7 +44,7 @@ def whole_seed_is_test(seed: Container) -> SplitScheme:
 
 def test_a_snapshot_freezes_every_seeded_deck_with_its_label_facts(labelled_seed: Container, experiments_db: Database) -> None:
     validated, automatic, unlabelled = labelled_seed.deck_ids
-    snapshot = loader.load_snapshot(experiments_db, loader.create_snapshot(experiments_db))
+    snapshot = loader.load_deck_facts(experiments_db, loader.create_snapshot(experiments_db))
 
     assert set(labelled_seed.deck_ids) <= set(snapshot.decks)
     labels = snapshot.decks[validated].labels
@@ -63,6 +63,6 @@ def test_a_later_relabel_does_not_change_a_snapshot(labelled_seed: Container, ex
     db().execute('UPDATE deck SET archetype_id = %s WHERE id = %s', [control_id, validated])
     db().execute('INSERT INTO deck_archetype_change (changed_date, deck_id, archetype_id, person_id) VALUES (3, %s, %s, %s)', [validated, control_id, labelled_seed.person_id])
 
-    deck = loader.load_snapshot(experiments_db, snapshot_id).decks[validated]
+    deck = loader.load_deck_facts(experiments_db, snapshot_id).decks[validated]
     assert deck.site_archetype_id == labelled_seed.aggro_id
     assert deck.labels.human_archetype_id == labelled_seed.aggro_id

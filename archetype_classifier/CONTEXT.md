@@ -132,6 +132,16 @@ A deck matched by rules for more than one archetype.
 **Overlooked deck**:
 A deck labelled with an archetype that has rules, none of which match it.
 
+### Evaluation
+
+**Train set**:
+Every deck a classifier may learn from: all decks from the training seasons, whatever their source or label, except held-out decks.
+_Avoid_: Pool, training pool (a pool is the **Legal card pool**)
+
+**Eval set**:
+The decks set aside to score a classifier's predictions: held-out decks from the training seasons, plus decks from the validation and test seasons, each with the label it is scored against.
+_Avoid_: Dataset, test set (the test seasons are only one part of it)
+
 ## Relationships
 
 - A **Set** release triggers a **Rotation**, which starts a new **Season** with a new **Legal card pool**.
@@ -139,8 +149,11 @@ A deck labelled with an archetype that has rules, none of which match it.
 - An **Archetype** has at most one parent in the **Archetype tree**; a **Deck** may be labelled at any depth.
 - A **Guess** becomes a trusted **Label** only through **Review**.
 - Each **Rotation** can introduce **Unseen cards** into **Decks** relative to any classifier trained on earlier **Seasons**.
+- A **Deck** is in the **Train set** or the **Eval set**, never both. A deck that repeats a held-out maindeck is held out with it.
 
 ## Flagged ambiguities
 
 - "Reviewed" in the data is not reliable evidence that a person confirmed a label; use **Label history** instead.
 - "New card" can mean newly printed or newly legal; use **Unseen card** when the point is that a classifier hasn't seen it.
+- "Test" means only the test seasons, never the whole **Eval set**.
+- "Pool" means the **Legal card pool**, never the decks a classifier learns from.

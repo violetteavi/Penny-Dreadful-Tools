@@ -39,6 +39,19 @@ def test_a_deck_with_too_few_maindeck_cards_is_excluded_whatever_its_status() ->
     assert split(41, LabelStatus.VERIFIED, maindeck_cards=59) == SplitDecision(Split.EXCLUDED, ExclusionReason.MAINDECK_UNDER_60_CARDS)
 
 
+# Scenario: widening the status rule changes only the decks with that status.
+
+def test_training_on_unverified_decks_changes_only_unverified_training_decks() -> None:
+    baseline = SplitScheme('baseline', train_statuses=frozenset({LabelStatus.VERIFIED, LabelStatus.UNVERIFIED}))
+    decks = [(30, LabelStatus.VERIFIED, KEPT_HASH), (30, LabelStatus.UNVERIFIED, KEPT_HASH), (30, LabelStatus.UNLABELLED, KEPT_HASH),
+             (30, LabelStatus.VERIFIED, HELD_OUT_HASH), (30, LabelStatus.UNVERIFIED, HELD_OUT_HASH), (39, LabelStatus.VERIFIED, KEPT_HASH),
+             (41, LabelStatus.VERIFIED, KEPT_HASH), (41, LabelStatus.UNLABELLED, KEPT_HASH), (43, LabelStatus.VERIFIED, KEPT_HASH)]
+    typical = [split(season, status, maindeck_hash) for season, status, maindeck_hash in decks]
+    widened = [split(season, status, maindeck_hash, scheme=baseline) for season, status, maindeck_hash in decks]
+    assert widened[1] == SplitDecision(Split.TRAIN, None)
+    assert [w for i, w in enumerate(widened) if i != 1] == [t for i, t in enumerate(typical) if i != 1]
+
+
 def test_seasons_map_to_splits() -> None:
     assert split(1, LabelStatus.VERIFIED, A_HASH, scheme=DEFAULT).split in {Split.TRAIN, Split.HELD_OUT}
     assert split(39, LabelStatus.VERIFIED, A_HASH, scheme=DEFAULT).split == Split.VALIDATION

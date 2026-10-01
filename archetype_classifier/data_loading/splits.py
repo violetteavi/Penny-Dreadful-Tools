@@ -16,6 +16,7 @@ class Split(Enum):
 
 class ExclusionReason(Enum):
     RESERVED_SEASON = 'reserved season'
+    STATUS_NOT_TRAINED_ON = 'status not used for training'
 
 @dataclass(frozen=True)
 class SplitDecision:
@@ -31,17 +32,29 @@ class SplitScheme:
     test_seasons: frozenset[int] = frozenset({40, 41, 42})
     held_out_percent: int = 10  # Share of training-season decklists held out, identical maindecks together.
     salt: str = ''  # Mixed into the hash; a different salt gives a different held-out set.
+    train_statuses: frozenset[LabelStatus] = frozenset({LabelStatus.VERIFIED})  # Label statuses a model may train on.
 
     def to_params(self) -> dict[str, Any]:
         """Every parameter except the name, as JSON-ready values."""
-        return {f.name: sorted(v) if isinstance(v := getattr(self, f.name), frozenset) else v for f in fields(self) if f.name != 'name'}
+        return {f.name: to_json(getattr(self, f.name)) for f in fields(self) if f.name != 'name'}
 
     @classmethod
     def from_params(cls, name: str, params: dict[str, Any]) -> 'SplitScheme':
         """The inverse of to_params. Parameters missing from older schemes take their defaults."""
-        season_fields = {f.name for f in fields(cls) if f.name.endswith('_seasons')}
-        values: dict[str, Any] = {k: frozenset(v) if k in season_fields else v for k, v in params.items()}
+        values: dict[str, Any] = {}
+        for k, v in params.items():
+            if k.endswith('_seasons'):
+                values[k] = frozenset(v)
+            elif k.endswith('_statuses'):
+                values[k] = frozenset(LabelStatus(s) for s in v)
+            else:
+                values[k] = v
         return cls(name, **values)
+
+def to_json(value: Any) -> Any:
+    if isinstance(value, frozenset):
+        return sorted(to_json(v) for v in value)
+    return value.value if isinstance(value, Enum) else value
 
 def assign_split(*, deck_id: int, season_id: int, maindeck_hash: str | None, maindeck_cards: int, status: LabelStatus, scheme: SplitScheme) -> SplitDecision:
     """The split one deck belongs to under a scheme. Uses only the deck's own facts, so no other deck can change it."""
@@ -51,5 +64,9 @@ def assign_split(*, deck_id: int, season_id: int, maindeck_hash: str | None, mai
         return SplitDecision(Split.VALIDATION, None)
     if season_id in scheme.train_seasons:
         held_out = zlib.crc32((scheme.salt + str(maindeck_hash)).encode()) % 100 < scheme.held_out_percent
-        return SplitDecision(Split.HELD_OUT if held_out else Split.TRAIN, None)
+        if held_out:
+            return SplitDecision(Split.HELD_OUT, None)
+        if status not in scheme.train_statuses:
+            return SplitDecision(Split.EXCLUDED, ExclusionReason.STATUS_NOT_TRAINED_ON)
+        return SplitDecision(Split.TRAIN, None)
     return SplitDecision(Split.EXCLUDED, ExclusionReason.RESERVED_SEASON)

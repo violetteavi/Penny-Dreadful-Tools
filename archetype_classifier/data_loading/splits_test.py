@@ -19,6 +19,10 @@ def split(season_id: int, status: LabelStatus, maindeck_hash: str | None = KEPT_
 def test_a_verified_deck_from_a_training_season_is_trained_on() -> None:
     assert split(30, LabelStatus.VERIFIED) == SplitDecision(Split.TRAIN, None)
 
+def test_a_training_season_deck_whose_status_isnt_trained_on_is_excluded() -> None:
+    assert split(30, LabelStatus.UNVERIFIED) == SplitDecision(Split.EXCLUDED, ExclusionReason.STATUS_NOT_TRAINED_ON)
+    assert split(30, LabelStatus.UNLABELLED) == SplitDecision(Split.EXCLUDED, ExclusionReason.STATUS_NOT_TRAINED_ON)
+
 
 def test_seasons_map_to_splits() -> None:
     assert split(1, LabelStatus.VERIFIED, A_HASH, scheme=DEFAULT).split in {Split.TRAIN, Split.HELD_OUT}

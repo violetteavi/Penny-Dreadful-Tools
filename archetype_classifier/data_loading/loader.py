@@ -4,6 +4,7 @@ It holds no decisions of its own; those live in dataset.py, labels.py and splits
 """
 import json
 from collections import Counter
+from datetime import UTC, datetime
 from collections.abc import Iterator, Sequence
 from typing import Any
 
@@ -80,8 +81,8 @@ def load_decks() -> list[DeckRow]:
     return [DeckRow(r['id'], r['season_id'], r['source'], r['archetype_id']) for r in db().select(sql)]  # type: ignore[arg-type]
 
 def load_label_history() -> list[LabelChange]:
-    sql = 'SELECT deck_id, archetype_id, person_id IS NOT NULL AS by_person FROM deck_archetype_change ORDER BY deck_id, changed_date, id'
-    return [LabelChange(r['deck_id'], r['archetype_id'], bool(r['by_person'])) for r in db().select(sql)]  # type: ignore[arg-type]
+    sql = 'SELECT deck_id, archetype_id, person_id IS NOT NULL AS by_person, changed_date FROM deck_archetype_change ORDER BY deck_id, changed_date, id'
+    return [LabelChange(r['deck_id'], r['archetype_id'], bool(r['by_person']), datetime.fromtimestamp(r['changed_date'], UTC)) for r in db().select(sql)]  # type: ignore[arg-type]
 
 def load_archetypes() -> list[ArchetypeRow]:
     sql = 'SELECT a.id, a.name, c.ancestor AS parent_id FROM archetype AS a LEFT JOIN archetype_closure AS c ON c.descendant = a.id AND c.depth = 1 ORDER BY a.id'

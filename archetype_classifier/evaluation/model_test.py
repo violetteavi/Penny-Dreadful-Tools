@@ -1,3 +1,4 @@
+import dataclasses
 import logging
 
 import pytest
@@ -5,7 +6,7 @@ import pytest
 from archetype_classifier.data_loading.dataset import CardCount, DeckContents
 from archetype_classifier.data_loading.labels import LabelFacts, LabelStatus
 from archetype_classifier.data_loading.slices import Snapshot, SnapshotDeck, build_deck_set
-from archetype_classifier.data_loading.splits import Split, SplitScheme
+from archetype_classifier.data_loading.splits import ExclusionReason, Split, SplitScheme
 from archetype_classifier.evaluation.model import LabelledDeck, PredictDeck, TrainingDeck, build_labelled_decks, build_predict_decks, build_training_decks
 
 RED_DECK_WINS = 2
@@ -78,3 +79,23 @@ def test_a_deck_without_a_label_is_skipped_from_labelled_decks_with_a_warning(ca
         labelled = build_labelled_decks(deck_set, CONTENTS)
     assert [d.deck.deck_id for d in labelled] == [3]
     assert 'Skipped 1 deck with no label: [4]' in caplog.text
+
+
+# Every split converts the same way: the deck set picks the decks, and conversion never looks at the split.
+ONE_PER_SPLIT = snapshot(snapshot_deck(1, 30, Split.TRAIN, LabelStatus.VERIFIED, RED_DECK_WINS), snapshot_deck(2, 30, Split.HELD_OUT, LabelStatus.VERIFIED, AZORIUS_CONTROL),
+                         snapshot_deck(3, 39, Split.VALIDATION, LabelStatus.VERIFIED, RED_DECK_WINS), snapshot_deck(4, 41, Split.TEST, LabelStatus.VERIFIED, RED_DECK_WINS),
+                         dataclasses.replace(snapshot_deck(5, 43, Split.EXCLUDED, LabelStatus.VERIFIED, RED_DECK_WINS), exclusion_reason=ExclusionReason.RESERVED_SEASON))
+CONTENTS_BY_ID = {i: CONTENTS[1] for i in range(1, 6)}
+
+@pytest.mark.parametrize(('split', 'deck_id'), [(Split.TRAIN, 1), (Split.HELD_OUT, 2), (Split.VALIDATION, 3), (Split.TEST, 4)])
+def test_a_deck_set_of_any_split_converts_to_every_shape(split: Split, deck_id: int) -> None:
+    deck_set = build_deck_set(ONE_PER_SPLIT, frozenset({split}), include_test=split == Split.TEST)
+    deck = ONE_PER_SPLIT.decks[deck_id]
+    expected = PredictDeck(deck_id, 'League', CONTENTS[1].maindeck, CONTENTS[1].sideboard)
+    assert build_predict_decks(deck_set, CONTENTS_BY_ID) == [expected]
+    assert build_labelled_decks(deck_set, CONTENTS_BY_ID) == [LabelledDeck(expected, deck.site_archetype_id, deck.maindeck_hash)]  # type: ignore[arg-type]
+    assert build_training_decks(deck_set, CONTENTS_BY_ID) == [TrainingDeck(expected, deck.season_id, deck.site_archetype_id, True, LabelStatus.VERIFIED)]
+
+def test_excluded_decks_never_reach_a_model() -> None:
+    with pytest.raises(ValueError, match='EXCLUDED'):
+        build_deck_set(ONE_PER_SPLIT, frozenset({Split.EXCLUDED}))

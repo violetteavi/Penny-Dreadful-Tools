@@ -17,6 +17,7 @@ class Split(Enum):
 class ExclusionReason(Enum):
     RESERVED_SEASON = 'reserved season'
     STATUS_NOT_TRAINED_ON = 'status not used for training'
+    STATUS_NOT_EVALUATED = 'status not used for evaluation'
 
 @dataclass(frozen=True)
 class SplitDecision:
@@ -33,6 +34,7 @@ class SplitScheme:
     held_out_percent: int = 10  # Share of training-season decklists held out, identical maindecks together.
     salt: str = ''  # Mixed into the hash; a different salt gives a different held-out set.
     train_statuses: frozenset[LabelStatus] = frozenset({LabelStatus.VERIFIED})  # Label statuses a model may train on.
+    eval_statuses: frozenset[LabelStatus] = frozenset({LabelStatus.VERIFIED})  # Label statuses that are scored.
 
     def to_params(self) -> dict[str, Any]:
         """Every parameter except the name, as JSON-ready values."""
@@ -65,6 +67,8 @@ def assign_split(*, deck_id: int, season_id: int, maindeck_hash: str | None, mai
     if season_id in scheme.train_seasons:
         held_out = zlib.crc32((scheme.salt + str(maindeck_hash)).encode()) % 100 < scheme.held_out_percent
         if held_out:
+            if status not in scheme.eval_statuses:
+                return SplitDecision(Split.EXCLUDED, ExclusionReason.STATUS_NOT_EVALUATED)
             return SplitDecision(Split.HELD_OUT, None)
         if status not in scheme.train_statuses:
             return SplitDecision(Split.EXCLUDED, ExclusionReason.STATUS_NOT_TRAINED_ON)

@@ -23,6 +23,10 @@ def test_a_training_season_deck_whose_status_isnt_trained_on_is_excluded() -> No
     assert split(30, LabelStatus.UNVERIFIED) == SplitDecision(Split.EXCLUDED, ExclusionReason.STATUS_NOT_TRAINED_ON)
     assert split(30, LabelStatus.UNLABELLED) == SplitDecision(Split.EXCLUDED, ExclusionReason.STATUS_NOT_TRAINED_ON)
 
+def test_a_held_out_deck_is_scored_only_if_its_status_is_evaluated() -> None:
+    assert split(30, LabelStatus.VERIFIED, HELD_OUT_HASH) == SplitDecision(Split.HELD_OUT, None)
+    assert split(30, LabelStatus.UNVERIFIED, HELD_OUT_HASH) == SplitDecision(Split.EXCLUDED, ExclusionReason.STATUS_NOT_EVALUATED)
+
 
 def test_seasons_map_to_splits() -> None:
     assert split(1, LabelStatus.VERIFIED, A_HASH, scheme=DEFAULT).split in {Split.TRAIN, Split.HELD_OUT}

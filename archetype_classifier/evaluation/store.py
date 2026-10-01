@@ -59,6 +59,13 @@ SCHEMA = [
         PRIMARY KEY (run_id, deck_id),
         FOREIGN KEY (run_id) REFERENCES run (id) ON DELETE CASCADE
     )""",
+    """CREATE TABLE IF NOT EXISTS test_look (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        run_id INT NOT NULL,
+        rows_scored TEXT NOT NULL,
+        looked_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+        FOREIGN KEY (run_id) REFERENCES run (id)
+    )""",
 ]
 
 
@@ -169,6 +176,20 @@ def load_run(edb: Database, run_id: int) -> RunRecord:
 def load_guesses(edb: Database, run_id: int) -> dict[int, Prediction]:
     return {r['deck_id']: Prediction(r['deck_id'], r['guess_archetype_id'], json.loads(r['evidence']))  # type: ignore[misc, arg-type]
             for r in edb.select('SELECT deck_id, guess_archetype_id, evidence FROM run_guess WHERE run_id = %s', [run_id])}
+
+@dataclass(frozen=True)
+class TestLook:
+    rows: list[str]  # The rows scored, for example 'test, overall'.
+    looked_at: datetime
+
+def log_test_look(edb: Database, run_id: int, rows: Sequence[str]) -> None:
+    """Record one scoring of test rows. The test seasons are looked at rarely, and this log shows how often."""
+    ensure_schema(edb)
+    edb.execute('INSERT INTO test_look (run_id, rows_scored) VALUES (%s, %s)', [run_id, json.dumps(list(rows))])
+
+def load_test_looks(edb: Database, run_id: int) -> list[TestLook]:
+    return [TestLook(json.loads(r['rows_scored']), r['looked_at'])  # type: ignore[arg-type]
+            for r in edb.select('SELECT rows_scored, looked_at FROM test_look WHERE run_id = %s ORDER BY id', [run_id])]
 
 def canonical(value: JSON) -> str:
     """JSON with sorted keys, so equal values are equal text."""

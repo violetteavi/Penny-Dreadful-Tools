@@ -15,7 +15,7 @@ from archetype_classifier.data_loading.slices import build_deck_set, deck_ids_ha
 from archetype_classifier.data_loading.splits import ExclusionReason, Split, SplitScheme
 from archetype_classifier.evaluation.metrics import ArchetypeTree
 from archetype_classifier.evaluation.model import FitContext, LabelledDeck, Model, Prediction, TrainingDeck, build_labelled_decks, build_predict_decks, build_training_decks, register
-from archetype_classifier.evaluation.store import ModelRecord, StoreConflict, canonical, load_guesses, load_model, load_run, prediction_hash, save_model, save_run
+from archetype_classifier.evaluation.store import ModelRecord, StoreConflict, canonical, load_guesses, load_model, load_run, load_test_looks, log_test_look, prediction_hash, save_model, save_run
 from archetype_classifier.models.most_common import MostCommonArchetype
 from shared.database import Database
 
@@ -252,3 +252,15 @@ def test_a_relabel_on_the_site_changes_nothing_in_an_existing_snapshot(experimen
     assert caplog.text == ''
     assert record.training_count == 6
     assert newer.state() == {'archetype_id': RED_DECK_WINS, 'training_decks_with_archetype': 3, 'training_decks': 6}
+
+
+# Scenario: every look at the test seasons is logged.
+
+def test_every_look_at_the_test_seasons_is_logged(experiments_db: Database, site: Site) -> None:
+    run_id = save_run(experiments_db, saved_model(experiments_db), VALIDATION, run_predictions(experiments_db, 1))
+    looks = [['test, overall'], ['test, overall', 'test, by unseen copies'], ['test, overall']]
+    for rows in looks:
+        log_test_look(experiments_db, run_id, rows)
+    logged = load_test_looks(experiments_db, run_id)
+    assert [look.rows for look in logged] == looks
+    assert [look.looked_at for look in logged] == sorted(look.looked_at for look in logged)

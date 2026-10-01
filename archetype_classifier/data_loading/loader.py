@@ -4,8 +4,8 @@ It holds no decisions of its own; those live in dataset.py, labels.py and splits
 """
 import json
 from collections import Counter
-from datetime import UTC, datetime
 from collections.abc import Iterator, Sequence
+from datetime import UTC, datetime
 from typing import Any
 
 from archetype_classifier.data_loading.dataset import ArchetypeRow, ArchetypeSnapshot, Dataset, DatasetDeck, DeckCardRow, DeckRow, DeckSnapshot, Snapshot, snapshot_decks, split_decks

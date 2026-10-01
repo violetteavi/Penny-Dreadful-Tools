@@ -34,6 +34,10 @@ class DeckSet:
     decks: dict[int, SnapshotDeck]
     splits: frozenset[Split]
 
-def build_deck_set(snapshot: Snapshot, splits: frozenset[Split]) -> DeckSet:
-    """Exactly the decks in the requested splits."""
+def build_deck_set(snapshot: Snapshot, splits: frozenset[Split], include_test: bool = False) -> DeckSet:
+    """Exactly the decks in the requested splits. Excluded decks can't be picked, and test decks need include_test."""
+    if Split.EXCLUDED in splits:
+        raise ValueError('EXCLUDED decks are neither trained on nor scored, so they never form a deck set')
+    if Split.TEST in splits and not include_test:
+        raise ValueError('TEST decks are looked at rarely: pass include_test=True to pick them')
     return DeckSet({i: d for i, d in snapshot.decks.items() if d.split in splits}, splits)

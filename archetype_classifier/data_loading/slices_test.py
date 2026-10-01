@@ -1,3 +1,5 @@
+import pytest
+
 from archetype_classifier.data_loading.labels import LabelFacts, LabelStatus
 from archetype_classifier.data_loading.slices import Snapshot, SnapshotDeck, build_deck_set
 from archetype_classifier.data_loading.splits import ExclusionReason, Split, SplitScheme
@@ -21,3 +23,10 @@ def test_a_deck_set_holds_exactly_the_decks_in_its_splits() -> None:
     held_out_and_validation = build_deck_set(SNAPSHOT, frozenset({Split.HELD_OUT, Split.VALIDATION}))
     assert set(held_out_and_validation.decks) == {4, 5, 6}
     assert held_out_and_validation.splits == frozenset({Split.HELD_OUT, Split.VALIDATION})
+
+def test_excluded_decks_cant_be_picked_and_test_decks_need_the_gate() -> None:
+    with pytest.raises(ValueError, match='EXCLUDED'):
+        build_deck_set(SNAPSHOT, frozenset({Split.EXCLUDED}))
+    with pytest.raises(ValueError, match='include_test'):
+        build_deck_set(SNAPSHOT, frozenset({Split.VALIDATION, Split.TEST}))
+    assert set(build_deck_set(SNAPSHOT, frozenset({Split.TEST}), include_test=True).decks) == {7}

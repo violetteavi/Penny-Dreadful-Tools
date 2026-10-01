@@ -74,4 +74,14 @@ def label_facts(history: Sequence[LabelChange]) -> LabelFacts:
 
 def label_status(facts: LabelFacts, site_archetype_id: int | None, site_archetype_name: str | None, source: str, scope_rule: ScopeRule, label_rule: LabelRule) -> DeckLabel:
     """How far a deck's label can be trusted, and the label it is scored against."""
-    return DeckLabel(LabelStatus.VERIFIED, site_archetype_id)
+    if label_rule == LabelRule.LATEST_ENTRY_IS_HUMAN:
+        verified = latest_entry_is_human(facts) and facts.human_archetype_id == site_archetype_id
+    else:
+        verified = facts.human_archetype_id is not None
+    return DeckLabel(LabelStatus.VERIFIED if verified else LabelStatus.UNVERIFIED, site_archetype_id)
+
+def latest_entry_is_human(facts: LabelFacts) -> bool:
+    """Whether a person's label is the deck's latest history entry. A tie with an automatic guess counts as the person's."""
+    if facts.human_labelled_at is None:
+        return False
+    return facts.machine_labelled_at is None or facts.human_labelled_at >= facts.machine_labelled_at

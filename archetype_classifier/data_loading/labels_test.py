@@ -5,6 +5,7 @@ from archetype_classifier.data_loading.labels import DeckLabel, LabelChange, Lab
 RED_DECK_WINS = 2
 PRISONER = 3
 MARCH_2 = datetime(2024, 3, 2, tzinfo=UTC)
+MARCH_5 = datetime(2024, 3, 5, tzinfo=UTC)
 BOTH_RULES = (LabelRule.LATEST_ENTRY_IS_HUMAN, LabelRule.SITE_LABEL_IF_EVER_HUMAN)
 EPOCH = datetime(2020, 1, 1, tzinfo=UTC)  # Order is all these tests need.
 
@@ -19,6 +20,11 @@ def test_a_persons_label_that_still_stands_is_verified() -> None:
     history = [LabelChange(1, PRISONER, by_person=True, changed_at=MARCH_2)]
     for rule in BOTH_RULES:
         assert status(history, PRISONER, 'Prisoner', rule) == DeckLabel(LabelStatus.VERIFIED, PRISONER)
+
+def test_a_later_automatic_guess_the_site_refused_only_counts_under_the_latest_entry_rule() -> None:
+    history = [LabelChange(2, PRISONER, by_person=True, changed_at=MARCH_2), LabelChange(2, RED_DECK_WINS, by_person=False, changed_at=MARCH_5)]
+    assert status(history, PRISONER, 'Prisoner', LabelRule.LATEST_ENTRY_IS_HUMAN) == DeckLabel(LabelStatus.UNVERIFIED, PRISONER)
+    assert status(history, PRISONER, 'Prisoner', LabelRule.SITE_LABEL_IF_EVER_HUMAN) == DeckLabel(LabelStatus.VERIFIED, PRISONER)
 
 
 

@@ -291,17 +291,21 @@ These scenarios belong to data loading (#19). A split scheme puts every deck in 
 1. **Label status:** whether the deck's label can be trusted.
 2. **Role, then split:** the role comes from the deck's season and held-out group, and the status decides between that role's split and EXCLUDED.
 
-Unless a scenario says otherwise, the scheme is the default:
-- training seasons 1–38, validation season 39, test seasons 40–42
-- 10% of training-season maindecks held out
-- `train_statuses` = all four statuses, `eval_statuses` = VERIFIED only
-- `allow_held_out_twins` off
+Each scenario states its scheme in full:
+- **Season rule:** which seasons are training, validation and test, and what share of training-season maindecks is held out.
+- **Status rule:** which statuses may be trained on (`train_statuses`) and which may be scored (`eval_statuses`).
+- **Twins:** whether `allow_held_out_twins` is on.
+
+Most scenarios use the **typical scheme**:
+- **Season rule:** training seasons 1–38, validation season 39, test seasons 40–42, 10% of training-season maindecks held out.
+- **Status rule:** `train_statuses` = {VERIFIED}, `eval_statuses` = {VERIFIED}.
+- **Twins:** `allow_held_out_twins` off.
 
 All scenarios here were proposed 2026-10-01.
 
 ### Label status depends on the history, the site label and the label rule
 
-Each row is one League deck. "Person" and "automatic" are entries in its label history, oldest first.
+No split is involved. Scope rule: League and Gatherling decks, not labelled Unclassified or Commander. Each row is one deck from League unless it says otherwise. "Person" and "automatic" are entries in its label history, oldest first.
 
 | Deck | Label history | Site label | Status under `LATEST_ENTRY_IS_HUMAN` | Status under `SITE_LABEL_IF_EVER_HUMAN` | Scored against |
 |---|---|---|---|---|---|
@@ -323,7 +327,7 @@ Each row is one League deck. "Person" and "automatic" are entries in its label h
 
 ### A person's label and an automatic guess at the same moment
 
-A deck's history has a person's label (Prisoner) and an automatic guess (Red Deck Wins) with the same timestamp, and the site label is Prisoner.
+No split is involved. A deck's history has a person's label (Prisoner) and an automatic guess (Red Deck Wins) with the same timestamp, and the site label is Prisoner.
 
 - **Expect:** under `LATEST_ENTRY_IS_HUMAN`, the person's label counts as the latest, so the deck is VERIFIED.
 - **Why it matters:** the snapshot stores each label's time, not the order of the history entries, so a tie needs a rule.
@@ -332,74 +336,89 @@ A deck's history has a person's label (Prisoner) and an automatic guess (Red Dec
 
 ### A deck's split follows its role and its status
 
-Each row is one deck under the default scheme. "Held out" means its maindeck falls in the held-out 10%.
+**Scheme:** the typical scheme (season rule 1–38 / 39 / 40–42 with 10% held out; status rule train {VERIFIED}, eval {VERIFIED}; twins off).
+
+Each row is one deck. "Held out" means its maindeck falls in the held-out 10%.
 
 | Deck | Season | Held out | Status | Split | Exclusion reason |
 |---|---|---|---|---|---|
 | A | 30 | no | VERIFIED | TRAIN | |
-| B | 30 | no | UNLABELLED | TRAIN | |
-| C | 30 | yes | VERIFIED | HELD_OUT | |
-| D | 30 | yes | UNVERIFIED | EXCLUDED | status not used for evaluation |
-| E | 39 | — | VERIFIED | VALIDATION | |
-| F | 41 | — | VERIFIED | TEST | |
-| G | 41 | — | UNLABELLED | EXCLUDED | status not used for evaluation |
-| H | 43 | — | VERIFIED | EXCLUDED | reserved season |
-| I | 30 | no | VERIFIED, but no maindeck cards | EXCLUDED | no maindeck cards |
-
-With `train_statuses = {VERIFIED, UNVERIFIED}`, the scheme the #6 baseline uses, deck B becomes EXCLUDED ("status not used for training"). A season 30 deck with only an automatic label becomes TRAIN.
+| B | 30 | no | UNVERIFIED | EXCLUDED | status not used for training |
+| C | 30 | no | UNLABELLED | EXCLUDED | status not used for training |
+| D | 30 | yes | VERIFIED | HELD_OUT | |
+| E | 30 | yes | UNVERIFIED | EXCLUDED | status not used for evaluation |
+| F | 39 | — | VERIFIED | VALIDATION | |
+| G | 41 | — | VERIFIED | TEST | |
+| H | 41 | — | UNLABELLED | EXCLUDED | status not used for evaluation |
+| I | 43 | — | VERIFIED | EXCLUDED | reserved season |
+| J | 30 | no | VERIFIED, but no maindeck cards | EXCLUDED | no maindeck cards |
 
 - **Expect:** each deck gets the split and reason in its row.
-- **Why it matters:** deck G is an unlabelled deck from a test season. It can only become TEST or EXCLUDED, never TRAIN, so no model can learn the test seasons' new cards from it.
+- **Why it matters:** deck H is an unlabelled deck from a test season. It can only become TEST or EXCLUDED, never TRAIN, so no model can learn the test seasons' new cards from it.
 - **Check:** assign each deck under the scheme.
+
+### Widening the status rule changes only the decks with that status
+
+**Scheme:** season rule 1–38 / 39 / 40–42 with 10% held out; status rule train {VERIFIED, UNVERIFIED}, eval {VERIFIED}; twins off. The #6 baseline uses this rule, because the site's guesser matches against every reviewed, labelled deck.
+
+- **Expect:** with the same decks as the previous scenario, deck B becomes TRAIN. Every other deck keeps its split and reason: C, which is UNLABELLED, is still EXCLUDED, and E, which is held out, is still EXCLUDED because the eval statuses are unchanged.
+- **Check:** assign the same decks under both schemes and compare.
 
 ### A deck the snapshot doesn't contain is excluded
 
-A deck played after the snapshot was taken, so it has no row in the snapshot.
+**Scheme:** the typical scheme. The deck was played after the snapshot was taken, so it has no row in the snapshot.
 
-- **Expect:** asking for its split gives EXCLUDED, with reason "not in snapshot".
+- **Expect:** asking for its split gives EXCLUDED, with reason "not in snapshot", whatever the scheme.
 - **Check:** look up a deck id that isn't in the snapshot.
 
 ### Identical maindecks share a role by default
 
-Decks A (season 30, VERIFIED) and B (season 31, UNLABELLED) have the same maindeck.
+Decks A (season 30, VERIFIED) and B (season 31, VERIFIED) have the same maindeck.
 
-- **Expect, with `allow_held_out_twins` off:**
-  - if their maindeck is held out, A is HELD_OUT and B is EXCLUDED (status not used for evaluation)
+- **Scheme, twins off:** the typical scheme.
+- **Expect:**
+  - if their maindeck is held out, both are HELD_OUT
   - if it isn't, both are TRAIN
   - A is never TRAIN while B is HELD_OUT, or the other way round
-- **Expect, with `allow_held_out_twins` on:** A and B are each held out according to their own deck id, so A can be TRAIN while B is in the held-out group. About half of real held-out decks will then repeat a TRAIN maindeck, as in real use, where 48% of decks within a season repeat an earlier maindeck.
-- **Expect, with a different salt:** a different set of maindecks is held out.
-- **Check:** assign both decks under each setting.
+- **Scheme, twins on:** season rule 1–38 / 39 / 40–42 with 10% held out; status rule train {VERIFIED}, eval {VERIFIED}; `allow_held_out_twins` on.
+- **Expect:** A and B are each held out according to their own deck id, so A can be TRAIN while B is HELD_OUT. About half of real held-out decks will then repeat a TRAIN maindeck, as in real use, where 48% of decks within a season repeat an earlier maindeck.
+- **Scheme, different salt:** the typical scheme with a different salt.
+- **Expect:** a different set of maindecks is held out.
+- **Check:** assign both decks under each scheme.
 
 ### An excluded deck changes nothing else
 
-The scheme uses `train_statuses = {VERIFIED}`. There are three decks:
-- **A:** season 30, VERIFIED, maindeck 4 Lightning Bolt and 20 Mountain. It becomes TRAIN.
-- **B:** season 30, UNLABELLED, maindeck 4 Fireblast and 20 Mountain. It becomes EXCLUDED (status not used for training).
+**Scheme:** the typical scheme. There are three decks:
+- **A:** season 30, not held out, VERIFIED, maindeck 4 Lightning Bolt and 20 Mountain. It becomes TRAIN.
+- **B:** season 30, not held out, UNLABELLED, maindeck 4 Fireblast and 20 Mountain. It becomes EXCLUDED (status not used for training).
 - **C:** season 41, VERIFIED, maindeck 4 Lightning Bolt, 4 Fireblast and 16 Mountain. It becomes TEST.
 
 - **Expect:**
   - C has **4** unseen maindeck copies (the four Fireblast). B contains Fireblast but isn't a training deck, so it doesn't make Fireblast seen.
   - Removing B from the snapshot leaves A's and C's splits, statuses, labels and unseen counts exactly as they were. The only change in the report is one fewer deck excluded for "status not used for training".
-  - Likewise, with `allow_held_out_twins` on: if A is TRAIN and its unlabelled twin is in the held-out group, the twin is EXCLUDED, and A is used exactly as if the twin didn't exist.
+- **Also, with twins on** (season rule as typical; status rule train {VERIFIED}, eval {VERIFIED}; `allow_held_out_twins` on): A is TRAIN, and its UNLABELLED twin's deck id falls in the held-out group, so the twin is EXCLUDED (status not used for evaluation). A is used exactly as if the twin didn't exist.
 - **Why it matters:** an experiment should be the same whether or not data it doesn't use exists. That holds only if every count that looks at other decks counts included ones.
-- **Check:** split the snapshot with and without B, and compare every other deck.
+- **Check:** split the snapshot with and without the excluded deck, and compare every other deck.
 
 ### A card is unseen unless a training maindeck has it
 
-- **Expect:** a card that appears only in a TRAIN deck's sideboard, or only in a HELD_OUT, VALIDATION, TEST or EXCLUDED deck, is unseen. A card that left the legal pool and returned is seen if any TRAIN maindeck has it.
+**Scheme:** the typical scheme.
+
+- **Expect:** a card that appears only in a TRAIN deck's sideboard, or only in HELD_OUT, VALIDATION, TEST or EXCLUDED decks, is unseen. A card that left the legal pool and returned is seen if any TRAIN maindeck has it.
 - **Check:** count unseen copies for decks built around such cards.
 
 ### A maindeck in both TRAIN and HELD_OUT is reported, not fatal
 
-Under the default scheme, a set of splits that somehow has a TRAIN deck and a HELD_OUT deck with the same maindeck. The default can't produce this, so the case is built by hand.
+**Scheme:** the typical scheme, which can't produce this case, so the splits are built by hand: a TRAIN deck and a HELD_OUT deck with the same maindeck.
 
-- **Expect:** the split report lists the maindeck hash and both deck ids, logs a warning, and the split carries on. With `allow_held_out_twins` on, the same overlap is expected and isn't reported.
-- **Check:** run the overlap check on the hand-built splits.
+- **Expect:** the split report lists the maindeck hash and both deck ids, logs a warning, and the split carries on.
+- **Scheme, twins on:** season rule as typical; status rule train {VERIFIED}, eval {VERIFIED}; `allow_held_out_twins` on.
+- **Expect:** the same overlap is expected and isn't reported.
+- **Check:** run the overlap check on the hand-built splits under each scheme.
 
 ### A deck set holds exactly the decks in its splits
 
-A snapshot has three TRAIN, two HELD_OUT, one VALIDATION, one TEST and two EXCLUDED decks.
+No scheme is involved: the splits are given. A snapshot has three TRAIN, two HELD_OUT, one VALIDATION, one TEST and two EXCLUDED decks.
 
 - **Expect:**
   - a deck set of TRAIN has the three TRAIN decks
@@ -411,12 +430,12 @@ A snapshot has three TRAIN, two HELD_OUT, one VALIDATION, one TEST and two EXCLU
 
 ### Older schemes load with today's defaults
 
-Scheme 1 was stored before the new parameters existed.
+Scheme 1 was stored before the status rule and twins flag existed. Its stored season rule is training seasons 1–38, validation season 39, test seasons 40–42, with 10% held out.
 
-- **Expect:** it loads with:
+- **Expect:** it loads with the typical scheme's status rule and twins setting:
   - scope rule League and Gatherling
   - label rule `LATEST_ENTRY_IS_HUMAN`
-  - `train_statuses` all, `eval_statuses` VERIFIED
+  - `train_statuses` {VERIFIED}, `eval_statuses` {VERIFIED}
   - `allow_held_out_twins` off
 
   Its HELD_OUT, VALIDATION and TEST decks are then exactly its old ground-truth decks in those splits.

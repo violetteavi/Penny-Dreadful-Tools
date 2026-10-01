@@ -352,9 +352,12 @@ Each row is one deck. "Held out" means its maindeck falls in the held-out 10%.
 | H | 41 | — | UNLABELLED | EXCLUDED | status not used for evaluation |
 | I | 43 | — | VERIFIED | EXCLUDED | reserved season |
 | J | 30 | no | VERIFIED, but no maindeck cards | EXCLUDED | no maindeck cards |
+| K | 30 | no | VERIFIED, but a 59-card maindeck (4 Shock, 55 Mountain) | EXCLUDED | maindeck under 60 cards |
 
 - **Expect:** each deck gets the split and reason in its row.
-- **Why it matters:** deck H is an unlabelled deck from a test season. It can only become TEST or EXCLUDED, never TRAIN, so no model can learn the test seasons' new cards from it.
+- **Why it matters:**
+  - Deck H is an unlabelled deck from a test season. It can only become TEST or EXCLUDED, never TRAIN, so no model can learn the test seasons' new cards from it.
+  - Decks J and K have broken data. Every legal maindeck has at least 60 cards, and the local database has 19 decks with fewer, as few as 8, which are probably broken imports.
 - **Check:** assign each deck under the scheme.
 
 ### Widening the status rule changes only the decks with that status
@@ -427,6 +430,27 @@ No scheme is involved: the splits are given. A snapshot has three TRAIN, two HEL
   - asking for TEST raises an error unless `include_test` is set, and then returns the one TEST deck
   - two deck sets with the same decks have the same fingerprint, in whatever order the decks were added; adding a deck changes it
 - **Check:** build each deck set and compare.
+
+### A large maindeck loads in full
+
+Deck 217677, "Life is EZ 112", is a season 29 League deck labelled Life is Ez. It has a 112-card maindeck and a 15-card sideboard. Maindecks can be much larger than 60 cards: 10,365 local decks are, up to 1,400 cards.
+
+- **Expect:**
+  - the snapshot freezes it, with a maindeck hash over all 112 cards
+  - it isn't excluded, because 112 is at least 60
+  - loading its contents returns 112 maindeck cards and 15 sideboard cards
+- **Why it matters:** nothing in loading or hashing may assume a 60-card maindeck.
+- **Check:**
+  - a seeded test with a 112-card maindeck (4 Shock and 108 Mountain, both legal in season 29), so it runs without the local dump
+  - once, in the rebuild verification, deck 217677 itself
+
+### Card legality is per season
+
+- **Expect:** loading the legal cards for seasons 30 and 41 gives Shock, Burst Lightning and Mountain in both. Lightning Bolt and Fireblast are in neither.
+- **Why it matters:** the baseline's playability weights count only the seasons in which each card was legal, as the site does.
+- **Check:**
+  - a seeded test that inserts those legal-card rows
+  - once, in the rebuild verification, the real seasons 30 and 41
 
 ### Older schemes load with today's defaults
 

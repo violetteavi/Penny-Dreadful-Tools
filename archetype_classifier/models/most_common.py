@@ -1,7 +1,7 @@
 """A mock model: it always guesses the most common archetype among its training decks. The simplest real model to store, and a floor every later model should beat."""
 from collections import Counter
 from collections.abc import Sequence
-from typing import ClassVar
+from typing import ClassVar, cast
 
 from archetype_classifier.evaluation.model import JSON, FitContext, LabelledDeck, PredictDeck, Prediction, TrainingDeck, register
 
@@ -32,4 +32,9 @@ class MostCommonArchetype:
 
     @classmethod
     def from_state(cls, params: dict[str, JSON], state: dict[str, JSON], training: Sequence[TrainingDeck], context: FitContext) -> 'MostCommonArchetype':
-        raise NotImplementedError
+        """Everything the model learned is in its state, so the training decks aren't needed."""
+        model = cls(params)
+        model.archetype_id = cast(int | None, state['archetype_id'])
+        model.with_archetype = cast(int, state['training_decks_with_archetype'])
+        model.training_decks = cast(int, state['training_decks'])
+        return model

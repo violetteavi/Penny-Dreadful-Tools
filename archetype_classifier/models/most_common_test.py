@@ -1,7 +1,7 @@
 from archetype_classifier.data_loading.dataset import ArchetypeSnapshot, CardCount
 from archetype_classifier.data_loading.labels import LabelStatus
 from archetype_classifier.evaluation.metrics import ArchetypeTree
-from archetype_classifier.evaluation.model import FitContext, PredictDeck, Prediction, TrainingDeck, model_class
+from archetype_classifier.evaluation.model import JSON, FitContext, PredictDeck, Prediction, TrainingDeck, model_class
 from archetype_classifier.models.most_common import MostCommonArchetype
 
 RED_DECK_WINS, AZORIUS_CONTROL = 16, 49  # Their ids in the archetype tree.
@@ -26,7 +26,7 @@ def test_the_mock_model_guesses_the_most_common_training_archetype_for_every_dec
                 training_deck(104, AZORIUS_CONTROL), training_deck(105, AZORIUS_CONTROL)]
     model = MostCommonArchetype({})
     model.fit(training, [], CONTEXT)
-    evidence = {'training_decks_with_archetype': 3, 'training_decks': 5}
+    evidence: dict[str, JSON] = {'training_decks_with_archetype': 3, 'training_decks': 5}
     assert model.predict(VALIDATION) == [Prediction(201, RED_DECK_WINS, evidence), Prediction(202, RED_DECK_WINS, evidence)]
     assert model.state() == {'archetype_id': RED_DECK_WINS, 'training_decks_with_archetype': 3, 'training_decks': 5}
 
@@ -40,3 +40,11 @@ def test_with_no_labelled_training_decks_every_deck_gets_no_guess() -> None:
     model = MostCommonArchetype({})
     model.fit([training_deck(101, None), training_deck(102, None)], [], CONTEXT)
     assert [p.guess_id for p in model.predict(VALIDATION)] == [None, None]
+
+def test_the_mock_model_is_registered_and_rebuilds_from_its_state() -> None:
+    training = [training_deck(101, RED_DECK_WINS), training_deck(102, RED_DECK_WINS), training_deck(104, AZORIUS_CONTROL)]
+    fitted = MostCommonArchetype({})
+    fitted.fit(training, [], CONTEXT)
+    rebuilt = model_class('most common archetype').from_state({}, fitted.state(), [], CONTEXT)  # Its state holds everything it learned.
+    assert rebuilt.predict(VALIDATION) == fitted.predict(VALIDATION)
+    assert rebuilt.state() == fitted.state() == {'archetype_id': RED_DECK_WINS, 'training_decks_with_archetype': 2, 'training_decks': 3}

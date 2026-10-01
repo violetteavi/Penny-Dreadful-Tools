@@ -553,7 +553,7 @@ All scenarios here were confirmed 2026-10-01.
 
 - **Expect:**
   - every deck it predicts on, whatever its cards, is guessed **Red Deck Wins**, with evidence of 3 training decks out of 5
-  - its saved state is just the Red Deck Wins archetype id
+  - its saved state is the Red Deck Wins archetype id and the two counts behind its evidence (3 and 5), so a reloaded model reports the evidence it was fitted with
 - **Expect, with a tie** (decks 101, 102, 104 and 105): the archetype with the lower id wins, so fitting twice always gives the same guess.
 - **Expect, with no labelled training decks:** every deck gets no guess.
 - **Check:** fit on each set of training decks, then predict on decks 201 and 202.
@@ -566,7 +566,7 @@ The mock model is fitted and saved. It gets id 1.
   - **The record:** name "most common archetype", version 1, its parameters, snapshot 1, scheme 1, seed 0, training splits {TRAIN}, validation splits {VALIDATION}, fit time, and:
     - training: **5** decks and the fingerprint of decks 101–105
     - validation: **2** decks and the fingerprint of decks 201 and 202
-  - **Its state:** the Red Deck Wins archetype id, as JSON.
+  - **Its state:** the Red Deck Wins archetype id and the counts 3 and 5, as JSON.
   - **Loading model 1:** gives back the same record and a model whose predictions on 201 and 202 are identical, with no warning.
 - **Why it matters:** a stored model has to be reusable later without refitting, and its record has to say exactly which decks trained and tuned it.
 - **Check:** save, load, and predict again.

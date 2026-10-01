@@ -524,3 +524,138 @@ All scenarios here were confirmed 2026-10-01.
 - **Expect:** a model class registered under a name, such as "most common archetype", can be looked up by that name, and an unknown name raises an error that lists the registered names.
 - **Why it matters:** a stored model records only its name, version and parameters, so loading it needs the class from its name.
 - **Check:** register a model class, then look it up by name, and look up a name that isn't registered.
+
+## Storing models and runs
+
+These scenarios belong to the model and run store (#23). A fitted model is saved as its record and what fitting learned, never its decks. A run is saved as one guess per deck, never as scores.
+
+They use a mock model, **most common archetype**: fitting stores the most common archetype among the training decks, and it always guesses that archetype. It's the simplest real model to save and load, and a floor every later model should beat.
+
+**Decks:** 60-card League decks of 4 Shock and 56 Mountain (Red Deck Wins), or 4 Essence Scatter and 56 Island (Azorius Control), all legal in seasons 30 and 39. Unless a scenario says otherwise:
+- **Training decks:** 101, 102 and 103 (Red Deck Wins) and 104 and 105 (Azorius Control), VERIFIED, season 30.
+- **Validation decks:** 201 (Red Deck Wins) and 202 (Azorius Control), VERIFIED, season 39.
+
+**Scheme**, unless a scenario says otherwise: the typical scheme (season rule 1–38 / 39 / 40–42 with 10% held out; status rule train {VERIFIED}, eval {VERIFIED}; twins off). Snapshot 1 and scheme 1. The model trains on {TRAIN} and tunes on {VALIDATION}, with seed 0.
+
+**What identifies what:**
+- A model's **identity** is its name, version, parameters, snapshot, scheme, training splits, validation splits and seed.
+- A model also records **fingerprints** of the decks it actually trained and tuned on: the deck ids left after skipping any with missing contents.
+- A run records its model, its scope, and a fingerprint of the decks it actually predicted on.
+
+**The rules:**
+- **The same model on the same decks must give the same result, or it's an error.**
+- **Data that changed underneath** (a deck since deleted from the site) is a warning. The old record stays valid, and anything new gets a new id.
+- **Ids are never reused.**
+
+All scenarios here were confirmed 2026-10-01.
+
+### The mock model guesses the most common training archetype
+
+- **Expect:**
+  - every deck it predicts on, whatever its cards, is guessed **Red Deck Wins**, with evidence of 3 training decks out of 5
+  - its saved state is the Red Deck Wins archetype id and the two counts behind its evidence (3 and 5), so a reloaded model reports the evidence it was fitted with
+- **Expect, with a tie** (decks 101, 102, 104 and 105): the archetype with the lower id wins, so fitting twice always gives the same guess.
+- **Expect, with no labelled training decks:** every deck gets no guess.
+- **Check:** fit on each set of training decks, then predict on decks 201 and 202.
+
+### A saved model loads back and predicts the same
+
+The mock model is fitted and saved. It gets id 1.
+
+- **Expect:**
+  - **The record:** name "most common archetype", version 1, its parameters, snapshot 1, scheme 1, seed 0, training splits {TRAIN}, validation splits {VALIDATION}, fit time, and:
+    - training: **5** decks and the fingerprint of decks 101–105
+    - validation: **2** decks and the fingerprint of decks 201 and 202
+  - **Its state:** the Red Deck Wins archetype id and the counts 3 and 5, as JSON.
+  - **Loading model 1:** gives back the same record and a model whose predictions on 201 and 202 are identical, with no warning.
+- **Why it matters:** a stored model has to be reusable later without refitting, and its record has to say exactly which decks trained and tuned it.
+- **Check:** save, load, and predict again.
+
+### Saving the same model again returns its id
+
+Model 1 is fitted again: same identity, same decks.
+
+A model counts as **the same model** as a stored one when all three of these match, checked in order:
+1. **Identity:** name, version, parameters, snapshot, scheme, training splits, validation splits and seed.
+2. **Decks:** the training and validation fingerprints, so it learned from exactly the same decks.
+3. **Result:** its state, what fitting learned.
+
+If only the first two match, the same model gave a different result (the next scenario). If only the identity matches, the data changed underneath (the one after).
+
+- **Expect:** all three match model 1, so saving returns id **1**. No new model is stored, and nothing is logged.
+- **Why it matters:** re-running an experiment shouldn't pile up copies of one model.
+- **Check:** fit and save twice, then count the stored models.
+
+### A fit that isn't deterministic fails loudly
+
+A stand-in model whose fitting picks its archetype at random, ignoring the seed, is fitted twice with the same identity on the same decks, and its two states differ.
+
+- **Expect:**
+  - the first save gets an id
+  - the second raises an error that names that id and both states, and stores nothing
+- **Why it matters:** the same model on the same decks must give the same result. A seed that doesn't control all the randomness is a bug to fix, not a second result to keep.
+- **Check:** save the stand-in model twice.
+
+### Training data that changed underneath gives a new model and a warning
+
+Model 1 was saved. Then decks 101 and 102, two of the Red Deck Wins decks, are deleted from the site, so their contents are missing. The mock model is fitted again with the same identity.
+
+- **Expect:**
+  - **Fitting:** decks 101 and 102 are skipped with a warning (as in "Model inputs"), so the model trains on **3** decks: one Red Deck Wins and two Azorius Control. It now guesses **Azorius Control**, with evidence of 2 training decks out of 3.
+  - **Saving:** the training fingerprint differs from model 1's, so it's saved as model **2**, with a warning that the training decks changed since model 1 and model 1 can no longer be reproduced.
+  - **Model 1:** keeps its id, record and state, so it still guesses Red Deck Wins. It still loads and predicts, with a warning that its 5 recorded training decks now rebuild as 3.
+- **Why it matters:** a model keeps its value even when its training data is gone. We just can't reproduce it, and nothing new may take its id.
+- **Check:** save model 1, remove the contents of decks 101 and 102, refit and save, then load model 1.
+
+### A different identity is a different model
+
+Starting from model 1, change one part of the identity at a time:
+- seed 1
+- validation splits {HELD_OUT, VALIDATION}
+- another scheme
+- version 2
+
+- **Expect:** each is saved as a new model with its own id, and nothing is logged. Training the same model on different data is a normal experiment.
+- **Check:** save model 1 and each variant, then count the stored models.
+
+### A run stores one guess per deck, never scores
+
+Model 1 predicts on validation decks 201, 202 and 203. Deck 203 is a third validation deck, and the prediction for it has no guess, as a model gives when it's unsure.
+
+- **Expect:**
+  - **The run record:** model 1, scope {VALIDATION}, row-set version, **3** decks, the fingerprint of decks 201–203, a prediction hash, and the time and duration. It gets id 1.
+  - **The guesses:** they load back exactly, including deck 203's missing guess (stored as null) and each guess's evidence.
+  - **The hash:** the same predictions in another order give the same prediction hash.
+- **Why it matters:** scores are recomputed from stored guesses (decision F).
+- **Check:** save the run, load its guesses, and hash the predictions in two orders.
+
+### The same model on the same decks must guess the same
+
+Run 1 above is saved. Model 1 then predicts on decks 201–203 again.
+
+- **Expect, with the same guesses:** saving returns run id **1**. No new run is stored.
+- **Expect, with deck 202 guessed differently:** saving raises an error that names run 1 and both prediction hashes, and stores nothing.
+- **Expect, after deck 202 is deleted from the site:** the model predicts on decks 201 and 203 only, so the input fingerprint differs. The run is saved as run **2**, with a warning that its decks changed since run 1. Run 1 keeps its id and guesses.
+- **Why it matters:** a different result from the same model on the same decks is a bug, and must not be stored as a second answer. Changed data is not a bug, so it's kept, and flagged.
+- **Check:** save run 1, then each variant.
+
+### A relabel on the site changes nothing in an existing snapshot
+
+Model 1 was saved from snapshot 1. Deck 106 (season 30, a 60-card list of 4 Negate and 56 Island) was in snapshot 1 with only an automatic label, Azorius Control: UNVERIFIED, so EXCLUDED under the typical scheme. Afterwards, a person reviews it on the site and relabels it **Azorius Tempo**, so it's now VERIFIED.
+
+- **Expect, in snapshot 1:**
+  - deck 106 is still UNVERIFIED Azorius Control and EXCLUDED
+  - model 1 still loads quietly: its training decks rebuild exactly
+  - refitting model 1 returns id 1
+- **Expect, in snapshot 2,** taken after the relabel:
+  - deck 106 is VERIFIED Azorius Tempo, and becomes TRAIN if its maindeck isn't held out
+  - fitting the mock model there is a different identity (snapshot 2), so it's saved as a new model with no warning
+  - it trains on 6 decks: 3 Red Deck Wins, 2 Azorius Control and 1 Azorius Tempo, so it still guesses Red Deck Wins (3 out of 6)
+- **Why it matters:** labels, label facts, statuses and the archetype tree are frozen in a snapshot, and only deck contents are read live. So a relabel can never change what an existing model learned from. A newer snapshot sees it, as a new experiment.
+- **Check:** save model 1, relabel deck 106 on the site, load and refit model 1, then take snapshot 2 and fit on it.
+
+### Every look at the test seasons is logged
+
+- **Expect:** each call to log a test look records the run, the rows scored (for example "test, overall" and "test, by unseen copies") and the time. Three looks give three entries, in order.
+- **Why it matters:** the test seasons are looked at rarely, and the log shows how often.
+- **Check:** log three looks for one run and read the log back.

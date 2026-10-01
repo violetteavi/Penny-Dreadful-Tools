@@ -1,0 +1,133 @@
+import dataclasses
+import logging
+from collections.abc import Sequence
+from typing import ClassVar
+
+import pytest
+
+from archetype_classifier.data_loading.dataset import CardCount, DeckContents
+from archetype_classifier.data_loading.labels import LabelFacts, LabelStatus
+from archetype_classifier.data_loading.slices import Snapshot, SnapshotDeck, build_deck_set
+from archetype_classifier.data_loading.splits import ExclusionReason, Split, SplitScheme
+from archetype_classifier.evaluation.model import JSON, FitContext, LabelledDeck, PredictDeck, Prediction, TrainingDeck, build_labelled_decks, build_predict_decks, build_training_decks, model_class, register
+
+RED_DECK_WINS = 2
+AZORIUS_CONTROL = 3
+
+# The decks of the "Model inputs" scenarios (Scenarios.md). Every card is legal in seasons 30 and 39.
+CONTENTS = {
+    1: DeckContents((CardCount('Mountain', 56), CardCount('Shock', 4)), (CardCount('Smash to Smithereens', 2),)),
+    2: DeckContents((CardCount('Essence Scatter', 4), CardCount('Island', 56)), (CardCount('Negate', 2),)),
+    3: DeckContents((CardCount('Mountain', 56), CardCount('Shock', 4)), ()),
+    4: DeckContents((CardCount('Mountain', 56), CardCount('Shock', 4)), ()),
+}
+
+
+def snapshot_deck(deck_id: int, season_id: int, split: Split, status: LabelStatus, label_id: int | None, reviewed: bool = True) -> SnapshotDeck:
+    return SnapshotDeck(deck_id=deck_id, season_id=season_id, source='League', maindeck_hash=f'{deck_id:040x}', reviewed=reviewed, split=split, exclusion_reason=None,
+                        label_status=status, label_id=label_id, unseen_maindeck_copies=0, labels=LabelFacts(None, None, None, None), site_archetype_id=label_id)
+
+def snapshot(*decks: SnapshotDeck) -> Snapshot:
+    return Snapshot({d.deck_id: d for d in decks}, {}, SplitScheme('typical'))
+
+VALIDATION_DECKS = snapshot(snapshot_deck(1, 39, Split.VALIDATION, LabelStatus.VERIFIED, RED_DECK_WINS), snapshot_deck(2, 39, Split.VALIDATION, LabelStatus.VERIFIED, AZORIUS_CONTROL))
+
+
+# Scenario: labelled and prediction decks come from the same deck set.
+
+def test_labelled_and_prediction_decks_come_from_the_same_deck_set() -> None:
+    deck_set = build_deck_set(VALIDATION_DECKS, frozenset({Split.VALIDATION}))
+    deck_1 = PredictDeck(1, 'League', CONTENTS[1].maindeck, CONTENTS[1].sideboard)
+    deck_2 = PredictDeck(2, 'League', CONTENTS[2].maindeck, CONTENTS[2].sideboard)
+    assert build_labelled_decks(deck_set, CONTENTS) == [LabelledDeck(deck_1, RED_DECK_WINS, f'{1:040x}'), LabelledDeck(deck_2, AZORIUS_CONTROL, f'{2:040x}')]
+    assert build_predict_decks(deck_set, CONTENTS) == [deck_1, deck_2]
+    assert sum(c.n for c in deck_1.maindeck) == 60 and sum(c.n for c in deck_1.sideboard) == 2
+
+
+# Scenario: training decks carry the site label and the label status.
+TRAINING_DECKS = snapshot(snapshot_deck(3, 30, Split.TRAIN, LabelStatus.UNVERIFIED, RED_DECK_WINS), snapshot_deck(4, 30, Split.TRAIN, LabelStatus.UNLABELLED, None, reviewed=False))
+
+def test_training_decks_carry_the_site_label_and_the_label_status() -> None:
+    deck_set = build_deck_set(TRAINING_DECKS, frozenset({Split.TRAIN}))
+    assert build_training_decks(deck_set, CONTENTS) == [
+        TrainingDeck(PredictDeck(3, 'League', CONTENTS[3].maindeck, CONTENTS[3].sideboard), 30, RED_DECK_WINS, True, LabelStatus.UNVERIFIED),
+        TrainingDeck(PredictDeck(4, 'League', CONTENTS[4].maindeck, CONTENTS[4].sideboard), 30, None, False, LabelStatus.UNLABELLED),
+    ]
+
+
+# Scenario: the same deck always gives the same input.
+
+def test_the_same_deck_always_gives_the_same_input() -> None:
+    deck_set = build_deck_set(VALIDATION_DECKS, frozenset({Split.VALIDATION}))
+    shuffled = {1: DeckContents((CardCount('Shock', 4), CardCount('Mountain', 56)), (CardCount('Smash to Smithereens', 2),)), 2: CONTENTS[2]}
+    assert build_predict_decks(deck_set, shuffled) == build_predict_decks(deck_set, CONTENTS)
+
+
+# Scenario: a deck whose contents are missing is skipped with a warning.
+
+def test_a_deck_whose_contents_are_missing_is_skipped_with_a_warning(caplog: pytest.LogCaptureFixture) -> None:
+    deck_set = build_deck_set(VALIDATION_DECKS, frozenset({Split.VALIDATION}))
+    deck_1_only = {1: CONTENTS[1]}
+    for convert in (build_labelled_decks, build_predict_decks, build_training_decks):
+        caplog.clear()
+        with caplog.at_level(logging.WARNING):
+            converted = convert(deck_set, deck_1_only)
+        assert converted == convert(build_deck_set(snapshot(VALIDATION_DECKS.decks[1]), frozenset({Split.VALIDATION})), CONTENTS)
+        assert 'Skipped 1 deck with no contents: [2]' in caplog.text
+
+def test_a_deck_without_a_label_is_skipped_from_labelled_decks_with_a_warning(caplog: pytest.LogCaptureFixture) -> None:
+    deck_set = build_deck_set(TRAINING_DECKS, frozenset({Split.TRAIN}))  # Deck 3 is labelled; deck 4 is UNLABELLED.
+    with caplog.at_level(logging.WARNING):
+        labelled = build_labelled_decks(deck_set, CONTENTS)
+    assert [d.deck.deck_id for d in labelled] == [3]
+    assert 'Skipped 1 deck with no label: [4]' in caplog.text
+
+
+# Every split converts the same way: the deck set picks the decks, and conversion never looks at the split.
+ONE_PER_SPLIT = snapshot(snapshot_deck(1, 30, Split.TRAIN, LabelStatus.VERIFIED, RED_DECK_WINS), snapshot_deck(2, 30, Split.HELD_OUT, LabelStatus.VERIFIED, AZORIUS_CONTROL),
+                         snapshot_deck(3, 39, Split.VALIDATION, LabelStatus.VERIFIED, RED_DECK_WINS), snapshot_deck(4, 41, Split.TEST, LabelStatus.VERIFIED, RED_DECK_WINS),
+                         dataclasses.replace(snapshot_deck(5, 43, Split.EXCLUDED, LabelStatus.VERIFIED, RED_DECK_WINS), exclusion_reason=ExclusionReason.RESERVED_SEASON))
+CONTENTS_BY_ID = {i: CONTENTS[1] for i in range(1, 6)}
+
+@pytest.mark.parametrize(('split', 'deck_id'), [(Split.TRAIN, 1), (Split.HELD_OUT, 2), (Split.VALIDATION, 3), (Split.TEST, 4)])
+def test_a_deck_set_of_any_split_converts_to_every_shape(split: Split, deck_id: int) -> None:
+    deck_set = build_deck_set(ONE_PER_SPLIT, frozenset({split}), include_test=split == Split.TEST)
+    deck = ONE_PER_SPLIT.decks[deck_id]
+    expected = PredictDeck(deck_id, 'League', CONTENTS[1].maindeck, CONTENTS[1].sideboard)
+    assert build_predict_decks(deck_set, CONTENTS_BY_ID) == [expected]
+    assert build_labelled_decks(deck_set, CONTENTS_BY_ID) == [LabelledDeck(expected, deck.site_archetype_id, deck.maindeck_hash)]  # type: ignore[arg-type]
+    assert build_training_decks(deck_set, CONTENTS_BY_ID) == [TrainingDeck(expected, deck.season_id, deck.site_archetype_id, True, LabelStatus.VERIFIED)]
+
+def test_excluded_decks_never_reach_a_model() -> None:
+    with pytest.raises(ValueError, match='EXCLUDED'):
+        build_deck_set(ONE_PER_SPLIT, frozenset({Split.EXCLUDED}))
+
+
+# Scenario: a model is found by its name.
+
+@register
+class AlwaysRedDeckWins:
+    """A stand-in model: just enough to be registered and looked up."""
+    name: ClassVar[str] = 'always red deck wins (test)'
+    version: ClassVar[int] = 1
+
+    def __init__(self, params: dict[str, JSON]) -> None:
+        self.params = params
+
+    def fit(self, training: Sequence[TrainingDeck], validation: Sequence[LabelledDeck], context: FitContext) -> None:
+        pass
+
+    def predict(self, decks: Sequence[PredictDeck]) -> list[Prediction]:
+        return [Prediction(d.deck_id, RED_DECK_WINS, {}) for d in decks]
+
+    def state(self) -> dict[str, JSON]:
+        return {}
+
+    @classmethod
+    def from_state(cls, params: dict[str, JSON], state: dict[str, JSON], training: Sequence[TrainingDeck], context: FitContext) -> 'AlwaysRedDeckWins':
+        return cls(params)
+
+def test_a_model_is_found_by_its_name() -> None:
+    assert model_class('always red deck wins (test)') is AlwaysRedDeckWins
+    with pytest.raises(KeyError, match=r"No model named 'nonsense'.*always red deck wins \(test\)"):
+        model_class('nonsense')

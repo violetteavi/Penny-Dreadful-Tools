@@ -1,6 +1,6 @@
 import hashlib
 
-from archetype_classifier.data_loading.labels import LabelStatus
+from archetype_classifier.data_loading.labels import LabelRule, LabelStatus, ScopeRule
 from archetype_classifier.data_loading.splits import ExclusionReason, Split, SplitDecision, SplitScheme, assign_split
 
 DEFAULT = SplitScheme('default')
@@ -93,3 +93,20 @@ def test_a_scheme_stored_before_a_parameter_existed_gets_its_default() -> None:
 
 def test_seasons_outside_the_scheme_are_excluded_as_reserved() -> None:
     assert split(43, LabelStatus.VERIFIED, A_HASH, scheme=DEFAULT) == SplitDecision(Split.EXCLUDED, ExclusionReason.RESERVED_SEASON)
+
+
+# Scenario: older schemes load with today's defaults.
+
+SCHEME_1_PARAMS = {'train_seasons': list(range(1, 39)), 'validation_seasons': [39], 'test_seasons': [40, 41, 42], 'held_out_percent': 10, 'salt': ''}  # As stored.
+
+def test_scheme_1_loads_with_the_typical_status_rule_and_the_old_label_rule() -> None:
+    scheme = SplitScheme.from_params('default', SCHEME_1_PARAMS)
+    assert scheme.scope_rule == ScopeRule.LEAGUE_AND_GATHERLING
+    assert scheme.label_rule == LabelRule.LATEST_ENTRY_IS_HUMAN
+    assert scheme.train_statuses == scheme.eval_statuses == frozenset({LabelStatus.VERIFIED})
+    assert not scheme.allow_held_out_twins
+
+def test_every_new_parameter_survives_being_stored() -> None:
+    scheme = SplitScheme('custom', label_rule=LabelRule.SITE_LABEL_IF_EVER_HUMAN, train_statuses=frozenset({LabelStatus.VERIFIED, LabelStatus.UNVERIFIED}),
+                         eval_statuses=frozenset({LabelStatus.VERIFIED, LabelStatus.UNVERIFIED}), allow_held_out_twins=True)
+    assert SplitScheme.from_params('custom', scheme.to_params()) == scheme

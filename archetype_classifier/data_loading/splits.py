@@ -3,8 +3,7 @@ from dataclasses import dataclass, field, fields
 from enum import Enum
 from typing import Any
 
-
-from archetype_classifier.data_loading.labels import LabelStatus
+from archetype_classifier.data_loading.labels import LabelRule, LabelStatus, ScopeRule
 
 
 class Split(Enum):
@@ -37,6 +36,8 @@ class SplitScheme:
     test_seasons: frozenset[int] = frozenset({40, 41, 42})
     held_out_percent: int = 10  # Share of training-season decklists held out, identical maindecks together.
     salt: str = ''  # Mixed into the hash; a different salt gives a different held-out set.
+    scope_rule: ScopeRule = ScopeRule.LEAGUE_AND_GATHERLING  # Which decks can be scored at all.
+    label_rule: LabelRule = LabelRule.LATEST_ENTRY_IS_HUMAN  # Which label a deck is scored against, and when it is verified.
     train_statuses: frozenset[LabelStatus] = frozenset({LabelStatus.VERIFIED})  # Label statuses a model may train on.
     eval_statuses: frozenset[LabelStatus] = frozenset({LabelStatus.VERIFIED})  # Label statuses that are scored.
     allow_held_out_twins: bool = False  # Hold out single decks rather than maindeck groups, so held-out decks can repeat a training maindeck.
@@ -54,6 +55,10 @@ class SplitScheme:
                 values[k] = frozenset(v)
             elif k.endswith('_statuses'):
                 values[k] = frozenset(LabelStatus(s) for s in v)
+            elif k == 'scope_rule':
+                values[k] = ScopeRule(v)
+            elif k == 'label_rule':
+                values[k] = LabelRule(v)
             else:
                 values[k] = v
         return cls(name, **values)

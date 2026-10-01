@@ -575,7 +575,14 @@ The mock model is fitted and saved. It gets id 1.
 
 Model 1 is fitted again: same identity, same decks.
 
-- **Expect:** the fingerprints and state match model 1's, so saving returns id **1**. No new model is stored, and nothing is logged.
+A model counts as **the same model** as a stored one when all three of these match, checked in order:
+1. **Identity:** name, version, parameters, snapshot, scheme, training splits, validation splits and seed.
+2. **Decks:** the training and validation fingerprints, so it learned from exactly the same decks.
+3. **Result:** its state, what fitting learned.
+
+If only the first two match, the same model gave a different result (the next scenario). If only the identity matches, the data changed underneath (the one after).
+
+- **Expect:** all three match model 1, so saving returns id **1**. No new model is stored, and nothing is logged.
 - **Why it matters:** re-running an experiment shouldn't pile up copies of one model.
 - **Check:** fit and save twice, then count the stored models.
 
@@ -591,14 +598,14 @@ A stand-in model whose fitting picks its archetype at random, ignoring the seed,
 
 ### Training data that changed underneath gives a new model and a warning
 
-Model 1 was saved. Then deck 105 is deleted from the site, so its contents are missing, and the mock model is fitted again with the same identity.
+Model 1 was saved. Then decks 101 and 102, two of the Red Deck Wins decks, are deleted from the site, so their contents are missing. The mock model is fitted again with the same identity.
 
 - **Expect:**
-  - **Fitting:** deck 105 is skipped with a warning (as in "Model inputs"), so the model trains on **4** decks. It still guesses Red Deck Wins (3 out of 4).
+  - **Fitting:** decks 101 and 102 are skipped with a warning (as in "Model inputs"), so the model trains on **3** decks: one Red Deck Wins and two Azorius Control. It now guesses **Azorius Control**, with evidence of 2 training decks out of 3.
   - **Saving:** the training fingerprint differs from model 1's, so it's saved as model **2**, with a warning that the training decks changed since model 1 and model 1 can no longer be reproduced.
-  - **Model 1:** keeps its id and record. It still loads and predicts, with a warning that its 5 recorded training decks now rebuild as 4.
+  - **Model 1:** keeps its id, record and state, so it still guesses Red Deck Wins. It still loads and predicts, with a warning that its 5 recorded training decks now rebuild as 3.
 - **Why it matters:** a model keeps its value even when its training data is gone. We just can't reproduce it, and nothing new may take its id.
-- **Check:** save model 1, remove deck 105's contents, refit and save, then load model 1.
+- **Check:** save model 1, remove the contents of decks 101 and 102, refit and save, then load model 1.
 
 ### A different identity is a different model
 
@@ -631,6 +638,21 @@ Run 1 above is saved. Model 1 then predicts on decks 201–203 again.
 - **Expect, after deck 202 is deleted from the site:** the model predicts on decks 201 and 203 only, so the input fingerprint differs. The run is saved as run **2**, with a warning that its decks changed since run 1. Run 1 keeps its id and guesses.
 - **Why it matters:** a different result from the same model on the same decks is a bug, and must not be stored as a second answer. Changed data is not a bug, so it's kept, and flagged.
 - **Check:** save run 1, then each variant.
+
+### A relabel on the site changes nothing in an existing snapshot
+
+Model 1 was saved from snapshot 1. Deck 106 (season 30, a 60-card list of 4 Negate and 56 Island) was in snapshot 1 with only an automatic label, Azorius Control: UNVERIFIED, so EXCLUDED under the typical scheme. Afterwards, a person reviews it on the site and relabels it **Azorius Tempo**, so it's now VERIFIED.
+
+- **Expect, in snapshot 1:**
+  - deck 106 is still UNVERIFIED Azorius Control and EXCLUDED
+  - model 1 still loads quietly: its training decks rebuild exactly
+  - refitting model 1 returns id 1
+- **Expect, in snapshot 2,** taken after the relabel:
+  - deck 106 is VERIFIED Azorius Tempo, and becomes TRAIN if its maindeck isn't held out
+  - fitting the mock model there is a different identity (snapshot 2), so it's saved as a new model with no warning
+  - it trains on 6 decks: 3 Red Deck Wins, 2 Azorius Control and 1 Azorius Tempo, so it still guesses Red Deck Wins (3 out of 6)
+- **Why it matters:** labels, label facts, statuses and the archetype tree are frozen in a snapshot, and only deck contents are read live. So a relabel can never change what an existing model learned from. A newer snapshot sees it, as a new experiment.
+- **Check:** save model 1, relabel deck 106 on the site, load and refit model 1, then take snapshot 2 and fit on it.
 
 ### Every look at the test seasons is logged
 

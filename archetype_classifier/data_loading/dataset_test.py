@@ -73,3 +73,28 @@ def test_an_excluded_deck_changes_nothing_else() -> None:
     assert with_b.decks[3].unseen_maindeck_copies == 4  # The four Burst Lightning: B has them, but B isn't a training deck.
     assert {i: s for i, s in with_b.decks.items() if i != 2} == without_b.decks
     assert with_b.report.by_reason - without_b.report.by_reason == Counter({ExclusionReason.STATUS_NOT_TRAINED_ON: 1})
+
+def test_an_unlabelled_twin_held_out_by_its_deck_id_changes_nothing_for_its_training_twin() -> None:
+    twins = SplitScheme('twins', allow_held_out_twins=True)  # Deck id 1 falls outside the held-out 10%, deck id 4 inside it.
+    a, twin = deck(1, RED_DECK_WINS.id, season_id=30), deck(4, None, season_id=30)
+    cards = red_deck(1, {'Shock': 4, 'Mountain': 56}) + red_deck(4, {'Shock': 4, 'Mountain': 56})
+    with_twin = split_decks(snapshot_decks([a, twin], INVARIANT_HISTORY, cards, ARCHETYPES), cards, twins)
+    without_twin = split_decks(snapshot_decks([a], INVARIANT_HISTORY, cards, ARCHETYPES), cards, twins)
+    assert (with_twin.decks[4].split, with_twin.decks[4].reason) == (Split.EXCLUDED, ExclusionReason.STATUS_NOT_EVALUATED)
+    assert with_twin.decks[1].split == Split.TRAIN
+    assert with_twin.decks[1] == without_twin.decks[1]
+
+
+# Scenario: a card is unseen unless a training maindeck has it.
+
+def test_a_card_is_unseen_unless_a_training_maindeck_has_it() -> None:
+    history = [LabelChange(i, RED_DECK_WINS.id, by_person=True, changed_at=MARCH_2) for i in (1, 2, 3)]
+    training = red_deck(1, {'Shock': 4, 'Mountain': 56}) + [DeckCardRow(1, 'Smash to Smithereens', 2, True)]
+    validation = red_deck(2, {'Island': 4, 'Mountain': 56})
+    test = red_deck(3, {'Shock': 4, 'Smash to Smithereens': 4, 'Island': 4, 'Mountain': 48})
+    cards = training + validation + test
+    decks = [deck(1, RED_DECK_WINS.id, season_id=30), deck(2, RED_DECK_WINS.id, season_id=39), deck(3, RED_DECK_WINS.id, season_id=41)]
+    splits = split_decks(snapshot_decks(decks, history, cards, ARCHETYPES), cards, NOTHING_HELD_OUT)
+    assert [splits.decks[i].split for i in (1, 2, 3)] == [Split.TRAIN, Split.VALIDATION, Split.TEST]
+    assert splits.decks[3].unseen_maindeck_copies == 8  # Smash to Smithereens was only in a training sideboard; Island only in a validation deck.
+    assert splits.decks[2].unseen_maindeck_copies == 4

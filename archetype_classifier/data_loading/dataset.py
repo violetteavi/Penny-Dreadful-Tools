@@ -3,7 +3,7 @@ from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
-from archetype_classifier.data_loading.labels import EXCLUDED_ARCHETYPES, HUMAN_PROVENANCES, INCLUDED_SOURCES, LabelChange, Provenance, label_source
+from archetype_classifier.data_loading.labels import EXCLUDED_ARCHETYPES, HUMAN_PROVENANCES, INCLUDED_SOURCES, LabelChange, LabelStatus, Provenance, label_source
 from archetype_classifier.data_loading.splits import Split, SplitScheme, assign_split
 
 
@@ -81,9 +81,10 @@ def split_decks(snapshot: Snapshot, deck_cards: Iterable[DeckCardRow], scheme: S
     """Apply a split scheme to a snapshot. Decks whose season is outside the scheme are left out."""
     splits = {}
     for d in snapshot.decks.values():
-        split = assign_split(d.season_id, d.maindeck_hash, scheme)
-        if split is not None:
-            splits[d.deck_id] = split
+        # Transitional, until split_decks assigns label statuses: keep the old behaviour.
+        decision = assign_split(deck_id=d.deck_id, season_id=d.season_id, maindeck_hash=d.maindeck_hash, maindeck_cards=60, status=LabelStatus.VERIFIED, scheme=scheme)
+        if decision.split != Split.EXCLUDED:
+            splits[d.deck_id] = decision.split
     seen_cards: set[str] = set()
     other_maindecks: dict[int, list[DeckCardRow]] = defaultdict(list)
     for c in deck_cards:

@@ -4,11 +4,23 @@ from enum import Enum
 from typing import Any
 
 
+from archetype_classifier.data_loading.labels import LabelStatus
+
+
 class Split(Enum):
     TRAIN = 'train'
     HELD_OUT = 'held_out'  # Held-out decklists from the training seasons.
     VALIDATION = 'validation'
     TEST = 'test'
+    EXCLUDED = 'excluded'  # Neither trained on nor scored; the reason is recorded.
+
+class ExclusionReason(Enum):
+    RESERVED_SEASON = 'reserved season'
+
+@dataclass(frozen=True)
+class SplitDecision:
+    split: Split
+    reason: ExclusionReason | None  # Why the deck is excluded; None for every other split.
 
 @dataclass(frozen=True)
 class SplitScheme:
@@ -31,13 +43,13 @@ class SplitScheme:
         values: dict[str, Any] = {k: frozenset(v) if k in season_fields else v for k, v in params.items()}
         return cls(name, **values)
 
-def assign_split(season_id: int, maindeck_hash: str, scheme: SplitScheme) -> Split | None:
-    """The split a deck belongs to, or None if its season is outside the scheme."""
+def assign_split(*, deck_id: int, season_id: int, maindeck_hash: str | None, maindeck_cards: int, status: LabelStatus, scheme: SplitScheme) -> SplitDecision:
+    """The split one deck belongs to under a scheme. Uses only the deck's own facts, so no other deck can change it."""
     if season_id in scheme.test_seasons:
-        return Split.TEST
+        return SplitDecision(Split.TEST, None)
     if season_id in scheme.validation_seasons:
-        return Split.VALIDATION
+        return SplitDecision(Split.VALIDATION, None)
     if season_id in scheme.train_seasons:
-        held_out = zlib.crc32((scheme.salt + maindeck_hash).encode()) % 100 < scheme.held_out_percent
-        return Split.HELD_OUT if held_out else Split.TRAIN
-    return None
+        held_out = zlib.crc32((scheme.salt + str(maindeck_hash)).encode()) % 100 < scheme.held_out_percent
+        return SplitDecision(Split.HELD_OUT if held_out else Split.TRAIN, None)
+    return SplitDecision(Split.EXCLUDED, ExclusionReason.RESERVED_SEASON)

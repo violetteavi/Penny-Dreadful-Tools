@@ -109,3 +109,14 @@ def test_a_maindeck_in_both_train_and_held_out_is_reported_unless_twins_are_allo
     hashes = {1: 'a' * 40, 2: 'a' * 40, 3: 'b' * 40}
     assert twin_overlaps(splits, hashes, SplitScheme('typical')) == [TwinOverlap('a' * 40, frozenset({1}), frozenset({2}))]
     assert twin_overlaps(splits, hashes, SplitScheme('twins', allow_held_out_twins=True)) == []
+
+
+# Scenario: a large maindeck loads in full (the snapshot half; loading its contents is tested with the loader).
+
+def test_a_112_card_maindeck_is_frozen_in_full_and_not_excluded() -> None:
+    life_is_ez = red_deck(217677, {'Shock': 4, 'Mountain': 108}) + [DeckCardRow(217677, 'Smash to Smithereens', 15, True)]  # Both legal in season 29.
+    history = [LabelChange(217677, RED_DECK_WINS.id, by_person=True, changed_at=MARCH_2)]
+    snapshot = snapshot_decks([deck(217677, RED_DECK_WINS.id, season_id=29)], history, life_is_ez, ARCHETYPES)
+    assert snapshot.decks[217677].maindeck_cards == 112
+    assert snapshot.decks[217677].maindeck_hash != snapshot_decks([deck(1, RED_DECK_WINS.id)], [], burn(1), ARCHETYPES).decks[1].maindeck_hash
+    assert split_decks(snapshot, life_is_ez, NOTHING_HELD_OUT).decks[217677].split == Split.TRAIN

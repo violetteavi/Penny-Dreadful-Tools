@@ -64,6 +64,9 @@ SCHEMA = [
         scheme_id INT NOT NULL,
         deck_id INT NOT NULL,
         split VARCHAR(20) NOT NULL,
+        exclusion_reason VARCHAR(40) NULL,
+        label_status VARCHAR(20) NOT NULL,
+        label_id INT NULL,
         unseen_maindeck_copies INT NOT NULL,
         PRIMARY KEY (snapshot_id, scheme_id, deck_id),
         FOREIGN KEY (snapshot_id, deck_id) REFERENCES deck_snapshot (snapshot_id, deck_id) ON DELETE CASCADE,
@@ -145,9 +148,10 @@ def load_archetype_snapshot(edb: Database, snapshot_id: int) -> dict[int, Archet
 def materialise_split(edb: Database, snapshot_id: int, scheme_id: int) -> int:
     """Apply a scheme to a snapshot and store every deck's split. Returns the number of decks split."""
     splits = split_decks(load_snapshot(edb, snapshot_id), iter_deck_cards(), load_scheme(edb, scheme_id))
-    insert_rows(edb, 'deck_split', ['snapshot_id', 'scheme_id', 'deck_id', 'split', 'unseen_maindeck_copies'],
-                [[snapshot_id, scheme_id, s.deck_id, s.split.value, s.unseen_maindeck_copies] for s in splits.values()])
-    return len(splits)
+    insert_rows(edb, 'deck_split', ['snapshot_id', 'scheme_id', 'deck_id', 'split', 'exclusion_reason', 'label_status', 'label_id', 'unseen_maindeck_copies'],
+                [[snapshot_id, scheme_id, s.deck_id, s.split.value, s.reason.value if s.reason else None, s.label_status.value, s.label_id, s.unseen_maindeck_copies]
+                 for s in splits.decks.values()])
+    return len(splits.decks)
 
 def insert_rows(edb: Database, table: str, columns: Sequence[str], rows: Sequence[Sequence[Any]]) -> None:
     placeholders = '(' + ', '.join(['%s'] * len(columns)) + ')'

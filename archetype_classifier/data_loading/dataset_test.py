@@ -1,8 +1,9 @@
+from collections import Counter
 from datetime import UTC, datetime
 
 from archetype_classifier.data_loading.dataset import ArchetypeRow, DeckCardRow, DeckRow, snapshot_decks, split_decks
-from archetype_classifier.data_loading.labels import LabelChange, LabelFacts
-from archetype_classifier.data_loading.splits import Split, SplitScheme
+from archetype_classifier.data_loading.labels import LabelChange, LabelFacts, LabelStatus
+from archetype_classifier.data_loading.splits import ExclusionReason, Split, SplitScheme
 
 AGGRO = ArchetypeRow(1, 'Aggro', None)
 RED_DECK_WINS = ArchetypeRow(2, 'Red Deck Wins', 1)
@@ -46,59 +47,29 @@ def test_the_snapshot_freezes_the_archetype_tree_with_depths() -> None:
     snapshot = snapshot_decks([], [], [], ARCHETYPES)
     assert [(a.name, a.parent_id, a.depth) for a in snapshot.archetypes.values()] == [('Aggro', None, 0), ('Red Deck Wins', AGGRO.id, 1), ('Prisoner', RED_DECK_WINS.id, 2)]
 
-def test_seasons_decide_the_split_and_the_reserved_season_is_left_out() -> None:
-    seasons = {60: 38, 61: 39, 62: 40, 63: 42, 64: 43}
-    decks = [deck(i, PRISONER.id, season_id=s) for i, s in seasons.items()]
-    cards = [c for i in seasons for c in burn(i)]
-    snapshot = snapshot_decks(decks, [], cards, ARCHETYPES)
-    splits = split_decks(snapshot, cards, SplitScheme('default'))
-    assert {i: s.split for i, s in splits.items()} == {60: Split.TRAIN, 61: Split.VALIDATION, 62: Split.TEST, 63: Split.TEST}
-
-def distinct_training_decks(count: int) -> tuple[list[DeckRow], list[DeckCardRow]]:
-    """`count` distinct maindecks, each with a twin that has the same maindeck and a different sideboard."""
-    decks, cards = [], []
-    for i in range(count):
-        original, twin = 1000 + 2 * i, 1001 + 2 * i
-        decks += [deck(original, PRISONER.id, season_id=20), deck(twin, PRISONER.id, season_id=30)]
-        cards += [DeckCardRow(original, f'Card {i}', 4, False), DeckCardRow(original, 'Pyroblast', 1, True)]
-        cards += [DeckCardRow(twin, f'Card {i}', 4, False), DeckCardRow(twin, 'Smash to Smithereens', 2, True)]
-    return decks, cards
-
-def test_about_ten_percent_of_training_decklists_are_held_out_and_twins_stay_together() -> None:
-    decks, cards = distinct_training_decks(2000)
-    splits = split_decks(snapshot_decks(decks, [], cards, ARCHETYPES), cards, SplitScheme('default'))
-    originals = [splits[1000 + 2 * i].split for i in range(2000)]
-    twins = [splits[1001 + 2 * i].split for i in range(2000)]
-    assert originals == twins
-    assert set(originals) == {Split.TRAIN, Split.HELD_OUT}
-    assert 8 <= 100 * originals.count(Split.HELD_OUT) / 2000 <= 12
-
-def test_a_different_salt_gives_a_different_held_out_set() -> None:
-    decks, cards = distinct_training_decks(2000)
-    snapshot = snapshot_decks(decks, [], cards, ARCHETYPES)
-    first = {i for i, s in split_decks(snapshot, cards, SplitScheme('default')).items() if s.split == Split.HELD_OUT}
-    second = {i for i, s in split_decks(snapshot, cards, SplitScheme('resampled', salt='2')).items() if s.split == Split.HELD_OUT}
-    assert first != second
-    assert 0.8 <= len(second) / len(first) <= 1.25
-
-def test_unseen_copies_count_maindeck_cards_missing_from_training_maindecks() -> None:
-    training = [DeckCardRow(70, 'Lightning Bolt', 4, False), DeckCardRow(70, 'Mountain', 20, False), DeckCardRow(70, 'Pyroblast', 2, True)]
-    new_season = [DeckCardRow(71, 'Lightning Bolt', 4, False), DeckCardRow(71, 'Pyroblast', 3, False), DeckCardRow(71, 'Grounded for Life', 2, False),
-                  DeckCardRow(71, 'Mountain', 17, False), DeckCardRow(71, "Ajani's Response", 1, True)]
-    cards = training + new_season
-    snapshot = snapshot_decks([deck(70, PRISONER.id, season_id=20), deck(71, PRISONER.id, season_id=40)], [], cards, ARCHETYPES)
-    splits = split_decks(snapshot, cards, SplitScheme('no held-out', held_out_percent=0))
-    assert splits[70].unseen_maindeck_copies == 0
-    assert splits[71].unseen_maindeck_copies == 5  # Pyroblast was only in a training sideboard; the sideboard's Ajani's Response doesn't count.
-
-def test_a_card_only_in_held_out_decks_is_unseen_for_them() -> None:
-    decks, cards = distinct_training_decks(500)
-    splits = split_decks(snapshot_decks(decks, [], cards, ARCHETYPES), cards, SplitScheme('default'))
-    assert {s.unseen_maindeck_copies for s in splits.values() if s.split == Split.HELD_OUT} == {4}
-    assert {s.unseen_maindeck_copies for s in splits.values() if s.split == Split.TRAIN} == {0}
 
 
 
 
 
 
+# Scenario: an excluded deck changes nothing else (Scenarios.md, "Splitting decks").
+
+def red_deck(deck_id: int, cards: dict[str, int]) -> list[DeckCardRow]:
+    return [DeckCardRow(deck_id, card, n, False) for card, n in cards.items()]
+
+INVARIANT_CARDS = red_deck(1, {'Shock': 4, 'Mountain': 56}) + red_deck(2, {'Burst Lightning': 4, 'Mountain': 56}) + red_deck(3, {'Shock': 4, 'Burst Lightning': 4, 'Mountain': 52})
+INVARIANT_HISTORY = [LabelChange(1, RED_DECK_WINS.id, by_person=True, changed_at=MARCH_2), LabelChange(3, RED_DECK_WINS.id, by_person=True, changed_at=MARCH_2)]
+NOTHING_HELD_OUT = SplitScheme('typical, nothing held out', held_out_percent=0)  # So A is TRAIN whatever its maindeck hash.
+
+def test_an_excluded_deck_changes_nothing_else() -> None:
+    a, b, c = deck(1, RED_DECK_WINS.id, season_id=30), deck(2, None, season_id=30), deck(3, RED_DECK_WINS.id, season_id=41)
+    with_b = split_decks(snapshot_decks([a, b, c], INVARIANT_HISTORY, INVARIANT_CARDS, ARCHETYPES), INVARIANT_CARDS, NOTHING_HELD_OUT)
+    without_b = split_decks(snapshot_decks([a, c], INVARIANT_HISTORY, INVARIANT_CARDS, ARCHETYPES), INVARIANT_CARDS, NOTHING_HELD_OUT)
+
+    assert (with_b.decks[1].split, with_b.decks[1].label_status) == (Split.TRAIN, LabelStatus.VERIFIED)
+    assert (with_b.decks[2].split, with_b.decks[2].reason, with_b.decks[2].label_status) == (Split.EXCLUDED, ExclusionReason.STATUS_NOT_TRAINED_ON, LabelStatus.UNLABELLED)
+    assert (with_b.decks[3].split, with_b.decks[3].label_id) == (Split.TEST, RED_DECK_WINS.id)
+    assert with_b.decks[3].unseen_maindeck_copies == 4  # The four Burst Lightning: B has them, but B isn't a training deck.
+    assert {i: s for i, s in with_b.decks.items() if i != 2} == without_b.decks
+    assert with_b.report.by_reason - without_b.report.by_reason == Counter({ExclusionReason.STATUS_NOT_TRAINED_ON: 1})

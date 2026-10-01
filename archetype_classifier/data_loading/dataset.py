@@ -1,10 +1,10 @@
 import hashlib
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
-from archetype_classifier.data_loading.labels import LabelChange, LabelFacts, LabelStatus, label_facts
-from archetype_classifier.data_loading.splits import Split, SplitScheme, assign_split
+from archetype_classifier.data_loading.labels import DeckLabel, LabelChange, LabelFacts, LabelStatus, label_facts, label_status
+from archetype_classifier.data_loading.splits import ExclusionReason, Split, SplitDecision, SplitScheme, assign_split
 
 
 @dataclass(frozen=True)
@@ -71,29 +71,47 @@ def snapshot_decks(decks: Sequence[DeckRow], label_history: Iterable[LabelChange
 
 @dataclass(frozen=True)
 class DeckSplit:
+    """How one deck is used under a split scheme."""
     deck_id: int
     split: Split
+    reason: ExclusionReason | None  # Why the deck is excluded; None for every other split.
+    label_status: LabelStatus
+    label_id: int | None  # The label the deck is scored against.
     unseen_maindeck_copies: int  # Maindeck copies of cards that appear in no training maindeck.
 
-def split_decks(snapshot: Snapshot, deck_cards: Iterable[DeckCardRow], scheme: SplitScheme) -> dict[int, DeckSplit]:
-    """Apply a split scheme to a snapshot. Decks whose season is outside the scheme are left out."""
-    splits = {}
+@dataclass(frozen=True)
+class SplitReport:
+    by_split: Counter[Split]
+    by_reason: Counter[ExclusionReason]
+
+@dataclass(frozen=True)
+class Splits:
+    decks: dict[int, DeckSplit]
+    report: SplitReport
+
+def split_decks(snapshot: Snapshot, deck_cards: Iterable[DeckCardRow], scheme: SplitScheme) -> Splits:
+    """Put every deck in exactly one split. Unseen cards are counted against training maindecks only, so excluded decks change nothing."""
+    labels: dict[int, DeckLabel] = {}
+    decisions: dict[int, SplitDecision] = {}
     for d in snapshot.decks.values():
-        # Transitional, until split_decks assigns label statuses: keep the old behaviour.
-        decision = assign_split(deck_id=d.deck_id, season_id=d.season_id, maindeck_hash=d.maindeck_hash, maindeck_cards=60, status=LabelStatus.VERIFIED, scheme=scheme)
-        if decision.split != Split.EXCLUDED:
-            splits[d.deck_id] = decision.split
+        archetype = snapshot.archetypes.get(d.site_archetype_id) if d.site_archetype_id is not None else None
+        labels[d.deck_id] = label_status(d.labels, d.site_archetype_id, archetype.name if archetype else None, d.source, scheme.scope_rule, scheme.label_rule)
+        decisions[d.deck_id] = assign_split(deck_id=d.deck_id, season_id=d.season_id, maindeck_hash=d.maindeck_hash, maindeck_cards=d.maindeck_cards,
+                                            status=labels[d.deck_id].status, scheme=scheme)
     seen_cards: set[str] = set()
     other_maindecks: dict[int, list[DeckCardRow]] = defaultdict(list)
     for c in deck_cards:
-        split = splits.get(c.deck_id)
-        if split is None or c.sideboard:
+        if c.sideboard or c.deck_id not in decisions:
             continue
-        if split == Split.TRAIN:
+        if decisions[c.deck_id].split == Split.TRAIN:
             seen_cards.add(c.card)
         else:
             other_maindecks[c.deck_id].append(c)
-    return {deck_id: DeckSplit(deck_id, split, sum(c.n for c in other_maindecks[deck_id] if c.card not in seen_cards)) for deck_id, split in splits.items()}
+    decks = {deck_id: DeckSplit(deck_id, decision.split, decision.reason, labels[deck_id].status, labels[deck_id].label_id,
+                                sum(c.n for c in other_maindecks[deck_id] if c.card not in seen_cards))
+             for deck_id, decision in decisions.items()}
+    report = SplitReport(Counter(s.split for s in decks.values()), Counter(s.reason for s in decks.values() if s.reason is not None))
+    return Splits(decks, report)
 
 HASH_MODULUS = 2 ** 160
 

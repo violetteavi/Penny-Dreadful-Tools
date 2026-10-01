@@ -132,6 +132,26 @@ A deck matched by rules for more than one archetype.
 **Overlooked deck**:
 A deck labelled with an archetype that has rules, none of which match it.
 
+### Evaluation
+
+**Split**:
+The one part of an experiment a deck belongs to: training, held-out, validation, test or excluded. A split scheme fixes it from the deck's season, its held-out group and its label status.
+_Avoid_: Partition, fold
+
+**Label status**:
+How far a deck's label can be trusted for training or scoring: verified (a person gave it at some point), unverified (only an automatic guess, or no history), unlabelled, or out of scope (a source or archetype that isn't evaluated, such as Commander).
+
+**Excluded deck**:
+A deck an experiment neither learns from nor scores, because of a data problem, a reserved season, or a label status the scheme doesn't use. It never changes how any other deck is split or scored.
+
+**Train set**:
+The decks in the training split: every deck from the training seasons that isn't held out and whose label status the scheme allows for training.
+_Avoid_: Pool, training pool (a pool is the **Legal card pool**)
+
+**Eval set**:
+The decks a classifier's predictions are scored on, from any combination of the training, held-out, validation and test splits, each with the label it is scored against.
+_Avoid_: Dataset, test set (the test seasons are only one possible part of it)
+
 ## Relationships
 
 - A **Set** release triggers a **Rotation**, which starts a new **Season** with a new **Legal card pool**.
@@ -139,8 +159,12 @@ A deck labelled with an archetype that has rules, none of which match it.
 - An **Archetype** has at most one parent in the **Archetype tree**; a **Deck** may be labelled at any depth.
 - A **Guess** becomes a trusted **Label** only through **Review**.
 - Each **Rotation** can introduce **Unseen cards** into **Decks** relative to any classifier trained on earlier **Seasons**.
+- Every **Deck** is in exactly one **Split**. Held-out, validation and test decks can never be in the **Train set**; by default a deck that repeats a held-out maindeck is held out with it. Training decks may also be in an **Eval set**, where their scores measure fit rather than generalisation.
+- An **Excluded deck** leaves every other deck's **Split** and scores unchanged: an experiment is the same whether or not it exists.
 
 ## Flagged ambiguities
 
 - "Reviewed" in the data is not reliable evidence that a person confirmed a label; use **Label history** instead.
 - "New card" can mean newly printed or newly legal; use **Unseen card** when the point is that a classifier hasn't seen it.
+- "Test" means only the test seasons, never the whole **Eval set**.
+- "Pool" means the **Legal card pool**, never the decks a classifier learns from.

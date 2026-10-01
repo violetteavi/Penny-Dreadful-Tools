@@ -12,7 +12,7 @@ from archetype_classifier.data_loading import loader
 from archetype_classifier.data_loading.dataset import CardCount, DeckContents
 from archetype_classifier.data_loading.labels import LabelStatus
 from archetype_classifier.data_loading.slices import build_deck_set, deck_ids_hash
-from archetype_classifier.data_loading.splits import Split, SplitScheme
+from archetype_classifier.data_loading.splits import ExclusionReason, Split, SplitScheme
 from archetype_classifier.evaluation.metrics import ArchetypeTree
 from archetype_classifier.evaluation.model import FitContext, LabelledDeck, Model, Prediction, TrainingDeck, build_labelled_decks, build_predict_decks, build_training_decks, register
 from archetype_classifier.evaluation.store import ModelRecord, StoreConflict, canonical, load_guesses, load_model, load_run, prediction_hash, save_model, save_run
@@ -44,7 +44,8 @@ def store_snapshot(edb: Database, snapshot_id: int, scheme_id: int, decks: Mappi
     loader.insert_rows(edb, 'deck_snapshot', ['snapshot_id', *loader.DECK_FACT_COLUMNS],
                        [[snapshot_id, i, season, 'League', True, f'{i:040x}', 60, None, None, None, None, label] for i, (season, _, _, label, _) in decks.items()])
     loader.insert_rows(edb, 'deck_split', ['snapshot_id', 'scheme_id', 'deck_id', 'split', 'exclusion_reason', 'label_status', 'label_id', 'unseen_maindeck_copies'],
-                       [[snapshot_id, scheme_id, i, split.value, None, status.value, label, 0] for i, (_, split, status, label, _) in decks.items()])
+                       [[snapshot_id, scheme_id, i, split.value, ExclusionReason.STATUS_NOT_TRAINED_ON.value if split == Split.EXCLUDED else None, status.value, label, 0]
+                        for i, (_, split, status, label, _) in decks.items()])
 
 class Site:
     """The site database's deck contents and legal cards. Deleting a deck makes its contents missing."""
@@ -223,3 +224,31 @@ def test_the_same_model_on_the_same_decks_must_guess_the_same(experiments_db: Da
         assert save_run(experiments_db, model_id, VALIDATION, run_predictions(experiments_db, model_id)) == 2  # Run 2: nothing was stored by the conflict.
     assert 'decks it predicted on changed since run 1' in caplog.text
     assert set(load_guesses(experiments_db, 1)) == {201, 202, 203}
+
+
+# Scenario: a relabel on the site changes nothing in an existing snapshot.
+
+def test_a_relabel_on_the_site_changes_nothing_in_an_existing_snapshot(experiments_db: Database, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+    before = {**DECKS, 106: (30, Split.EXCLUDED, LabelStatus.UNVERIFIED, AZORIUS_CONTROL, NEGATE)}  # Only an automatic label when snapshot 1 was taken,
+    after = {**DECKS, 106: (30, Split.TRAIN, LabelStatus.VERIFIED, AZORIUS_TEMPO, NEGATE)}  # and relabelled by a person before snapshot 2.
+    loader.ensure_schema(experiments_db)
+    scheme_id = loader.create_scheme(experiments_db, SplitScheme('typical'))
+    store_snapshot(experiments_db, 1, scheme_id, before)
+    store_snapshot(experiments_db, 2, scheme_id, after)
+    site = Site({i: deck[4] for i, deck in after.items()})
+    monkeypatch.setattr(loader, 'load_contents', site.load_contents)
+    monkeypatch.setattr(loader, 'load_legal_cards', lambda season_ids: {s: frozenset() for s in season_ids})
+
+    original = MostCommonArchetype({})
+    assert save_model(experiments_db, original, fit(experiments_db, original)) == 1
+    assert loader.load_snapshot(experiments_db, 1, scheme_id).decks[106].split == Split.EXCLUDED
+    with caplog.at_level(logging.WARNING):
+        load_model(experiments_db, 1)
+        refit = MostCommonArchetype({})
+        assert save_model(experiments_db, refit, fit(experiments_db, refit)) == 1
+        newer = MostCommonArchetype({})
+        record = fit(experiments_db, newer, snapshot_id=2)
+        assert save_model(experiments_db, newer, record) == 2
+    assert caplog.text == ''
+    assert record.training_count == 6
+    assert newer.state() == {'archetype_id': RED_DECK_WINS, 'training_decks_with_archetype': 3, 'training_decks': 6}

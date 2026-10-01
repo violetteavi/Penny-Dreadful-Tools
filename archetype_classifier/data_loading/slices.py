@@ -1,4 +1,6 @@
 """Picking decks by split. The scheme has already put every deck in exactly one split, so this only selects."""
+import hashlib
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from archetype_classifier.data_loading.dataset import ArchetypeSnapshot
@@ -33,6 +35,7 @@ class Snapshot:
 class DeckSet:
     decks: dict[int, SnapshotDeck]
     splits: frozenset[Split]
+    deck_ids_hash: str  # A fingerprint of the deck ids, whatever their order; recorded on a model for its training and validation decks.
 
 def build_deck_set(snapshot: Snapshot, splits: frozenset[Split], include_test: bool = False) -> DeckSet:
     """Exactly the decks in the requested splits. Excluded decks can't be picked, and test decks need include_test."""
@@ -40,4 +43,8 @@ def build_deck_set(snapshot: Snapshot, splits: frozenset[Split], include_test: b
         raise ValueError('EXCLUDED decks are neither trained on nor scored, so they never form a deck set')
     if Split.TEST in splits and not include_test:
         raise ValueError('TEST decks are looked at rarely: pass include_test=True to pick them')
-    return DeckSet({i: d for i, d in snapshot.decks.items() if d.split in splits}, splits)
+    decks = {i: d for i, d in snapshot.decks.items() if d.split in splits}
+    return DeckSet(decks, splits, deck_ids_hash(decks))
+
+def deck_ids_hash(deck_ids: Iterable[int]) -> str:
+    return hashlib.sha1(','.join(str(i) for i in sorted(deck_ids)).encode()).hexdigest()

@@ -30,3 +30,10 @@ def test_excluded_decks_cant_be_picked_and_test_decks_need_the_gate() -> None:
     with pytest.raises(ValueError, match='include_test'):
         build_deck_set(SNAPSHOT, frozenset({Split.VALIDATION, Split.TEST}))
     assert set(build_deck_set(SNAPSHOT, frozenset({Split.TEST}), include_test=True).decks) == {7}
+
+def test_a_deck_sets_fingerprint_depends_only_on_its_decks() -> None:
+    forwards = build_deck_set(SNAPSHOT, frozenset({Split.TRAIN}))
+    backwards = build_deck_set(Snapshot(dict(reversed(SNAPSHOT.decks.items())), {}, SNAPSHOT.scheme), frozenset({Split.TRAIN}))
+    one_more = build_deck_set(SNAPSHOT, frozenset({Split.TRAIN, Split.VALIDATION}))
+    assert forwards.deck_ids_hash == backwards.deck_ids_hash
+    assert forwards.deck_ids_hash != one_more.deck_ids_hash

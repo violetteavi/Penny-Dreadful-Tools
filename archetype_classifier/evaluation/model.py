@@ -39,4 +39,8 @@ def build_predict_decks(deck_set: DeckSet, contents: Mapping[int, DeckContents])
     return [predict_deck(d, contents[d.deck_id]) for d in deck_set.decks.values()]
 
 def predict_deck(deck: SnapshotDeck, contents: DeckContents) -> PredictDeck:
-    return PredictDeck(deck.deck_id, deck.source, contents.maindeck, contents.sideboard)
+    """Card lines sorted by name, so the same deck always gives the same input whatever order its rows were read in."""
+    return PredictDeck(deck.deck_id, deck.source, sorted_lines(contents.maindeck), sorted_lines(contents.sideboard))
+
+def sorted_lines(lines: tuple[CardCount, ...]) -> tuple[CardCount, ...]:
+    return tuple(sorted(lines, key=lambda c: c.card))

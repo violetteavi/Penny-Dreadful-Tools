@@ -46,3 +46,11 @@ def test_training_decks_carry_the_site_label_and_the_label_status() -> None:
         TrainingDeck(PredictDeck(3, 'League', CONTENTS[3].maindeck, CONTENTS[3].sideboard), 30, RED_DECK_WINS, True, LabelStatus.UNVERIFIED),
         TrainingDeck(PredictDeck(4, 'League', CONTENTS[4].maindeck, CONTENTS[4].sideboard), 30, None, False, LabelStatus.UNLABELLED),
     ]
+
+
+# Scenario: the same deck always gives the same input.
+
+def test_the_same_deck_always_gives_the_same_input() -> None:
+    deck_set = build_deck_set(VALIDATION_DECKS, frozenset({Split.VALIDATION}))
+    shuffled = {1: DeckContents((CardCount('Shock', 4), CardCount('Mountain', 56)), (CardCount('Smash to Smithereens', 2),)), 2: CONTENTS[2]}
+    assert build_predict_decks(deck_set, shuffled) == build_predict_decks(deck_set, CONTENTS)

@@ -4,6 +4,7 @@ import json
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from archetype_classifier.data_loading import loader
@@ -37,6 +38,26 @@ SCHEMA = [
         UNIQUE KEY (identity_hash, training_hash, validation_hash),
         FOREIGN KEY (snapshot_id) REFERENCES snapshot (id),
         FOREIGN KEY (scheme_id) REFERENCES split_scheme (id)
+    )""",
+    """CREATE TABLE IF NOT EXISTS run (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        model_id INT NOT NULL,
+        scope VARCHAR(100) NOT NULL,
+        deck_count INT NOT NULL,
+        input_hash CHAR(40) NOT NULL,
+        prediction_hash CHAR(40) NOT NULL,
+        seconds DOUBLE NOT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY (model_id, scope, input_hash),
+        FOREIGN KEY (model_id) REFERENCES model (id)
+    )""",
+    """CREATE TABLE IF NOT EXISTS run_guess (
+        run_id INT NOT NULL,
+        deck_id INT NOT NULL,
+        guess_archetype_id INT NULL,
+        evidence TEXT NOT NULL,
+        PRIMARY KEY (run_id, deck_id),
+        FOREIGN KEY (run_id) REFERENCES run (id) ON DELETE CASCADE
     )""",
 ]
 
@@ -111,6 +132,34 @@ def model_record(row: dict[str, Any]) -> ModelRecord:
     return ModelRecord(row['name'], row['version'], json.loads(row['params']), row['snapshot_id'], row['scheme_id'], row['seed'], splits_from_text(row['training_splits']),
                        splits_from_text(row['validation_splits']), row['training_count'], row['training_hash'], row['validation_count'], row['validation_hash'],
                        row['fit_seconds'])
+
+@dataclass(frozen=True)
+class RunRecord:
+    id: int
+    model_id: int
+    scope: frozenset[Split]  # The splits the run predicted on.
+    deck_count: int
+    input_hash: str  # Fingerprint of the deck ids it actually predicted on.
+    prediction_hash: str
+    seconds: float
+    created_at: datetime
+
+def save_run(edb: Database, model_id: int, scope: frozenset[Split], predictions: Sequence[Prediction], seconds: float = 0.0) -> int:
+    """Save one guess per deck for a stored model, and return the run's id. Scores are never stored: they're recomputed from guesses."""
+    ensure_schema(edb)
+    input_hash = deck_ids_hash(p.deck_id for p in predictions)
+    run_id = edb.insert('INSERT INTO run (model_id, scope, deck_count, input_hash, prediction_hash, seconds) VALUES (%s, %s, %s, %s, %s, %s)',
+                        [model_id, splits_text(scope), len(predictions), input_hash, prediction_hash(predictions), seconds])
+    loader.insert_rows(edb, 'run_guess', ['run_id', 'deck_id', 'guess_archetype_id', 'evidence'], [[run_id, p.deck_id, p.guess_id, canonical(p.evidence)] for p in predictions])
+    return run_id
+
+def load_run(edb: Database, run_id: int) -> RunRecord:
+    r = edb.select('SELECT * FROM run WHERE id = %s', [run_id])[0]
+    return RunRecord(r['id'], r['model_id'], splits_from_text(r['scope']), r['deck_count'], r['input_hash'], r['prediction_hash'], r['seconds'], r['created_at'])  # type: ignore[arg-type]
+
+def load_guesses(edb: Database, run_id: int) -> dict[int, Prediction]:
+    return {r['deck_id']: Prediction(r['deck_id'], r['guess_archetype_id'], json.loads(r['evidence']))  # type: ignore[misc, arg-type]
+            for r in edb.select('SELECT deck_id, guess_archetype_id, evidence FROM run_guess WHERE run_id = %s', [run_id])}
 
 def canonical(value: JSON) -> str:
     """JSON with sorted keys, so equal values are equal text."""

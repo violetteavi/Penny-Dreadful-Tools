@@ -15,7 +15,7 @@ from archetype_classifier.data_loading.slices import build_deck_set, deck_ids_ha
 from archetype_classifier.data_loading.splits import Split, SplitScheme
 from archetype_classifier.evaluation.metrics import ArchetypeTree
 from archetype_classifier.evaluation.model import FitContext, LabelledDeck, Model, Prediction, TrainingDeck, build_labelled_decks, build_predict_decks, build_training_decks, register
-from archetype_classifier.evaluation.store import ModelRecord, StoreConflict, canonical, load_model, save_model
+from archetype_classifier.evaluation.store import ModelRecord, StoreConflict, canonical, load_guesses, load_model, load_run, prediction_hash, save_model, save_run
 from archetype_classifier.models.most_common import MostCommonArchetype
 from shared.database import Database
 
@@ -179,3 +179,26 @@ def test_a_different_identity_is_a_different_model(experiments_db: Database, sit
             assert save_model(experiments_db, variant, fit(experiments_db, variant, **kwargs)) == expected_id  # type: ignore[arg-type]
         assert save_model(experiments_db, original, dataclasses.replace(record, version=2)) == 5
     assert caplog.text == ''
+
+
+# Scenario: a run stores one guess per deck, never scores.
+
+def saved_model(edb: Database) -> int:
+    model = MostCommonArchetype({})
+    return save_model(edb, model, fit(edb, model))
+
+def run_predictions(edb: Database, model_id: int) -> list[Prediction]:
+    """Model 1 on validation decks 201 and 202, plus deck 203, for which the prediction has no guess."""
+    return [*validation_predictions(edb, load_model(edb, model_id)[1]), Prediction(203, None, {})]
+
+def test_a_run_stores_one_guess_per_deck(experiments_db: Database, site: Site) -> None:
+    model_id = saved_model(experiments_db)
+    predictions = run_predictions(experiments_db, model_id)
+    run_id = save_run(experiments_db, model_id, VALIDATION, predictions, seconds=0.5)
+    assert run_id == 1
+    run = load_run(experiments_db, run_id)
+    assert (run.model_id, run.scope, run.deck_count, run.seconds) == (model_id, VALIDATION, 3, 0.5)
+    assert run.input_hash == deck_ids_hash([201, 202, 203])
+    assert run.prediction_hash == prediction_hash(predictions) == prediction_hash(list(reversed(predictions)))
+    assert load_guesses(experiments_db, run_id) == {p.deck_id: p for p in predictions}
+    assert load_guesses(experiments_db, run_id)[203].guess_id is None

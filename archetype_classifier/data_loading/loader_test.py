@@ -1,10 +1,12 @@
 from collections.abc import Iterator
+from datetime import UTC, datetime
 
 import pytest
 
 from archetype_classifier.data_loading import loader
-from archetype_classifier.data_loading.labels import Provenance
-from archetype_classifier.data_loading.splits import Split, SplitScheme
+from archetype_classifier.data_loading.dataset import CardCount, split_decks
+from archetype_classifier.data_loading.labels import LabelFacts, LabelStatus
+from archetype_classifier.data_loading.splits import ExclusionReason, Split, SplitScheme
 from decksite.conftest import seeded_db  # noqa: F401  # The repo's seeded site database, reused as-is.
 from decksite.database import db
 from shared.container import Container
@@ -41,33 +43,84 @@ def whole_seed_is_test(seed: Container) -> SplitScheme:
     return SplitScheme('integration', train_seasons=frozenset(), validation_seasons=frozenset(), test_seasons=frozenset({seed.season_id}))
 
 
-def test_a_snapshot_and_scheme_load_back_as_a_dataset(labelled_seed: Container, experiments_db: Database) -> None:
+def test_a_snapshot_freezes_every_seeded_deck_with_its_label_facts(labelled_seed: Container, experiments_db: Database) -> None:
     validated, automatic, unlabelled = labelled_seed.deck_ids
-    snapshot_id = loader.create_snapshot(experiments_db)
-    scheme_id = loader.create_scheme(experiments_db, whole_seed_is_test(labelled_seed))
-    loader.materialise_split(experiments_db, snapshot_id, scheme_id)
-    dataset = loader.load_dataset(experiments_db, snapshot_id, scheme_id)
+    snapshot = loader.load_deck_facts(experiments_db, loader.create_snapshot(experiments_db))
 
-    assert set(dataset.decks) == set(labelled_seed.deck_ids)
-    assert dataset.decks[validated].provenance == Provenance.VALIDATED_GUESS
-    assert dataset.decks[validated].ground_truth
-    assert dataset.decks[validated].archetype_id == labelled_seed.aggro_id
-    assert dataset.decks[automatic].provenance == Provenance.AUTOMATIC
-    assert not dataset.decks[automatic].ground_truth
-    assert dataset.decks[unlabelled].provenance == Provenance.NO_HISTORY
-    assert {d.split for d in dataset.decks.values()} == {Split.TEST}
-    assert {d.unseen_maindeck_copies for d in dataset.decks.values()} == {60}  # No training decks, so every maindeck card is unseen.
-    assert dataset.archetypes[labelled_seed.aggro_id].depth == 0
+    assert set(labelled_seed.deck_ids) <= set(snapshot.decks)
+    labels = snapshot.decks[validated].labels
+    assert (labels.human_archetype_id, labels.machine_archetype_id) == (labelled_seed.aggro_id, labelled_seed.aggro_id)
+    assert labels.human_labelled_at == datetime.fromtimestamp(2, UTC) and labels.machine_labelled_at == datetime.fromtimestamp(1, UTC)
+    assert snapshot.decks[validated].site_archetype_id == labelled_seed.aggro_id
+    assert snapshot.decks[automatic].labels.human_archetype_id is None
+    assert snapshot.decks[unlabelled].labels == LabelFacts(None, None, None, None)
+    assert snapshot.decks[validated].maindeck_cards == 60
+    assert snapshot.archetypes[labelled_seed.aggro_id].depth == 0
 
 def test_a_later_relabel_does_not_change_a_snapshot(labelled_seed: Container, experiments_db: Database) -> None:
     validated = labelled_seed.deck_ids[0]
     snapshot_id = loader.create_snapshot(experiments_db)
-    scheme_id = loader.create_scheme(experiments_db, whole_seed_is_test(labelled_seed))
-    loader.materialise_split(experiments_db, snapshot_id, scheme_id)
     control_id = db().value("SELECT id FROM archetype WHERE name = 'Control'")
     db().execute('UPDATE deck SET archetype_id = %s WHERE id = %s', [control_id, validated])
     db().execute('INSERT INTO deck_archetype_change (changed_date, deck_id, archetype_id, person_id) VALUES (3, %s, %s, %s)', [validated, control_id, labelled_seed.person_id])
 
-    dataset = loader.load_dataset(experiments_db, snapshot_id, scheme_id)
-    assert dataset.decks[validated].archetype_id == labelled_seed.aggro_id
-    assert dataset.decks[validated].provenance == Provenance.VALIDATED_GUESS
+    deck = loader.load_deck_facts(experiments_db, snapshot_id).decks[validated]
+    assert deck.site_archetype_id == labelled_seed.aggro_id
+    assert deck.labels.human_archetype_id == labelled_seed.aggro_id
+
+def test_a_snapshot_loads_back_with_every_decks_split_matching_the_pure_functions(labelled_seed: Container, experiments_db: Database) -> None:
+    validated, automatic, unlabelled = labelled_seed.deck_ids
+    snapshot_id = loader.create_snapshot(experiments_db)
+    scheme = whole_seed_is_test(labelled_seed)
+    scheme_id = loader.create_scheme(experiments_db, scheme)
+    loader.materialise_split(experiments_db, snapshot_id, scheme_id)
+    snapshot = loader.load_snapshot(experiments_db, snapshot_id, scheme_id)
+
+    assert snapshot.scheme == scheme
+    assert (snapshot.decks[validated].split, snapshot.decks[validated].label_status, snapshot.decks[validated].label_id) == (Split.TEST, LabelStatus.VERIFIED, labelled_seed.aggro_id)
+    assert snapshot.decks[validated].unseen_maindeck_copies == 60  # No training decks, so every maindeck card is unseen.
+    assert (snapshot.decks[automatic].split, snapshot.decks[automatic].exclusion_reason) == (Split.EXCLUDED, ExclusionReason.STATUS_NOT_EVALUATED)
+    assert snapshot.decks[unlabelled].label_status == LabelStatus.UNVERIFIED  # Labelled on the site, but no history.
+    pure = split_decks(loader.load_deck_facts(experiments_db, snapshot_id), loader.iter_deck_cards(), scheme)
+    assert {i: (d.split, d.exclusion_reason, d.label_status, d.label_id, d.unseen_maindeck_copies) for i, d in snapshot.decks.items()} == \
+           {i: (s.split, s.reason, s.label_status, s.label_id, s.unseen_maindeck_copies) for i, s in pure.decks.items()}
+
+
+# Scenario: a large maindeck loads in full (Scenarios.md, "Splitting decks"). The real deck 217677 is checked once, in the rebuild verification.
+
+@pytest.fixture
+def life_is_ez_seed(labelled_seed: Container) -> Iterator[int]:
+    """The first seeded deck enlarged to a 112-card maindeck (4 Lightning Bolt, 108 Mountain) and a 15-card sideboard, like deck 217677."""
+    deck_id = labelled_seed.deck_ids[0]
+    db().execute("UPDATE deck_card SET n = 108 WHERE deck_id = %s AND card = 'Mountain' AND NOT sideboard", [deck_id])
+    db().execute("INSERT INTO deck_card (deck_id, card, n, sideboard) VALUES (%s, 'Smash to Smithereens', 15, TRUE)", [deck_id])
+    try:
+        yield deck_id
+    finally:
+        db().execute("DELETE FROM deck_card WHERE deck_id = %s AND sideboard", [deck_id])
+        db().execute("UPDATE deck_card SET n = 56 WHERE deck_id = %s AND card = 'Mountain'", [deck_id])
+
+def test_a_112_card_maindeck_loads_in_full(life_is_ez_seed: int, experiments_db: Database) -> None:
+    contents = loader.load_contents([life_is_ez_seed])[life_is_ez_seed]
+    assert sum(c.n for c in contents.maindeck) == 112
+    assert sum(c.n for c in contents.sideboard) == 15
+    assert CardCount('Mountain', 108) in contents.maindeck
+    assert loader.load_deck_facts(experiments_db, loader.create_snapshot(experiments_db)).decks[life_is_ez_seed].maindeck_cards == 112
+
+
+# Scenario: card legality is per season. The real seasons 30 and 41 are checked once, in the rebuild verification.
+
+@pytest.fixture
+def legal_cards_seed(seeded_db: Container) -> Iterator[None]:  # noqa: F811
+    """The site's _legal_cards table, which the seeded schema doesn't create, with seasons 30 and 41."""
+    db().execute('CREATE TABLE _legal_cards (season_id INT NOT NULL, name VARCHAR(190) NOT NULL, PRIMARY KEY (season_id, name))')
+    try:
+        db().execute("INSERT INTO _legal_cards (season_id, name) VALUES (30, 'Shock'), (30, 'Burst Lightning'), (30, 'Mountain'), (41, 'Shock'), (41, 'Burst Lightning'), (41, 'Mountain'), (42, 'Shock')")
+        yield
+    finally:
+        db().execute('DROP TABLE _legal_cards')
+
+def test_card_legality_is_per_season(legal_cards_seed: None) -> None:
+    legal = loader.load_legal_cards([30, 41])
+    assert legal == {30: frozenset({'Shock', 'Burst Lightning', 'Mountain'}), 41: frozenset({'Shock', 'Burst Lightning', 'Mountain'})}
+    assert all('Lightning Bolt' not in cards for cards in legal.values())

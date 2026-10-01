@@ -1,30 +1,86 @@
 import hashlib
 
-from archetype_classifier.data_loading.splits import Split, SplitScheme, assign_split
+from archetype_classifier.data_loading.labels import LabelRule, LabelStatus, ScopeRule
+from archetype_classifier.data_loading.splits import ExclusionReason, Split, SplitDecision, SplitScheme, assign_split
 
 DEFAULT = SplitScheme('default')
 A_HASH = 'a' * 40
+KEPT_HASH = 'b6589fc6ab0dc82cf12099d1c2d40ab994e8410c'  # Falls outside the held-out 10% with no salt.
+HELD_OUT_HASH = 'ca3512f4dfa95a03169c5a670a4c91a19b3077b4'  # Falls inside it.
+TYPICAL = SplitScheme('typical')  # Seasons 1-38 / 39 / 40-42 with 10% held out; train and eval {VERIFIED}; twins off.
+
+
+def split(season_id: int, status: LabelStatus, maindeck_hash: str | None = KEPT_HASH, maindeck_cards: int = 60, scheme: SplitScheme = TYPICAL, deck_id: int = 1) -> SplitDecision:
+    return assign_split(deck_id=deck_id, season_id=season_id, maindeck_hash=maindeck_hash, maindeck_cards=maindeck_cards, status=status, scheme=scheme)
+
+
+# Scenario: a deck's split follows its role and its status (Scenarios.md, "Splitting decks").
+
+def test_a_verified_deck_from_a_training_season_is_trained_on() -> None:
+    assert split(30, LabelStatus.VERIFIED) == SplitDecision(Split.TRAIN, None)
+
+def test_a_training_season_deck_whose_status_isnt_trained_on_is_excluded() -> None:
+    assert split(30, LabelStatus.UNVERIFIED) == SplitDecision(Split.EXCLUDED, ExclusionReason.STATUS_NOT_TRAINED_ON)
+    assert split(30, LabelStatus.UNLABELLED) == SplitDecision(Split.EXCLUDED, ExclusionReason.STATUS_NOT_TRAINED_ON)
+
+def test_a_held_out_deck_is_scored_only_if_its_status_is_evaluated() -> None:
+    assert split(30, LabelStatus.VERIFIED, HELD_OUT_HASH) == SplitDecision(Split.HELD_OUT, None)
+    assert split(30, LabelStatus.UNVERIFIED, HELD_OUT_HASH) == SplitDecision(Split.EXCLUDED, ExclusionReason.STATUS_NOT_EVALUATED)
+
+def test_validation_and_test_season_decks_are_scored_only_if_their_status_is_evaluated() -> None:
+    assert split(39, LabelStatus.VERIFIED) == SplitDecision(Split.VALIDATION, None)
+    assert split(41, LabelStatus.VERIFIED) == SplitDecision(Split.TEST, None)
+    assert split(41, LabelStatus.UNLABELLED) == SplitDecision(Split.EXCLUDED, ExclusionReason.STATUS_NOT_EVALUATED)
+    assert split(39, LabelStatus.UNVERIFIED) == SplitDecision(Split.EXCLUDED, ExclusionReason.STATUS_NOT_EVALUATED)
+
+def test_a_deck_with_too_few_maindeck_cards_is_excluded_whatever_its_status() -> None:
+    assert split(30, LabelStatus.VERIFIED, maindeck_hash=None, maindeck_cards=0) == SplitDecision(Split.EXCLUDED, ExclusionReason.NO_MAINDECK_CARDS)
+    assert split(30, LabelStatus.VERIFIED, maindeck_cards=59) == SplitDecision(Split.EXCLUDED, ExclusionReason.MAINDECK_UNDER_60_CARDS)
+    assert split(41, LabelStatus.VERIFIED, maindeck_cards=59) == SplitDecision(Split.EXCLUDED, ExclusionReason.MAINDECK_UNDER_60_CARDS)
+
+
+# Scenario: widening the status rule changes only the decks with that status.
+
+def test_training_on_unverified_decks_changes_only_unverified_training_decks() -> None:
+    baseline = SplitScheme('baseline', train_statuses=frozenset({LabelStatus.VERIFIED, LabelStatus.UNVERIFIED}))
+    decks = [(30, LabelStatus.VERIFIED, KEPT_HASH), (30, LabelStatus.UNVERIFIED, KEPT_HASH), (30, LabelStatus.UNLABELLED, KEPT_HASH),
+             (30, LabelStatus.VERIFIED, HELD_OUT_HASH), (30, LabelStatus.UNVERIFIED, HELD_OUT_HASH), (39, LabelStatus.VERIFIED, KEPT_HASH),
+             (41, LabelStatus.VERIFIED, KEPT_HASH), (41, LabelStatus.UNLABELLED, KEPT_HASH), (43, LabelStatus.VERIFIED, KEPT_HASH)]
+    typical = [split(season, status, maindeck_hash) for season, status, maindeck_hash in decks]
+    widened = [split(season, status, maindeck_hash, scheme=baseline) for season, status, maindeck_hash in decks]
+    assert widened[1] == SplitDecision(Split.TRAIN, None)
+    assert [w for i, w in enumerate(widened) if i != 1] == [t for i, t in enumerate(typical) if i != 1]
+
+
+# Scenario: identical maindecks share a role by default.
+
+def test_identical_maindecks_share_a_role_unless_twins_are_allowed() -> None:
+    assert split(30, LabelStatus.VERIFIED, HELD_OUT_HASH, deck_id=1).split == split(31, LabelStatus.VERIFIED, HELD_OUT_HASH, deck_id=4).split == Split.HELD_OUT
+    assert split(30, LabelStatus.VERIFIED, KEPT_HASH, deck_id=1).split == split(31, LabelStatus.VERIFIED, KEPT_HASH, deck_id=4).split == Split.TRAIN
+    twins = SplitScheme('twins', allow_held_out_twins=True)
+    assert split(30, LabelStatus.VERIFIED, KEPT_HASH, scheme=twins, deck_id=1).split == Split.TRAIN  # Deck id 1 falls outside the held-out 10%,
+    assert split(31, LabelStatus.VERIFIED, KEPT_HASH, scheme=twins, deck_id=4).split == Split.HELD_OUT  # and deck id 4 inside it.
 
 
 def test_seasons_map_to_splits() -> None:
-    assert assign_split(1, A_HASH, DEFAULT) in {Split.TRAIN, Split.HELD_OUT}
-    assert assign_split(39, A_HASH, DEFAULT) == Split.VALIDATION
-    assert assign_split(40, A_HASH, DEFAULT) == Split.TEST
-    assert assign_split(42, A_HASH, DEFAULT) == Split.TEST
+    assert split(1, LabelStatus.VERIFIED, A_HASH, scheme=DEFAULT).split in {Split.TRAIN, Split.HELD_OUT}
+    assert split(39, LabelStatus.VERIFIED, A_HASH, scheme=DEFAULT).split == Split.VALIDATION
+    assert split(40, LabelStatus.VERIFIED, A_HASH, scheme=DEFAULT).split == Split.TEST
+    assert split(42, LabelStatus.VERIFIED, A_HASH, scheme=DEFAULT).split == Split.TEST
 
 def fake_hash(i: int) -> str:
     return hashlib.sha1(str(i).encode()).hexdigest()
 
 def test_about_ten_percent_of_training_hashes_are_held_out_in_any_training_season() -> None:
-    early = [assign_split(5, fake_hash(i), DEFAULT) for i in range(5000)]
-    late = [assign_split(38, fake_hash(i), DEFAULT) for i in range(5000)]
+    early = [split(5, LabelStatus.VERIFIED, fake_hash(i), scheme=DEFAULT).split for i in range(5000)]
+    late = [split(38, LabelStatus.VERIFIED, fake_hash(i), scheme=DEFAULT).split for i in range(5000)]
     assert early == late
     assert 9 <= 100 * early.count(Split.HELD_OUT) / 5000 <= 11
 
 def test_a_salt_reshuffles_the_held_out_hashes() -> None:
-    unsalted = [assign_split(20, fake_hash(i), DEFAULT) for i in range(5000)]
-    explicitly_unsalted = [assign_split(20, fake_hash(i), SplitScheme('same', salt='')) for i in range(5000)]
-    salted = [assign_split(20, fake_hash(i), SplitScheme('salted', salt='2')) for i in range(5000)]
+    unsalted = [split(20, LabelStatus.VERIFIED, fake_hash(i), scheme=DEFAULT).split for i in range(5000)]
+    explicitly_unsalted = [split(20, LabelStatus.VERIFIED, fake_hash(i), scheme=SplitScheme('same', salt='')).split for i in range(5000)]
+    salted = [split(20, LabelStatus.VERIFIED, fake_hash(i), scheme=SplitScheme('salted', salt='2')).split for i in range(5000)]
     assert unsalted == explicitly_unsalted
     assert unsalted != salted
 
@@ -35,5 +91,22 @@ def test_a_scheme_survives_being_stored_as_params() -> None:
 def test_a_scheme_stored_before_a_parameter_existed_gets_its_default() -> None:
     assert SplitScheme.from_params('old', {'test_seasons': [40, 41, 42]}) == SplitScheme('old')
 
-def test_seasons_outside_the_scheme_get_no_split() -> None:
-    assert assign_split(43, A_HASH, DEFAULT) is None
+def test_seasons_outside_the_scheme_are_excluded_as_reserved() -> None:
+    assert split(43, LabelStatus.VERIFIED, A_HASH, scheme=DEFAULT) == SplitDecision(Split.EXCLUDED, ExclusionReason.RESERVED_SEASON)
+
+
+# Scenario: older schemes load with today's defaults.
+
+SCHEME_1_PARAMS = {'train_seasons': list(range(1, 39)), 'validation_seasons': [39], 'test_seasons': [40, 41, 42], 'held_out_percent': 10, 'salt': ''}  # As stored.
+
+def test_scheme_1_loads_with_the_typical_status_rule_and_the_old_label_rule() -> None:
+    scheme = SplitScheme.from_params('default', SCHEME_1_PARAMS)
+    assert scheme.scope_rule == ScopeRule.LEAGUE_AND_GATHERLING
+    assert scheme.label_rule == LabelRule.LATEST_ENTRY_IS_HUMAN
+    assert scheme.train_statuses == scheme.eval_statuses == frozenset({LabelStatus.VERIFIED})
+    assert not scheme.allow_held_out_twins
+
+def test_every_new_parameter_survives_being_stored() -> None:
+    scheme = SplitScheme('custom', label_rule=LabelRule.SITE_LABEL_IF_EVER_HUMAN, train_statuses=frozenset({LabelStatus.VERIFIED, LabelStatus.UNVERIFIED}),
+                         eval_statuses=frozenset({LabelStatus.VERIFIED, LabelStatus.UNVERIFIED}), allow_held_out_twins=True)
+    assert SplitScheme.from_params('custom', scheme.to_params()) == scheme

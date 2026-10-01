@@ -659,3 +659,113 @@ Model 1 was saved from snapshot 1. Deck 106 (season 30, a 60-card list of 4 Nega
 - **Expect:** each call to log a test look records the run, the rows scored (for example "test, overall" and "test, by unseen copies") and the time. Three looks give three entries, in order.
 - **Why it matters:** the test seasons are looked at rarely, and the log shows how often.
 - **Check:** log three looks for one run and read the log back.
+
+## Rows of the results table
+
+These scenarios belong to the row set (#27). A row is a named, versioned group of scored decks, such as "test, 13+ unseen copies". Rows are built from the deck set that was scored, and the training deck set, then each row is scored from a run's stored guesses with the metrics module. Scores are never stored (decision F).
+
+**Decks.** Each is a VERIFIED League deck unless it says otherwise. "Maindeck A" means two decks share an identical maindeck.
+
+| Deck | Split | Unseen maindeck copies | Maindeck |
+|---|---|---|---|
+| 101 | TRAIN | 0 | A |
+| 102 | TRAIN | 0 | B |
+| 301 | HELD_OUT | 0 | its own |
+| 302 | HELD_OUT | 3 | its own |
+| 201 | VALIDATION | 0 | A (repeats deck 101) |
+| 202 | VALIDATION | 0 | its own |
+| 401 | TEST | 0 | its own |
+| 402 | TEST | 2 | its own |
+| 403 | TEST | 7 | its own |
+| 404 | TEST | 15 | B (repeats deck 102) |
+
+**Scheme**, unless a scenario says otherwise: the typical scheme (season rule 1–38 / 39 / 40–42 with 10% held out; status rule train {VERIFIED}, eval {VERIFIED}; twins off). The model trained on {TRAIN} and tuned on {VALIDATION}.
+
+**Repeated maindeck:** another TRAIN deck has the same maindeck.
+
+All scenarios here were proposed 2026-10-01.
+
+### Scoring held-out and validation decks gives their rows
+
+The scored deck set is {HELD_OUT, VALIDATION}.
+
+- **Expect these rows,** and no others:
+
+  | Row | Decks |
+  |---|---|
+  | held-out, no unseen cards | 301 |
+  | held-out, unseen cards | 302 |
+  | validation | 201, 202 |
+  | validation, new maindeck | 202 |
+  | validation, repeated maindeck | 201 |
+
+- **Expect, flags:** the validation rows are marked tuned on. Nothing is marked trained on.
+- **Expect, no held-out maindeck rows:** with twins off, every held-out deck is new by construction, so those rows would say nothing.
+- **Why it matters:** these are the rows we read most often while developing, and the repeated-maindeck row shows how much of a score comes from decks the model has effectively seen.
+- **Check:** build the rows for the scored and training deck sets, and score each from a run's guesses.
+
+### Test rows split by unseen copies, and need the gate
+
+The scored deck set is {TEST}.
+
+- **Expect these rows, with the gate:**
+
+  | Row | Decks |
+  |---|---|
+  | test, overall | 401, 402, 403, 404 |
+  | test, 0 unseen copies | 401 |
+  | test, 1–4 unseen copies | 402 |
+  | test, 5–12 unseen copies | 403 |
+  | test, 13+ unseen copies | 404 |
+  | test, new maindeck | 401, 402, 403 |
+  | test, repeated maindeck | 404 |
+
+- **Expect, without the gate:** scoring raises an error, and nothing is scored or logged. The deck set itself can only be built with `include_test`, but the rows check again.
+- **Expect, with the gate:** one test look is logged for the run, naming the seven test rows scored.
+- **Why it matters:** the test seasons are the main measure of unseen cards, and they're looked at rarely.
+- **Check:** score the test rows with and without the gate, and read the run's test looks.
+
+### Scoring the training decks gives one in-sample row
+
+The scored deck set is {TRAIN}.
+
+- **Expect:** one row, "train, in-sample", with decks 101 and 102, marked trained on.
+- **Why it matters:** it shows how well the model fits the decks it learned from, which isn't a generalisation score.
+- **Check:** build and score the rows for the TRAIN deck set.
+
+### Unverified labels get their own row
+
+**Scheme:** season rule 1–38 / 39 / 40–42 with 10% held out; status rule train {VERIFIED}, eval {VERIFIED, UNVERIFIED}; twins off. Deck 303 is HELD_OUT and UNVERIFIED (labelled by an automatic guess only), with 0 unseen copies. The scored deck set is {HELD_OUT}.
+
+- **Expect:**
+  - "held-out, no unseen cards" still holds deck 301 only, and "held-out, unseen cards" deck 302 only: the other rows hold VERIFIED decks only
+  - a row "held-out, unverified labels" holds deck 303
+- **Expect, under the typical scheme:** deck 303 is EXCLUDED, so there's no unverified row.
+- **Check:** build the rows under both schemes.
+
+### Rows the model tuned on are flagged
+
+The model tuned on {HELD_OUT, VALIDATION} instead. The scored deck set is {HELD_OUT, VALIDATION}.
+
+- **Expect:** every held-out and validation row is marked tuned on. Their scores are optimistic, and a report says so.
+- **Check:** score the rows with the model's validation splits {HELD_OUT, VALIDATION}.
+
+### A deck with no stored guess is skipped with a warning
+
+The run's guesses cover deck 201 but not deck 202, for example because deck 202's contents were missing when the run was made.
+
+- **Expect:** "validation" is scored on deck 201 only. A warning names deck 202 and a count of **1** skipped deck, and the row's results record that 1 deck was skipped. A deck whose stored guess is "no guess" is different: it's scored, as a guess of the root.
+- **Why it matters:** data problems are non-fatal, but a row's deck count must say what it really covers.
+- **Check:** score the validation rows from guesses that leave out deck 202.
+
+### A row with no decks is left out
+
+The scored deck set is {HELD_OUT}, but neither held-out deck has unseen cards (deck 302 has 0 unseen copies instead).
+
+- **Expect:** there's no "held-out, unseen cards" row, and a log line names it as empty. The metrics module can't score an empty set, and an empty row would show nothing.
+- **Check:** build the rows when one would be empty.
+
+### Rows are versioned
+
+- **Expect:** the row set has a version number, 1. Any change to which rows exist or which decks they hold bumps it, and every report records it, with the metrics version and PR number (decision F).
+- **Check:** the version is exposed beside the row-building function.

@@ -1,0 +1,3 @@
+# Reports mirrored 1:1 from the OneDrive ArchetypeClassificationReports folder.
+# Ignored by default; commit a select report with `git add -f` once its experiment concludes.
+/reports/

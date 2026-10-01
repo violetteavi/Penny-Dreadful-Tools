@@ -33,6 +33,7 @@ Today decks are labelled by a guess (hand-written rules, or the archetype of the
 - Code follows the repo's standards: typed, and passing `dev.py lint` and `dev.py types`.
 - Machine-learning libraries go in an optional `archetypes` dependency group in `pyproject.toml`, installed with `uv sync --group archetypes`. Tests that need them use `pytest.importorskip`, and tests that need the database use the `functional` marker.
 - Exported data and trained models are not committed.
+- Reports (design write-ups and experiment findings, mostly PDFs) live in `reports/`, a 1:1 mirror of the OneDrive `ArchetypeClassificationReports` folder. It's gitignored. A select report can be committed with `git add -f` once its experiment has concluded.
 
 ## Running
 

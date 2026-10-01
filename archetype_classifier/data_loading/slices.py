@@ -31,6 +31,11 @@ class Snapshot:
     archetypes: dict[int, ArchetypeSnapshot]
     scheme: SplitScheme
 
+    def split_of(self, deck_id: int) -> tuple[Split, ExclusionReason | None]:
+        """A deck's split and exclusion reason. A deck the snapshot doesn't contain is excluded."""
+        deck = self.decks.get(deck_id)
+        return (deck.split, deck.exclusion_reason) if deck else (Split.EXCLUDED, ExclusionReason.NOT_IN_SNAPSHOT)
+
 @dataclass(frozen=True)
 class DeckSet:
     decks: dict[int, SnapshotDeck]

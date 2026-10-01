@@ -19,6 +19,7 @@ class ExclusionReason(Enum):
     NO_MAINDECK_CARDS = 'no maindeck cards'
     MAINDECK_UNDER_60_CARDS = 'maindeck under 60 cards'
     RESERVED_SEASON = 'reserved season'
+    NOT_IN_SNAPSHOT = 'not in snapshot'  # For example, a deck played after the snapshot was taken.
     STATUS_NOT_TRAINED_ON = 'status not used for training'
     STATUS_NOT_EVALUATED = 'status not used for evaluation'
 

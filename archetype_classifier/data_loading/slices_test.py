@@ -37,3 +37,10 @@ def test_a_deck_sets_fingerprint_depends_only_on_its_decks() -> None:
     one_more = build_deck_set(SNAPSHOT, frozenset({Split.TRAIN, Split.VALIDATION}))
     assert forwards.deck_ids_hash == backwards.deck_ids_hash
     assert forwards.deck_ids_hash != one_more.deck_ids_hash
+
+
+# Scenario: a deck the snapshot doesn't contain is excluded.
+
+def test_a_deck_the_snapshot_doesnt_contain_is_excluded() -> None:
+    assert SNAPSHOT.split_of(1) == (Split.TRAIN, None)
+    assert SNAPSHOT.split_of(284191) == (Split.EXCLUDED, ExclusionReason.NOT_IN_SNAPSHOT)

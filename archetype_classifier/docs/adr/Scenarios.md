@@ -301,7 +301,7 @@ Most scenarios use the **typical scheme**:
 - **Status rule:** `train_statuses` = {VERIFIED}, `eval_statuses` = {VERIFIED}.
 - **Twins:** `allow_held_out_twins` off.
 
-All scenarios here were proposed 2026-10-01.
+All scenarios here were confirmed 2026-10-01.
 
 ### Label status depends on the history, the site label and the label rule
 

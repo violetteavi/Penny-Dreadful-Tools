@@ -1,13 +1,17 @@
 """What a model sees. A deck set picks the decks; these functions only change their shape, attaching each deck's cards and keeping just the fields a model may use."""
 import logging
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from typing import ClassVar, Protocol
 
 from archetype_classifier.data_loading.dataset import CardCount, DeckContents
 from archetype_classifier.data_loading.labels import LabelStatus
 from archetype_classifier.data_loading.slices import DeckSet, SnapshotDeck
+from archetype_classifier.evaluation.metrics import ArchetypeTree
 
 logger = logging.getLogger(__name__)
+
+type JSON = str | int | float | bool | None | list[JSON] | dict[str, JSON]
 
 
 @dataclass(frozen=True)
@@ -31,6 +35,46 @@ class LabelledDeck:
     deck: PredictDeck
     label_id: int  # The label the deck is scored against.
     group_key: str  # The maindeck hash: identical maindecks are one piece of evidence.
+
+@dataclass(frozen=True)
+class FitContext:
+    """Fit-time extras, gathered so that adding one never changes fit's signature."""
+    tree: ArchetypeTree
+    legal_cards: Mapping[int, frozenset[str]]  # Season id -> the cards legal that season.
+    seed: int
+
+@dataclass(frozen=True)
+class Prediction:
+    deck_id: int
+    guess_id: int | None  # One guess per deck; None for no guess.
+    evidence: dict[str, JSON]  # What the guess rests on, so a report can trace it.
+
+class Model(Protocol):
+    """Every model is fitted, predicts, and saves what fitting learned through this one contract."""
+    name: ClassVar[str]
+    version: ClassVar[int]  # Bumped by hand when behaviour changes.
+    params: dict[str, JSON]
+
+    def fit(self, training: Sequence[TrainingDeck], validation: Sequence[LabelledDeck], context: FitContext) -> None: ...
+
+    def predict(self, decks: Sequence[PredictDeck]) -> list[Prediction]: ...
+
+    def state(self) -> dict[str, JSON]: ...
+
+    @classmethod
+    def from_state(cls, params: dict[str, JSON], state: dict[str, JSON], training: Sequence[TrainingDeck], context: FitContext) -> 'Model': ...
+
+MODELS: dict[str, type[Model]] = {}
+
+def register[M: Model](cls: type[M]) -> type[M]:
+    """Make a model class findable by its name, which is all a stored model records about its class."""
+    MODELS[cls.name] = cls
+    return cls
+
+def model_class(name: str) -> type[Model]:
+    if name not in MODELS:
+        raise KeyError(f'No model named {name!r}; registered models are {sorted(MODELS)}')
+    return MODELS[name]
 
 def build_training_decks(deck_set: DeckSet, contents: Mapping[int, DeckContents]) -> list[TrainingDeck]:
     return [TrainingDeck(predict_deck(d, c), d.season_id, d.site_archetype_id, d.reviewed, d.label_status) for d, c in with_contents(deck_set, contents)]

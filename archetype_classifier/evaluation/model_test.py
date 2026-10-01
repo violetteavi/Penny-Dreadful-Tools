@@ -1,5 +1,7 @@
 import dataclasses
 import logging
+from collections.abc import Sequence
+from typing import ClassVar
 
 import pytest
 
@@ -7,7 +9,7 @@ from archetype_classifier.data_loading.dataset import CardCount, DeckContents
 from archetype_classifier.data_loading.labels import LabelFacts, LabelStatus
 from archetype_classifier.data_loading.slices import Snapshot, SnapshotDeck, build_deck_set
 from archetype_classifier.data_loading.splits import ExclusionReason, Split, SplitScheme
-from archetype_classifier.evaluation.model import LabelledDeck, PredictDeck, TrainingDeck, build_labelled_decks, build_predict_decks, build_training_decks
+from archetype_classifier.evaluation.model import JSON, FitContext, LabelledDeck, PredictDeck, Prediction, TrainingDeck, build_labelled_decks, build_predict_decks, build_training_decks, model_class, register
 
 RED_DECK_WINS = 2
 AZORIUS_CONTROL = 3
@@ -99,3 +101,33 @@ def test_a_deck_set_of_any_split_converts_to_every_shape(split: Split, deck_id: 
 def test_excluded_decks_never_reach_a_model() -> None:
     with pytest.raises(ValueError, match='EXCLUDED'):
         build_deck_set(ONE_PER_SPLIT, frozenset({Split.EXCLUDED}))
+
+
+# Scenario: a model is found by its name.
+
+@register
+class AlwaysRedDeckWins:
+    """A stand-in model: just enough to be registered and looked up."""
+    name: ClassVar[str] = 'always red deck wins (test)'
+    version: ClassVar[int] = 1
+
+    def __init__(self, params: dict[str, JSON]) -> None:
+        self.params = params
+
+    def fit(self, training: Sequence[TrainingDeck], validation: Sequence[LabelledDeck], context: FitContext) -> None:
+        pass
+
+    def predict(self, decks: Sequence[PredictDeck]) -> list[Prediction]:
+        return [Prediction(d.deck_id, RED_DECK_WINS, {}) for d in decks]
+
+    def state(self) -> dict[str, JSON]:
+        return {}
+
+    @classmethod
+    def from_state(cls, params: dict[str, JSON], state: dict[str, JSON], training: Sequence[TrainingDeck], context: FitContext) -> 'AlwaysRedDeckWins':
+        return cls(params)
+
+def test_a_model_is_found_by_its_name() -> None:
+    assert model_class('always red deck wins (test)') is AlwaysRedDeckWins
+    with pytest.raises(KeyError, match=r"No model named 'nonsense'.*always red deck wins \(test\)"):
+        model_class('nonsense')

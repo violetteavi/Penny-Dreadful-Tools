@@ -1,3 +1,5 @@
+import ast
+import sys
 from collections.abc import Iterator
 from datetime import UTC, datetime
 
@@ -10,14 +12,14 @@ from archetype_classifier.data_loading.splits import ExclusionReason, Split, Spl
 from decksite.conftest import seeded_db  # noqa: F401  # The repo's seeded site database, reused as-is.
 from decksite.database import db
 from shared.container import Container
-from shared.database import Database, get_database
+from shared.database import Database
 
 EXPERIMENTS_TEST_DB = 'archetype_experiments_test'
 
 
 @pytest.fixture
 def experiments_db() -> Iterator[Database]:
-    edb = get_database(EXPERIMENTS_TEST_DB)
+    edb = loader.experiments_db(EXPERIMENTS_TEST_DB)
     edb.execute(f'DROP DATABASE IF EXISTS {EXPERIMENTS_TEST_DB}')
     edb.execute(f'CREATE DATABASE {EXPERIMENTS_TEST_DB} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci')
     edb.execute(f'USE {EXPERIMENTS_TEST_DB}')
@@ -124,3 +126,14 @@ def test_card_legality_is_per_season(legal_cards_seed: None) -> None:
     legal = loader.load_legal_cards([30, 41])
     assert legal == {30: frozenset({'Shock', 'Burst Lightning', 'Mountain'}), 41: frozenset({'Shock', 'Burst Lightning', 'Mountain'})}
     assert all('Lightning Bolt' not in cards for cards in legal.values())
+
+
+def test_the_command_line_snapshots_splits_and_summarises(labelled_seed: Container, experiments_db: Database, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    monkeypatch.setattr(loader, 'experiments_db', lambda: experiments_db)
+    for argv in (['snapshot', '--notes', 'test'], ['scheme', 'default'], ['split', '1', '1'], ['summary', '1', '1']):
+        monkeypatch.setattr(sys, 'argv', ['loader', *argv])
+        loader.main()
+    out = capsys.readouterr().out.splitlines()
+    assert out[:3] == ['Created snapshot 1', 'Created scheme 1', f'Split {len(labelled_seed.deck_ids)} decks']
+    assert out[3] == out[6] and out[3].startswith('split {')  # split prints the same summary as summary does.
+    assert sum(ast.literal_eval(out[3].removeprefix('split ')).values()) == len(labelled_seed.deck_ids)

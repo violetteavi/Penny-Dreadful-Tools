@@ -92,3 +92,9 @@ def test_an_unreviewed_guess_is_automatic() -> None:
     assert source.provenance == Provenance.AUTOMATIC
     assert source.guess_archetype_id is None
     assert source.latest_archetype_id == RED_DECK_WINS
+
+# Scenario: a person's label and an automatic guess at the same moment.
+
+def test_a_persons_label_and_a_guess_at_the_same_moment_counts_as_the_persons() -> None:
+    history = [LabelChange(10, RED_DECK_WINS, by_person=False, changed_at=MARCH_2), LabelChange(10, PRISONER, by_person=True, changed_at=MARCH_2)]
+    assert status(history, PRISONER, 'Prisoner', LabelRule.LATEST_ENTRY_IS_HUMAN) == DeckLabel(LabelStatus.VERIFIED, PRISONER)

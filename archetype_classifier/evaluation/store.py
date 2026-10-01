@@ -1,9 +1,96 @@
 """The model and run store, in the experiments database. Models are saved as their record and what fitting learned, runs as one guess per deck; never decks, never scores."""
 import hashlib
+import json
 from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Any
 
-from archetype_classifier.evaluation.model import Prediction
+from archetype_classifier.data_loading import loader
+from archetype_classifier.data_loading.slices import build_deck_set
+from archetype_classifier.data_loading.splits import Split
+from archetype_classifier.evaluation.metrics import ArchetypeTree
+from archetype_classifier.evaluation.model import JSON, FitContext, Model, Prediction, build_training_decks, model_class
+from shared.database import Database
 
+SCHEMA = [
+    """CREATE TABLE IF NOT EXISTS model (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(190) NOT NULL,
+        version INT NOT NULL,
+        params TEXT NOT NULL,
+        snapshot_id INT NOT NULL,
+        scheme_id INT NOT NULL,
+        seed INT NOT NULL,
+        training_splits VARCHAR(100) NOT NULL,
+        validation_splits VARCHAR(100) NOT NULL,
+        training_count INT NOT NULL,
+        training_hash CHAR(40) NOT NULL,
+        validation_count INT NOT NULL,
+        validation_hash CHAR(40) NOT NULL,
+        state LONGTEXT NOT NULL,
+        fit_seconds DOUBLE NOT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (snapshot_id) REFERENCES snapshot (id),
+        FOREIGN KEY (scheme_id) REFERENCES split_scheme (id)
+    )""",
+]
+
+
+@dataclass(frozen=True)
+class ModelRecord:
+    """Everything that identifies a fitted model, and the decks it actually trained and tuned on."""
+    name: str
+    version: int
+    params: dict[str, JSON]
+    snapshot_id: int
+    scheme_id: int
+    seed: int
+    training_splits: frozenset[Split]
+    validation_splits: frozenset[Split]
+    training_count: int
+    training_hash: str  # Fingerprint of the deck ids it trained on, after skipping any with missing contents.
+    validation_count: int
+    validation_hash: str
+    fit_seconds: float
+
+def ensure_schema(edb: Database) -> None:
+    loader.ensure_schema(edb)
+    for statement in SCHEMA:
+        edb.execute(statement)
+
+def save_model(edb: Database, model: Model, record: ModelRecord) -> int:
+    """Save a fitted model's record and state. Returns its id."""
+    ensure_schema(edb)
+    return edb.insert("""INSERT INTO model (name, version, params, snapshot_id, scheme_id, seed, training_splits, validation_splits, training_count, training_hash,
+                                            validation_count, validation_hash, state, fit_seconds) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                      [record.name, record.version, canonical(record.params), record.snapshot_id, record.scheme_id, record.seed, splits_text(record.training_splits),
+                       splits_text(record.validation_splits), record.training_count, record.training_hash, record.validation_count, record.validation_hash,
+                       canonical(model.state()), record.fit_seconds])
+
+def load_model(edb: Database, model_id: int) -> tuple[ModelRecord, Model]:
+    """A stored model, rebuilt from its state. Its training decks are rebuilt from the record (snapshot, scheme and training splits)."""
+    row = edb.select('SELECT * FROM model WHERE id = %s', [model_id])[0]
+    record = model_record(row)
+    snapshot = loader.load_snapshot(edb, record.snapshot_id, record.scheme_id)
+    training_set = build_deck_set(snapshot, record.training_splits, include_test=Split.TEST in record.training_splits)
+    training = build_training_decks(training_set, loader.load_contents(training_set.decks))
+    context = FitContext(ArchetypeTree(snapshot.archetypes), loader.load_legal_cards({d.season_id for d in snapshot.decks.values()}), record.seed)
+    return record, model_class(record.name).from_state(record.params, json.loads(str(row['state'])), training, context)
+
+def model_record(row: dict[str, Any]) -> ModelRecord:
+    return ModelRecord(row['name'], row['version'], json.loads(row['params']), row['snapshot_id'], row['scheme_id'], row['seed'], splits_from_text(row['training_splits']),
+                       splits_from_text(row['validation_splits']), row['training_count'], row['training_hash'], row['validation_count'], row['validation_hash'],
+                       row['fit_seconds'])
+
+def canonical(value: JSON) -> str:
+    """JSON with sorted keys, so equal values are equal text."""
+    return json.dumps(value, sort_keys=True)
+
+def splits_text(splits: frozenset[Split]) -> str:
+    return ','.join(sorted(s.value for s in splits))
+
+def splits_from_text(text: str) -> frozenset[Split]:
+    return frozenset(Split(s) for s in text.split(',') if s)
 
 def prediction_hash(predictions: Sequence[Prediction]) -> str:
     """A fingerprint of a run's guesses: every deck and its guess, in any order. Evidence is left out, since scores depend only on guesses."""

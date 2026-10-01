@@ -106,3 +106,21 @@ def test_a_112_card_maindeck_loads_in_full(life_is_ez_seed: int, experiments_db:
     assert sum(c.n for c in contents.sideboard) == 15
     assert CardCount('Mountain', 108) in contents.maindeck
     assert loader.load_deck_facts(experiments_db, loader.create_snapshot(experiments_db)).decks[life_is_ez_seed].maindeck_cards == 112
+
+
+# Scenario: card legality is per season. The real seasons 30 and 41 are checked once, in the rebuild verification.
+
+@pytest.fixture
+def legal_cards_seed(seeded_db: Container) -> Iterator[None]:  # noqa: F811
+    """The site's _legal_cards table, which the seeded schema doesn't create, with seasons 30 and 41."""
+    db().execute('CREATE TABLE _legal_cards (season_id INT NOT NULL, name VARCHAR(190) NOT NULL, PRIMARY KEY (season_id, name))')
+    try:
+        db().execute("INSERT INTO _legal_cards (season_id, name) VALUES (30, 'Shock'), (30, 'Burst Lightning'), (30, 'Mountain'), (41, 'Shock'), (41, 'Burst Lightning'), (41, 'Mountain'), (42, 'Shock')")
+        yield
+    finally:
+        db().execute('DROP TABLE _legal_cards')
+
+def test_card_legality_is_per_season(legal_cards_seed: None) -> None:
+    legal = loader.load_legal_cards([30, 41])
+    assert legal == {30: frozenset({'Shock', 'Burst Lightning', 'Mountain'}), 41: frozenset({'Shock', 'Burst Lightning', 'Mountain'})}
+    assert all('Lightning Bolt' not in cards for cards in legal.values())

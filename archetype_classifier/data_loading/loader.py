@@ -115,6 +115,14 @@ def load_contents(deck_ids: Iterable[int]) -> dict[int, DeckContents]:
             lines[r['deck_id']][bool(r['sideboard'])].append(CardCount(r['card'], r['n']))  # type: ignore[index, arg-type]
     return {i: DeckContents(tuple(side[False]), tuple(side[True])) for i, side in lines.items()}
 
+def load_legal_cards(season_ids: Iterable[int]) -> dict[int, frozenset[str]]:
+    """The cards legal in each given season, from the site's _legal_cards table."""
+    seasons = sorted(set(season_ids))
+    legal: dict[int, set[str]] = {s: set() for s in seasons}
+    for r in db().select('SELECT season_id, name FROM _legal_cards WHERE season_id IN %s', [tuple(seasons)]):
+        legal[r['season_id']].add(r['name'])  # type: ignore[index, arg-type]
+    return {s: frozenset(cards) for s, cards in legal.items()}
+
 # Writing and reading the experiments database
 
 def create_snapshot(edb: Database, notes: str = '') -> int:

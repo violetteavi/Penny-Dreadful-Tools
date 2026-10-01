@@ -10,8 +10,8 @@ HELD_OUT_HASH = 'ca3512f4dfa95a03169c5a670a4c91a19b3077b4'  # Falls inside it.
 TYPICAL = SplitScheme('typical')  # Seasons 1-38 / 39 / 40-42 with 10% held out; train and eval {VERIFIED}; twins off.
 
 
-def split(season_id: int, status: LabelStatus, maindeck_hash: str | None = KEPT_HASH, maindeck_cards: int = 60, scheme: SplitScheme = TYPICAL) -> SplitDecision:
-    return assign_split(deck_id=1, season_id=season_id, maindeck_hash=maindeck_hash, maindeck_cards=maindeck_cards, status=status, scheme=scheme)
+def split(season_id: int, status: LabelStatus, maindeck_hash: str | None = KEPT_HASH, maindeck_cards: int = 60, scheme: SplitScheme = TYPICAL, deck_id: int = 1) -> SplitDecision:
+    return assign_split(deck_id=deck_id, season_id=season_id, maindeck_hash=maindeck_hash, maindeck_cards=maindeck_cards, status=status, scheme=scheme)
 
 
 # Scenario: a deck's split follows its role and its status (Scenarios.md, "Splitting decks").
@@ -50,6 +50,16 @@ def test_training_on_unverified_decks_changes_only_unverified_training_decks() -
     widened = [split(season, status, maindeck_hash, scheme=baseline) for season, status, maindeck_hash in decks]
     assert widened[1] == SplitDecision(Split.TRAIN, None)
     assert [w for i, w in enumerate(widened) if i != 1] == [t for i, t in enumerate(typical) if i != 1]
+
+
+# Scenario: identical maindecks share a role by default.
+
+def test_identical_maindecks_share_a_role_unless_twins_are_allowed() -> None:
+    assert split(30, LabelStatus.VERIFIED, HELD_OUT_HASH, deck_id=1).split == split(31, LabelStatus.VERIFIED, HELD_OUT_HASH, deck_id=4).split == Split.HELD_OUT
+    assert split(30, LabelStatus.VERIFIED, KEPT_HASH, deck_id=1).split == split(31, LabelStatus.VERIFIED, KEPT_HASH, deck_id=4).split == Split.TRAIN
+    twins = SplitScheme('twins', allow_held_out_twins=True)
+    assert split(30, LabelStatus.VERIFIED, KEPT_HASH, scheme=twins, deck_id=1).split == Split.TRAIN  # Deck id 1 falls outside the held-out 10%,
+    assert split(31, LabelStatus.VERIFIED, KEPT_HASH, scheme=twins, deck_id=4).split == Split.HELD_OUT  # and deck id 4 inside it.
 
 
 def test_seasons_map_to_splits() -> None:

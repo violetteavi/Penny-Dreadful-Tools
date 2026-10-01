@@ -39,6 +39,7 @@ class SplitScheme:
     salt: str = ''  # Mixed into the hash; a different salt gives a different held-out set.
     train_statuses: frozenset[LabelStatus] = frozenset({LabelStatus.VERIFIED})  # Label statuses a model may train on.
     eval_statuses: frozenset[LabelStatus] = frozenset({LabelStatus.VERIFIED})  # Label statuses that are scored.
+    allow_held_out_twins: bool = False  # Hold out single decks rather than maindeck groups, so held-out decks can repeat a training maindeck.
 
     def to_params(self) -> dict[str, Any]:
         """Every parameter except the name, as JSON-ready values."""
@@ -68,7 +69,7 @@ def assign_split(*, deck_id: int, season_id: int, maindeck_hash: str | None, mai
         return SplitDecision(Split.EXCLUDED, ExclusionReason.NO_MAINDECK_CARDS)
     if maindeck_cards < MINIMUM_MAINDECK:
         return SplitDecision(Split.EXCLUDED, ExclusionReason.MAINDECK_UNDER_60_CARDS)
-    role = deck_role(season_id, maindeck_hash, scheme)
+    role = deck_role(season_id, str(deck_id) if scheme.allow_held_out_twins else maindeck_hash, scheme)
     if role is None:
         return SplitDecision(Split.EXCLUDED, ExclusionReason.RESERVED_SEASON)
     if role == Split.TRAIN:
@@ -77,13 +78,15 @@ def assign_split(*, deck_id: int, season_id: int, maindeck_hash: str | None, mai
         allowed, reason = scheme.eval_statuses, ExclusionReason.STATUS_NOT_EVALUATED
     return SplitDecision(role, None) if status in allowed else SplitDecision(Split.EXCLUDED, reason)
 
-def deck_role(season_id: int, maindeck_hash: str, scheme: SplitScheme) -> Split | None:
-    """The split a deck's season and held-out group give it before its label status is considered, or None for a reserved season."""
+def deck_role(season_id: int, group_key: str, scheme: SplitScheme) -> Split | None:
+    """The split a deck's season and held-out group give it before its label status is considered, or None for a reserved season.
+
+    The group key is the maindeck hash, so identical maindecks share a role, or the deck id when twins are allowed."""
     if season_id in scheme.test_seasons:
         return Split.TEST
     if season_id in scheme.validation_seasons:
         return Split.VALIDATION
     if season_id in scheme.train_seasons:
-        held_out = zlib.crc32((scheme.salt + maindeck_hash).encode()) % 100 < scheme.held_out_percent
+        held_out = zlib.crc32((scheme.salt + group_key).encode()) % 100 < scheme.held_out_percent
         return Split.HELD_OUT if held_out else Split.TRAIN
     return None

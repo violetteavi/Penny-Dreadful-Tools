@@ -38,6 +38,9 @@ SCHEMA = [
 ]
 
 
+class StoreConflict(Exception):
+    """The same model on the same decks gave a different result. Nothing was stored."""
+
 @dataclass(frozen=True)
 class ModelRecord:
     """Everything that identifies a fitted model, and the decks it actually trained and tuned on."""
@@ -64,14 +67,19 @@ def save_model(edb: Database, model: Model, record: ModelRecord) -> int:
     """Save a fitted model's record and state, and return its id. Saving the same model again returns the stored model's id."""
     ensure_schema(edb)
     identity = identity_hash(record)
-    same = edb.select('SELECT id FROM model WHERE identity_hash = %s AND training_hash = %s AND validation_hash = %s', [identity, record.training_hash, record.validation_hash])
+    state = canonical(model.state())
+    same = edb.select('SELECT id, state FROM model WHERE identity_hash = %s AND training_hash = %s AND validation_hash = %s', [identity, record.training_hash, record.validation_hash])
     if same:
-        return int(same[0]['id'])  # type: ignore[call-overload]
+        stored_id, stored_state = int(same[0]['id']), str(same[0]['state'])  # type: ignore[call-overload]
+        if stored_state != state:
+            raise StoreConflict(f'The same model on the same decks gave a different result: model {stored_id} learned {stored_state}, this fit learned {state}. '
+                                'Make fitting deterministic (the seed must control all randomness), or bump the version.')
+        return stored_id
     return edb.insert("""INSERT INTO model (identity_hash, name, version, params, snapshot_id, scheme_id, seed, training_splits, validation_splits, training_count, training_hash,
                                             validation_count, validation_hash, state, fit_seconds) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                       [identity, record.name, record.version, canonical(record.params), record.snapshot_id, record.scheme_id, record.seed, splits_text(record.training_splits),
                        splits_text(record.validation_splits), record.training_count, record.training_hash, record.validation_count, record.validation_hash,
-                       canonical(model.state()), record.fit_seconds])
+                       state, record.fit_seconds])
 
 def identity_hash(record: ModelRecord) -> str:
     """A model's identity: name, version, parameters, snapshot, scheme, training splits, validation splits and seed."""

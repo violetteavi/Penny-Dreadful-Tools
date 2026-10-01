@@ -1,7 +1,9 @@
 """The model and run store against a real experiments database. The site database is replaced at its boundary (deck contents and legal cards), so a deck "deleted from the site" is simply missing from the contents."""
 import logging
+import re
 import time
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping, Sequence
+from typing import ClassVar
 
 import pytest
 
@@ -11,8 +13,8 @@ from archetype_classifier.data_loading.labels import LabelStatus
 from archetype_classifier.data_loading.slices import build_deck_set, deck_ids_hash
 from archetype_classifier.data_loading.splits import Split, SplitScheme
 from archetype_classifier.evaluation.metrics import ArchetypeTree
-from archetype_classifier.evaluation.model import FitContext, Model, Prediction, build_labelled_decks, build_predict_decks, build_training_decks
-from archetype_classifier.evaluation.store import ModelRecord, load_model, save_model
+from archetype_classifier.evaluation.model import FitContext, LabelledDeck, Model, Prediction, TrainingDeck, build_labelled_decks, build_predict_decks, build_training_decks, register
+from archetype_classifier.evaluation.store import ModelRecord, StoreConflict, canonical, load_model, save_model
 from archetype_classifier.models.most_common import MostCommonArchetype
 from shared.database import Database
 
@@ -113,3 +115,27 @@ def test_saving_the_same_model_again_returns_its_id(experiments_db: Database, si
     assert caplog.text == ''
     other_seed = MostCommonArchetype({})
     assert save_model(experiments_db, other_seed, fit(experiments_db, other_seed, seed=1)) == 2  # Nothing was stored in between.
+
+
+# Scenario: a fit that isn't deterministic fails loudly.
+
+@register
+class Unrepeatable(MostCommonArchetype):
+    """A stand-in model whose fit ignores the seed: every fit learns something different."""
+    name: ClassVar[str] = 'unrepeatable (test)'
+    fits = 0
+
+    def fit(self, training: Sequence[TrainingDeck], validation: Sequence[LabelledDeck], context: FitContext) -> None:
+        super().fit(training, validation, context)
+        Unrepeatable.fits += 1
+        self.training_decks += Unrepeatable.fits  # Stands in for a random draw the seed doesn't control.
+
+def test_a_fit_that_isnt_deterministic_fails_loudly(experiments_db: Database, site: Site) -> None:
+    first = Unrepeatable({})
+    assert save_model(experiments_db, first, fit(experiments_db, first)) == 1
+    second = Unrepeatable({})
+    second_record = fit(experiments_db, second)
+    with pytest.raises(StoreConflict, match=r'model 1.*' + re.escape(canonical(first.state())) + '.*' + re.escape(canonical(second.state()))):
+        save_model(experiments_db, second, second_record)
+    other_seed = Unrepeatable({})
+    assert save_model(experiments_db, other_seed, fit(experiments_db, other_seed, seed=1)) == 2  # Nothing was stored.

@@ -74,6 +74,8 @@ def label_facts(history: Sequence[LabelChange]) -> LabelFacts:
 
 def label_status(facts: LabelFacts, site_archetype_id: int | None, site_archetype_name: str | None, source: str, scope_rule: ScopeRule, label_rule: LabelRule) -> DeckLabel:
     """How far a deck's label can be trusted, and the label it is scored against."""
+    if site_archetype_id is None:
+        return DeckLabel(LabelStatus.UNLABELLED, None)
     if label_rule == LabelRule.LATEST_ENTRY_IS_HUMAN:
         verified = latest_entry_is_human(facts) and facts.human_archetype_id == site_archetype_id
     else:

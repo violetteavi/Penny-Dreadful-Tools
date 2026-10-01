@@ -40,6 +40,10 @@ def test_a_label_no_person_gave_is_unverified() -> None:
         assert status(machine_only, RED_DECK_WINS, 'Red Deck Wins', rule) == DeckLabel(LabelStatus.UNVERIFIED, RED_DECK_WINS)
         assert status([], AZORIUS_CONTROL, 'Azorius Control', rule) == DeckLabel(LabelStatus.UNVERIFIED, AZORIUS_CONTROL)
 
+def test_a_deck_without_a_label_is_unlabelled() -> None:
+    for rule in BOTH_RULES:
+        assert status([], None, None, rule) == DeckLabel(LabelStatus.UNLABELLED, None)
+
 
 
 def test_a_person_changing_the_guess_is_a_corrected_guess() -> None:

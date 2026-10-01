@@ -71,3 +71,10 @@ def test_a_deck_whose_contents_are_missing_is_skipped_with_a_warning(caplog: pyt
             converted = convert(deck_set, deck_1_only)
         assert converted == convert(build_deck_set(snapshot(VALIDATION_DECKS.decks[1]), frozenset({Split.VALIDATION})), CONTENTS)
         assert 'Skipped 1 deck with no contents: [2]' in caplog.text
+
+def test_a_deck_without_a_label_is_skipped_from_labelled_decks_with_a_warning(caplog: pytest.LogCaptureFixture) -> None:
+    deck_set = build_deck_set(TRAINING_DECKS, frozenset({Split.TRAIN}))  # Deck 3 is labelled; deck 4 is UNLABELLED.
+    with caplog.at_level(logging.WARNING):
+        labelled = build_labelled_decks(deck_set, CONTENTS)
+    assert [d.deck.deck_id for d in labelled] == [3]
+    assert 'Skipped 1 deck with no label: [4]' in caplog.text

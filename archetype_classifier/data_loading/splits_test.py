@@ -33,6 +33,11 @@ def test_validation_and_test_season_decks_are_scored_only_if_their_status_is_eva
     assert split(41, LabelStatus.UNLABELLED) == SplitDecision(Split.EXCLUDED, ExclusionReason.STATUS_NOT_EVALUATED)
     assert split(39, LabelStatus.UNVERIFIED) == SplitDecision(Split.EXCLUDED, ExclusionReason.STATUS_NOT_EVALUATED)
 
+def test_a_deck_with_too_few_maindeck_cards_is_excluded_whatever_its_status() -> None:
+    assert split(30, LabelStatus.VERIFIED, maindeck_hash=None, maindeck_cards=0) == SplitDecision(Split.EXCLUDED, ExclusionReason.NO_MAINDECK_CARDS)
+    assert split(30, LabelStatus.VERIFIED, maindeck_cards=59) == SplitDecision(Split.EXCLUDED, ExclusionReason.MAINDECK_UNDER_60_CARDS)
+    assert split(41, LabelStatus.VERIFIED, maindeck_cards=59) == SplitDecision(Split.EXCLUDED, ExclusionReason.MAINDECK_UNDER_60_CARDS)
+
 
 def test_seasons_map_to_splits() -> None:
     assert split(1, LabelStatus.VERIFIED, A_HASH, scheme=DEFAULT).split in {Split.TRAIN, Split.HELD_OUT}

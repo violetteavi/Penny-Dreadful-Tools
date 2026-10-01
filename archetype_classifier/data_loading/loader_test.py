@@ -14,17 +14,6 @@ from decksite.database import db
 from shared.container import Container
 from shared.database import Database
 
-EXPERIMENTS_TEST_DB = 'archetype_experiments_test'
-
-
-@pytest.fixture
-def experiments_db() -> Iterator[Database]:
-    edb = loader.experiments_db(EXPERIMENTS_TEST_DB)
-    edb.execute(f'DROP DATABASE IF EXISTS {EXPERIMENTS_TEST_DB}')
-    edb.execute(f'CREATE DATABASE {EXPERIMENTS_TEST_DB} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci')
-    edb.execute(f'USE {EXPERIMENTS_TEST_DB}')
-    yield edb
-    edb.execute(f'DROP DATABASE IF EXISTS {EXPERIMENTS_TEST_DB}')
 
 @pytest.fixture
 def labelled_seed(seeded_db: Container) -> Iterator[Container]:  # noqa: F811

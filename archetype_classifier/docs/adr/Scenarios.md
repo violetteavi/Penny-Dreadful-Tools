@@ -524,3 +524,71 @@ All scenarios here were confirmed 2026-10-01.
 - **Expect:** a model class registered under a name, such as "most common archetype", can be looked up by that name, and an unknown name raises an error that lists the registered names.
 - **Why it matters:** a stored model records only its name, version and parameters, so loading it needs the class from its name.
 - **Check:** register a model class, then look it up by name, and look up a name that isn't registered.
+
+## Storing models and runs
+
+These scenarios belong to the model and run store (#23). A fitted model is saved as its record and what fitting learned, never its decks. A run is saved as one guess per deck, never as scores.
+
+They use a mock model, **most common archetype**: fitting stores the most common archetype among the training decks, and it always guesses that archetype. It's the simplest real model to save and load, and a floor every later model should beat.
+
+The decks are 60-card League decks of 4 Shock and 56 Mountain, or 4 Essence Scatter and 56 Island, all legal in seasons 30 and 39.
+
+**Scheme**, unless a scenario says otherwise: the typical scheme (season rule 1–38 / 39 / 40–42 with 10% held out; status rule train {VERIFIED}, eval {VERIFIED}; twins off). The model trains on TRAIN and tunes on VALIDATION.
+
+All scenarios here were proposed 2026-10-01.
+
+### The mock model guesses the most common training archetype
+
+The training decks are three VERIFIED Red Deck Wins decks and two VERIFIED Azorius Control decks, all from season 30.
+
+- **Expect:**
+  - every deck it predicts on, whatever its cards, is guessed **Red Deck Wins**, with evidence of 3 training decks out of 5
+  - its saved state is just the Red Deck Wins archetype id
+- **Expect, with a tie** (two of each): the archetype with the lower id wins, so fitting twice always gives the same guess.
+- **Expect, with no labelled training decks:** every deck gets no guess.
+- **Check:** fit on each set of training decks, then predict on two validation decks.
+
+### A saved model loads back and predicts the same
+
+The mock model is fitted on snapshot 1 under scheme 1, with seed 0. Its training decks are TRAIN, and its validation decks are VALIDATION.
+
+- **Expect:**
+  - **The record:** saving it stores name "most common archetype", version 1, its parameters, snapshot 1, scheme 1, seed 0, training splits {TRAIN}, validation splits {VALIDATION}, the training and validation deck counts and fingerprints, and the fit time.
+  - **Its state:** the archetype id, as JSON.
+  - **Loading:** gives back the same record and a model whose predictions on the validation decks are identical.
+- **Why it matters:** a stored model has to be reusable later without refitting, and its record has to say exactly which decks trained and tuned it.
+- **Check:** save, load, and predict again.
+
+### Loading checks the training decks against the record
+
+**Scheme:** the typical scheme. A model was fitted and saved. Its training decks are then rebuilt from the record (snapshot, scheme and training splits) when it's loaded.
+
+- **Expect:** when the rebuilt decks have the recorded fingerprint, the model loads quietly. If they differ, for example because a deck's contents are missing now, the model still loads, and a warning names both fingerprints and both counts.
+- **Why it matters:** this is how we prove a reloaded model saw the same decks, without storing the deck list.
+- **Check:** save a model, then load it with and without one training deck's contents.
+
+### The same model identity with different training decks is saved alongside
+
+A model's identity is its name, version, parameters, snapshot, scheme, training splits, validation splits and seed.
+
+- **Expect:** saving a second model with the same identity but a different training fingerprint logs a warning and saves it under a new id. Both stay loadable. A second model whose identity differs in any part (another seed, other validation splits) is saved without a warning.
+- **Why it matters:** a forgotten version bump shows up as a warning instead of silently mixing two models.
+- **Check:** save three models: the original, one with the same identity but other training decks, and one with another seed.
+
+### A run stores one guess per deck, never scores
+
+The saved mock model predicts on the two VALIDATION decks. One more deck gets no guess.
+
+- **Expect:**
+  - **The run record:** model id, scope {VALIDATION}, row-set version, deck count 3, a prediction hash, and the time and duration.
+  - **The guesses:** they load back exactly, including the deck with no guess (stored as null) and each guess's evidence.
+  - **The hash:** the same predictions in another order give the same prediction hash.
+- **Expect, re-running:** a second run of the same model on the same scope with a different guess for any deck logs a warning, and is saved as its own run. With the same guesses, it's saved without a warning.
+- **Why it matters:** scores are recomputed from stored guesses (decision F), and a changed guess without a version bump must show up.
+- **Check:** save the run, load its guesses, save it again with one guess changed, and once more unchanged.
+
+### Every look at the test seasons is logged
+
+- **Expect:** each call to log a test look records the run, the rows scored (for example "test, overall" and "test, by unseen copies") and the time. Three looks give three entries, in order.
+- **Why it matters:** the test seasons are looked at rarely, and the log shows how often.
+- **Check:** log three looks for one run and read the log back.

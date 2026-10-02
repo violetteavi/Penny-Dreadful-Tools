@@ -7,6 +7,7 @@ from archetype_classifier.data_loading.slices import DeckSet, SnapshotDeck
 from archetype_classifier.data_loading.splits import Split, SplitScheme
 
 ROWS_VERSION = 1  # Bump on any change to which rows exist or which decks they hold.
+PREFIXES = {Split.TRAIN: 'train', Split.HELD_OUT: 'held-out', Split.VALIDATION: 'validation', Split.TEST: 'test'}
 UNSEEN_BANDS = [('0', 0, 0), ('1–4', 1, 4), ('5–12', 5, 12), ('13+', 13, None)]  # Unseen maindeck copies: label, lowest, highest.
 
 type Keep = Callable[[SnapshotDeck], bool]
@@ -26,9 +27,13 @@ def build_rows(scored: DeckSet, training: DeckSet, scheme: SplitScheme) -> list[
     for split in (Split.TRAIN, Split.HELD_OUT, Split.VALIDATION, Split.TEST):
         if split not in scored.splits:
             continue
-        verified = [d for d in scored.decks.values() if d.split == split and d.label_status == LabelStatus.VERIFIED]
+        decks = [d for d in scored.decks.values() if d.split == split]
+        verified = [d for d in decks if d.label_status == LabelStatus.VERIFIED]
         for name, keep in split_rows(split, repeated):
             rows.append(Row(name, frozenset({split}), frozenset(d.deck_id for d in verified if keep(d))))
+        allowed = scheme.train_statuses if split == Split.TRAIN else scheme.eval_statuses
+        if LabelStatus.UNVERIFIED in allowed:
+            rows.append(Row(f'{PREFIXES[split]}, unverified labels', frozenset({split}), frozenset(d.deck_id for d in decks if d.label_status == LabelStatus.UNVERIFIED)))
     return rows
 
 def split_rows(split: Split, repeated: Keep) -> list[tuple[str, Keep]]:

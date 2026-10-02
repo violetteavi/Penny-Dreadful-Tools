@@ -57,3 +57,15 @@ def test_test_rows_split_by_unseen_copies_and_by_repeated_maindeck() -> None:
 
 def test_scoring_the_training_decks_gives_one_in_sample_row() -> None:
     assert rows({Split.TRAIN}) == {'train, in-sample': frozenset({101, 102})}
+
+
+# Scenario: unverified labels get their own row.
+
+def test_unverified_labels_get_their_own_row() -> None:
+    evaluates_unverified = SplitScheme('unverified too', eval_statuses=frozenset({LabelStatus.VERIFIED, LabelStatus.UNVERIFIED}))
+    decks = {**SNAPSHOT.decks, 303: snapshot_deck(303, Split.HELD_OUT, 0, None, LabelStatus.UNVERIFIED)}
+    assert rows({Split.HELD_OUT}, snapshot(decks, evaluates_unverified)) == {
+        'held-out, no unseen cards': frozenset({301}),
+        'held-out, unseen cards': frozenset({302}),
+        'held-out, unverified labels': frozenset({303}),
+    }

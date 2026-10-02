@@ -1,7 +1,7 @@
 from archetype_classifier.data_loading.labels import LabelFacts, LabelStatus
 from archetype_classifier.data_loading.slices import Snapshot, SnapshotDeck, build_deck_set
 from archetype_classifier.data_loading.splits import Split, SplitScheme
-from archetype_classifier.evaluation.rows import Row, build_rows
+from archetype_classifier.evaluation.rows import build_rows
 
 RED_DECK_WINS = 16
 MAINDECK_A, MAINDECK_B = 'a' * 40, 'b' * 40
@@ -36,4 +36,18 @@ def test_scoring_held_out_and_validation_decks_gives_their_rows() -> None:
         'validation': frozenset({201, 202}),
         'validation, new maindeck': frozenset({202}),
         'validation, repeated maindeck': frozenset({201}),
+    }
+
+
+# Scenario: test rows split by unseen copies (the gate and the logged look are tested with scoring).
+
+def test_test_rows_split_by_unseen_copies_and_by_repeated_maindeck() -> None:
+    assert rows({Split.TEST}) == {
+        'test, overall': frozenset({401, 402, 403, 404}),
+        'test, 0 unseen copies': frozenset({401}),
+        'test, 1–4 unseen copies': frozenset({402}),
+        'test, 5–12 unseen copies': frozenset({403}),
+        'test, 13+ unseen copies': frozenset({404}),
+        'test, new maindeck': frozenset({402, 403, 404}),
+        'test, repeated maindeck': frozenset({401}),
     }

@@ -32,7 +32,7 @@ def build_rows(scored: DeckSet, training: DeckSet, scheme: SplitScheme) -> list[
             continue
         decks = [d for d in scored.decks.values() if d.split == split]
         verified = [d for d in decks if d.label_status == LabelStatus.VERIFIED]
-        for name, keep in split_rows(split, repeated):
+        for name, keep in split_rows(split, repeated, scheme):
             rows.append(Row(name, frozenset({split}), frozenset(d.deck_id for d in verified if keep(d))))
         allowed = scheme.train_statuses if split == Split.TRAIN else scheme.eval_statuses
         if LabelStatus.UNVERIFIED in allowed:
@@ -41,12 +41,14 @@ def build_rows(scored: DeckSet, training: DeckSet, scheme: SplitScheme) -> list[
         logger.info("Row '%s' has no decks, so it's left out", empty.name)  # The metrics module can't score an empty set.
     return [r for r in rows if r.deck_ids]
 
-def split_rows(split: Split, repeated: Keep) -> list[tuple[str, Keep]]:
+def split_rows(split: Split, repeated: Keep, scheme: SplitScheme) -> list[tuple[str, Keep]]:
     """Each row a split's scored decks fall into, as its name and which of the split's decks it keeps."""
     if split == Split.TRAIN:
         return [('train, in-sample', lambda d: True)]  # How well the model fits the decks it learned from; not a generalisation score.
     if split == Split.HELD_OUT:
-        return [('held-out, no unseen cards', lambda d: d.unseen_maindeck_copies == 0), ('held-out, unseen cards', lambda d: d.unseen_maindeck_copies > 0)]
+        unseen: list[tuple[str, Keep]] = [('held-out, no unseen cards', lambda d: d.unseen_maindeck_copies == 0), ('held-out, unseen cards', lambda d: d.unseen_maindeck_copies > 0)]
+        # Without twins, held-out decks never repeat a training maindeck, so maindeck rows would say nothing.
+        return [*unseen, *maindeck_rows('held-out', repeated)] if scheme.allow_held_out_twins else unseen
     if split == Split.VALIDATION:
         return [('validation', lambda d: True), *maindeck_rows('validation', repeated)]
     bands: list[tuple[str, Keep]] = [(f'test, {label} unseen copies', in_band(low, high)) for label, low, high in UNSEEN_BANDS]

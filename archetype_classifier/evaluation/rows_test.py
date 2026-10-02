@@ -5,7 +5,7 @@ import pytest
 from archetype_classifier.data_loading.labels import LabelFacts, LabelStatus
 from archetype_classifier.data_loading.slices import Snapshot, SnapshotDeck, build_deck_set
 from archetype_classifier.data_loading.splits import Split, SplitScheme
-from archetype_classifier.evaluation.rows import build_rows
+from archetype_classifier.evaluation.rows import ROWS_VERSION, build_rows
 
 RED_DECK_WINS = 16
 MAINDECK_A, MAINDECK_B = 'a' * 40, 'b' * 40
@@ -82,3 +82,18 @@ def test_a_row_with_no_decks_is_left_out(caplog: pytest.LogCaptureFixture) -> No
     with caplog.at_level(logging.INFO):
         assert rows({Split.HELD_OUT}, no_unseen) == {'held-out, no unseen cards': frozenset({301, 302})}
     assert "Row 'held-out, unseen cards' has no decks, so it's left out" in caplog.text
+
+
+# With twins allowed, held-out decks can repeat a training maindeck, so they get maindeck rows too.
+
+def test_with_twins_allowed_held_out_decks_get_maindeck_rows() -> None:
+    twins = SplitScheme('twins', allow_held_out_twins=True)
+    decks = {**SNAPSHOT.decks, 301: snapshot_deck(301, Split.HELD_OUT, 0, MAINDECK_A)}  # Repeats deck 101.
+    found = rows({Split.HELD_OUT}, snapshot(decks, twins))
+    assert (found['held-out, new maindeck'], found['held-out, repeated maindeck']) == (frozenset({302}), frozenset({301}))
+
+
+# Scenario: rows are versioned.
+
+def test_rows_are_versioned() -> None:
+    assert ROWS_VERSION == 1

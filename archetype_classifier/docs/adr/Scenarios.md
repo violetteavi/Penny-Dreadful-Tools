@@ -951,6 +951,26 @@ Real season 39 League decks. No season 39 deck has more than 27 unseen copies, s
 - **Why it matters:** a deck's total weight counts its unseen cards at 1,000 each, while they can never be shared. So a few new cards make a good match look weak, or let a single rare shared card produce a confident wrong guess. This is what later models must beat after a rotation.
 - **Check:** predict these five decks at threshold 20, and score each against its best match.
 
+### Decks with no unseen cards but no exact match
+
+Real season 39 League decks with 0 unseen copies whose maindeck repeats no training deck. "Off by N" is how many maindeck cards would have to change to turn the deck into its closest training deck: 60 minus the copies they share, same card and quantity.
+
+- **Expect:**
+
+  | Deck | Label | Off by | Closest training deck | Score to it | Best-scoring match | Guess at 20 |
+  |---|---|---|---|---|---|---|
+  | 269539 | Mono Green Stompy | **4** | 269464 (season 38, Mono Green Stompy) | 73 | the same deck, at 73 | Mono Green Stompy, exact |
+  | 269503 | Selesnya Heroic | **12** | 269180 (season 38, Selesnya Heroic) | 49 | the same deck, at 49 | Selesnya Heroic, exact |
+  | 270398 | Orzhov Midrange | **20** | 264080 (season 37, Orzhov Blink) | 11 | 246062 (season 33, Mono White Humans), at **29** | **Mono White Humans: wrong branch** |
+
+- **The differences:**
+  - **269539:** 4 Swarm Shambler in place of 269464's 4 Pawpatch Recruit.
+  - **269503:** against 269180, it has 4 Cartouche of Solidarity, 4 Ethereal Armor and 2 Oppressive Rays in place of 4 Meltstrider's Resolve, 4 Spider Umbra and 2 Solid Footing. It also has 2 Forest and 8 Plains, where 269180 has 4 and 6.
+  - **270398:** it shares most of its basics with Mono White Humans deck 246062, but its rare cards (Grand Abolisher, Shambling Vent, Vindicate and others) don't line up with any one training deck.
+- **Expect, deck 270398:** the training deck closest by cards isn't the best-scoring one. The weighted score rewards whichever deck shares the rarest lines, here a Mono White Humans deck. So it guesses Mono White Humans (Aggro › White Weenie) for an Orzhov Midrange deck (Midrange), which scores hF 0.
+- **Why it matters:** even with no new cards, the score falls fast as a deck drifts from its nearest list: 73 at 4 cards off, 49 at 12, 11 at 20. Beyond that, the best match can be a different strategy that happens to share rare cards.
+- **Check:** predict these three decks at threshold 20, and score each against its closest training deck.
+
 ### League decks skip unreviewed matches, and Gatherling decks don't (a rule-level check)
 
 Every one of scheme 2's 202,385 training decks is reviewed, so this never changes a pick in the real data. It's still the site's rule, so it's checked with four small decks: 60-card season 30 lists of 4 Shock and 56 Mountain, with these differences:

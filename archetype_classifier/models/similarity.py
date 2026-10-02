@@ -81,7 +81,7 @@ class SimilarityBaseline:
 
     def predict(self, decks: Sequence[PredictDeck]) -> list[Prediction]:
         predictions = []
-        for deck, (rows, scores) in zip(decks, self.index.scores(decks)):
+        for (rows, scores), deck in zip(self.index.scores(decks), decks):
             pick = self.index.pick(deck.source, rows, scores)
             if pick is None or pick.score < self.threshold:
                 predictions.append(Prediction(deck.deck_id, None, {}))

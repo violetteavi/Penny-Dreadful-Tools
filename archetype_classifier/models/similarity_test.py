@@ -158,3 +158,19 @@ def test_a_fitted_baseline_loads_back_and_guesses_the_same() -> None:
     decks = [v.deck for v in VALIDATION]
     assert rebuilt.predict(decks) == model.predict(decks)
     assert rebuilt.state() == model.state()
+
+
+def test_a_gatherling_deck_whose_top_match_is_unlabelled_or_missing_gets_no_guess() -> None:
+    unlabelled_twin = TrainingDeck(PredictDeck(105, 'League', cards(Shock=4, Mountain=56), ()), 30, None, True, LabelStatus.UNLABELLED)
+    model = SimilarityBaseline({'threshold': 20})
+    model.fit([*TRAINING, unlabelled_twin], [], CONTEXT)
+    stompy = VALIDATION[3].deck  # Shares no card with any training deck.
+    assert model.predict([query(210, cards(Shock=4, Mountain=56), 'Gatherling'), PredictDeck(260, 'Gatherling', stompy.maindeck, ())]) == [
+        Prediction(210, None, {}), Prediction(260, None, {})]
+    assert model.predict([query(210, cards(Shock=4, Mountain=56), 'League')])[0].evidence['match_deck_id'] == 103  # A League deck skips the unlabelled twin.
+
+def test_decks_are_scored_the_same_however_they_are_chunked(monkeypatch: pytest.MonkeyPatch) -> None:
+    decks = [v.deck for v in VALIDATION]
+    whole = fitted().predict(decks)
+    monkeypatch.setattr('archetype_classifier.models.similarity.CHUNK', 2)
+    assert fitted().predict(decks) == whole

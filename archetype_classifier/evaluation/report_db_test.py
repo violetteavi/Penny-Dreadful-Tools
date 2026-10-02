@@ -85,3 +85,18 @@ def test_an_archetype_missing_from_the_tree_is_named_as_missing(experiments_db: 
     run_id = save_run(experiments_db, model_id, SCOPE, [Prediction(i, 999 if i == 202 else g, {}) for i, g in RUN_1.items()])
     validation = next(line for line in render(experiments_db, run_id) if line.startswith('| validation |'))
     assert validation.endswith('| tuned on, 1 skipped: missing archetype 999 |')
+
+
+# Scenario: a baseline run is compared deck by deck.
+
+DIFFERENCE = r'-?\d\.\d\d \[-?\d\.\d\d, -?\d\.\d\d\]'
+
+def test_a_baseline_run_is_compared_deck_by_deck(experiments_db: Database, runs: tuple[int, int]) -> None:
+    run_1, run_2 = runs
+    lines = render(experiments_db, run_1, baseline_run_id=run_2)
+    comparison = lines[lines.index(f'## Compared with run {run_2}') + 2:]
+    assert comparison[0] == f'Run {run_1} minus run {run_2}, on the decks both runs guessed, with paired intervals.'
+    assert comparison[2] == '| Row | Decks compared | Left out | hF | hP | hR | Exact match |'
+    validation = next(line for line in comparison if line.startswith('| validation |'))
+    assert re.fullmatch(r'\| validation \| 2 \| 0 \| -0\.36 \[-?\d\.\d\d, -?\d\.\d\d\] \| -0\.50 \[-?\d\.\d\d, -?\d\.\d\d\] \| -0\.25 \[-?\d\.\d\d, -?\d\.\d\d\] \| 0\.00 \[-?\d\.\d\d, -?\d\.\d\d\] \|', validation)
+    assert not any(line.startswith('## Compared with') for line in render(experiments_db, run_1))

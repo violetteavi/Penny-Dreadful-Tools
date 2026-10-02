@@ -4,10 +4,11 @@ from collections.abc import Mapping, Sequence
 
 from archetype_classifier.data_loading import loader
 from archetype_classifier.data_loading.dataset import ArchetypeSnapshot
-from archetype_classifier.data_loading.slices import build_deck_set
+from archetype_classifier.data_loading.slices import DeckSet, build_deck_set
 from archetype_classifier.data_loading.splits import Split
-from archetype_classifier.evaluation.metrics import METRICS_VERSION, ArchetypeTree, Confusion, Interval, ScoredDeck, in_tree, score
-from archetype_classifier.evaluation.rows import PREFIXES, ROWS_VERSION, RowScores, build_rows, score_rows
+from archetype_classifier.evaluation.metrics import METRICS_VERSION, ArchetypeTree, Confusion, Interval, ScoredDeck, compare, in_tree, score
+from archetype_classifier.evaluation.model import Prediction
+from archetype_classifier.evaluation.rows import PREFIXES, ROWS_VERSION, Row, RowScores, build_rows, score_rows
 from archetype_classifier.evaluation.store import canonical, load_guesses, load_model_record, load_run, splits_text
 from shared.database import Database
 
@@ -54,7 +55,28 @@ def render_report(edb: Database, run_id: int, min_decks: int, baseline_run_id: i
         decks = in_tree(tree, [ScoredDeck(i, scored.decks[i].label_id, guesses[i].guess_id, scored.decks[i].maindeck_hash) for i in widest])[0]  # type: ignore[arg-type]
         if decks:
             lines += confusion_lines(PREFIXES[split], decks, score(tree, decks, min_decks).confusions, snapshot.archetypes)
+    if baseline_run_id is not None:
+        lines += comparison_lines(run.id, baseline_run_id, rows, scored, guesses, load_guesses(edb, baseline_run_id), tree)
     return '\n'.join(lines) + '\n'
+
+def comparison_lines(run_id: int, baseline_run_id: int, rows: Sequence[Row], scored: DeckSet, guesses: Mapping[int, Prediction],
+                     baseline: Mapping[int, Prediction], tree: ArchetypeTree) -> list[str]:
+    """This run minus the baseline, row by row, on the decks both guessed: each resample draws the same maindecks for both."""
+    lines = ['', f'## Compared with run {baseline_run_id}', '', f'Run {run_id} minus run {baseline_run_id}, on the decks both runs guessed, with paired intervals.', '',
+             '| Row | Decks compared | Left out | hF | hP | hR | Exact match |', '|---|---|---|---|---|---|---|']
+    for row in rows:
+        ours, theirs = scored_decks(row, scored, guesses, tree), scored_decks(row, scored, baseline, tree)
+        if not {d.deck_id for d in ours} & {d.deck_id for d in theirs}:
+            continue
+        c = compare(tree, theirs, ours)
+        d, i = c.difference, c.intervals
+        lines.append(f'| {row.name} | {c.decks} | {c.left_out} | {with_interval(d.hf, i.hf)} | {with_interval(d.hp, i.hp)} | {with_interval(d.hr, i.hr)} | '
+                     f'{with_interval(d.exact_match_rate, i.exact_match_rate)} |')
+    return lines
+
+def scored_decks(row: Row, scored: DeckSet, guesses: Mapping[int, Prediction], tree: ArchetypeTree) -> list[ScoredDeck]:
+    return in_tree(tree, [ScoredDeck(i, scored.decks[i].label_id, guesses[i].guess_id, scored.decks[i].maindeck_hash)  # type: ignore[arg-type]
+                          for i in sorted(row.deck_ids) if i in guesses])[0]
 
 def confusion_lines(split_name: str, decks: list[ScoredDeck], confusions: list[Confusion], archetypes: Mapping[int, ArchetypeSnapshot]) -> list[str]:
     """The most common (label, guess) pairs a split's decks got wrong, by name, with links to up to three example decks."""

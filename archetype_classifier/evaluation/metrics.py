@@ -12,6 +12,7 @@ from archetype_classifier.data_loading.dataset import ArchetypeSnapshot
 
 logger = logging.getLogger(__name__)
 
+METRICS_VERSION = 1  # Bump on any change to how a metric is computed; every report records it.
 DEFAULT_SEED = 20260930
 DEFAULT_RESAMPLES = 1000
 

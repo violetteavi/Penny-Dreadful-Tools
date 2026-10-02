@@ -15,7 +15,7 @@ from archetype_classifier.data_loading.slices import build_deck_set, deck_ids_ha
 from archetype_classifier.data_loading.splits import ExclusionReason, Split, SplitScheme
 from archetype_classifier.evaluation.metrics import ArchetypeTree
 from archetype_classifier.evaluation.model import FitContext, LabelledDeck, Model, Prediction, TrainingDeck, build_labelled_decks, build_predict_decks, build_training_decks, register
-from archetype_classifier.evaluation.store import ModelRecord, StoreConflict, canonical, load_guesses, load_model, load_run, load_test_looks, log_test_look, prediction_hash, save_model, save_run
+from archetype_classifier.evaluation.store import ModelRecord, StoreConflict, canonical, load_guesses, load_model, load_model_record, load_run, load_test_looks, log_test_look, prediction_hash, save_model, save_run
 from archetype_classifier.models.most_common import MostCommonArchetype
 from shared.database import Database
 
@@ -37,14 +37,17 @@ DECKS = {  # deck id -> season, split, status, label, cards
 TRAIN, VALIDATION = frozenset({Split.TRAIN}), frozenset({Split.VALIDATION})
 
 
-def store_snapshot(edb: Database, snapshot_id: int, scheme_id: int, decks: Mapping[int, tuple[int, Split, LabelStatus, int | None, DeckContents]]) -> None:
-    """Write a snapshot and its splits under one scheme straight into the experiments database, as materialise_split would."""
+def store_snapshot(edb: Database, snapshot_id: int, scheme_id: int, decks: Mapping[int, tuple[int, Split, LabelStatus, int | None, DeckContents]],
+                   unseen: Mapping[int, int] | None = None, maindecks: Mapping[int, str] | None = None) -> None:
+    """Write a snapshot and its splits under one scheme straight into the experiments database, as materialise_split would.
+    Each deck has its own maindeck and no unseen copies unless given."""
+    unseen, maindecks = unseen or {}, maindecks or {}
     edb.execute('INSERT INTO snapshot (id, deck_count, max_deck_id, notes) VALUES (%s, %s, %s, %s)', [snapshot_id, len(decks), max(decks), 'test'])
     loader.insert_rows(edb, 'archetype_snapshot', ['snapshot_id', 'archetype_id', 'name', 'parent_id', 'depth'], [[snapshot_id, *a] for a in ARCHETYPES])
     loader.insert_rows(edb, 'deck_snapshot', ['snapshot_id', *loader.DECK_FACT_COLUMNS],
-                       [[snapshot_id, i, season, 'League', True, f'{i:040x}', 60, None, None, None, None, label] for i, (season, _, _, label, _) in decks.items()])
+                       [[snapshot_id, i, season, 'League', True, maindecks.get(i, f'{i:040x}'), 60, None, None, None, None, label] for i, (season, _, _, label, _) in decks.items()])
     loader.insert_rows(edb, 'deck_split', ['snapshot_id', 'scheme_id', 'deck_id', 'split', 'exclusion_reason', 'label_status', 'label_id', 'unseen_maindeck_copies'],
-                       [[snapshot_id, scheme_id, i, split.value, ExclusionReason.STATUS_NOT_TRAINED_ON.value if split == Split.EXCLUDED else None, status.value, label, 0]
+                       [[snapshot_id, scheme_id, i, split.value, ExclusionReason.STATUS_NOT_TRAINED_ON.value if split == Split.EXCLUDED else None, status.value, label, unseen.get(i, 0)]
                         for i, (_, split, status, label, _) in decks.items()])
 
 class Site:
@@ -264,3 +267,13 @@ def test_every_look_at_the_test_seasons_is_logged(experiments_db: Database, site
     logged = load_test_looks(experiments_db, run_id)
     assert [look.rows for look in logged] == looks
     assert [look.looked_at for look in logged] == sorted(look.looked_at for look in logged)
+
+
+# The stored record and state, without rebuilding the model (what a report needs).
+
+def test_a_models_record_and_state_load_without_reading_the_site(experiments_db: Database, site: Site, monkeypatch: pytest.MonkeyPatch) -> None:
+    model = MostCommonArchetype({})
+    record = fit(experiments_db, model)
+    model_id = save_model(experiments_db, model, record)
+    monkeypatch.setattr(loader, 'load_contents', lambda deck_ids: pytest.fail('a model record needs no deck contents'))
+    assert load_model_record(experiments_db, model_id) == (record, model.state())

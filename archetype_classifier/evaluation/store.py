@@ -123,8 +123,7 @@ def identity_hash(record: ModelRecord) -> str:
 
 def load_model(edb: Database, model_id: int) -> tuple[ModelRecord, Model]:
     """A stored model, rebuilt from its state. Its training decks are rebuilt from the record (snapshot, scheme and training splits)."""
-    row = edb.select('SELECT * FROM model WHERE id = %s', [model_id])[0]
-    record = model_record(row)
+    record, state = load_model_record(edb, model_id)
     snapshot = loader.load_snapshot(edb, record.snapshot_id, record.scheme_id)
     training_set = build_deck_set(snapshot, record.training_splits, include_test=Split.TEST in record.training_splits)
     training = build_training_decks(training_set, loader.load_contents(training_set.decks))
@@ -133,7 +132,12 @@ def load_model(edb: Database, model_id: int) -> tuple[ModelRecord, Model]:
         logger.warning('Model %d is not reproducible: it trained on %d decks (fingerprint %s), which now rebuild as %d (fingerprint %s). Loading it anyway.',
                        model_id, record.training_count, record.training_hash, len(training), rebuilt_hash)
     context = FitContext(ArchetypeTree(snapshot.archetypes), loader.load_legal_cards({d.season_id for d in snapshot.decks.values()}), record.seed)
-    return record, model_class(record.name).from_state(record.params, json.loads(str(row['state'])), training, context)
+    return record, model_class(record.name).from_state(record.params, state, training, context)
+
+def load_model_record(edb: Database, model_id: int) -> tuple[ModelRecord, dict[str, JSON]]:
+    """A stored model's record and state, as stored: no model is rebuilt, and nothing is read from the site."""
+    row = edb.select('SELECT * FROM model WHERE id = %s', [model_id])[0]
+    return model_record(row), json.loads(str(row['state']))
 
 def model_record(row: dict[str, Any]) -> ModelRecord:
     return ModelRecord(row['name'], row['version'], json.loads(row['params']), row['snapshot_id'], row['scheme_id'], row['seed'], splits_from_text(row['training_splits']),

@@ -7,7 +7,7 @@ from archetype_classifier.data_loading.labels import LabelStatus
 from archetype_classifier.data_loading.slices import DeckSet, SnapshotDeck
 from archetype_classifier.data_loading.splits import Split, SplitScheme
 from archetype_classifier.evaluation import store
-from archetype_classifier.evaluation.metrics import ArchetypeTree, ScoredDeck, Scores, score
+from archetype_classifier.evaluation.metrics import ArchetypeTree, ScoredDeck, Scores, in_tree, score
 from shared.database import Database
 
 logger = logging.getLogger(__name__)
@@ -86,6 +86,9 @@ def score_rows(edb: Database, run_id: int, tree: ArchetypeTree, scored: DeckSet,
                  for i in sorted(row.deck_ids) if i in guesses]
         if not decks:
             logger.warning("Row '%s' has no decks with a stored guess, so it's left out", row.name)
+            continue
+        if not in_tree(tree, decks)[0]:
+            logger.warning("Row '%s' has no decks whose label and guess are in the tree, so it's left out", row.name)
             continue
         results[row.name] = RowScores(score(tree, decks, min_decks), bool(row.splits & training_splits), bool(row.splits & validation_splits), len(missing))
     if test_rows:

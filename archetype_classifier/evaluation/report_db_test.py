@@ -1,4 +1,6 @@
 """Reports rendered from stored runs in a real experiments database."""
+import re
+
 import pytest
 
 from archetype_classifier.data_loading import loader
@@ -51,3 +53,18 @@ def test_the_header_says_exactly_what_produced_the_numbers(experiments_db: Datab
                      '| Trained on | train (2 decks) |', '| Tuned on | validation (2 decks) |', '| Metrics version | 1 |', '| Rows version | 1 |', '| PRs | #6, #31 |']:
         assert expected in lines
     assert any(line.startswith('| Made | ') for line in lines)
+
+
+# Scenario: the results table has one line per row, with intervals.
+
+INTERVAL = r'\d\.\d\d \[\d\.\d\d, \d\.\d\d\]'
+
+def test_the_results_table_has_one_line_per_row_with_intervals(experiments_db: Database, runs: tuple[int, int]) -> None:
+    lines = render(experiments_db)
+    table = lines[lines.index('## Results') + 2:]
+    assert table[0] == '| Row | Decks | Maindecks | hF | hP | hR | Exact match | Coverage | Macro hF | Notes |'
+    rows = [line.split(' | ')[0].removeprefix('| ') for line in table[2:7]]
+    assert rows == ['held-out, no unseen cards', 'held-out, unseen cards', 'validation', 'validation, new maindeck', 'validation, repeated maindeck']
+    validation = table[4]
+    assert re.fullmatch(r'\| validation \| 2 \| 2 \| 0\.50 \[\d\.\d\d, \d\.\d\d\] \| 0\.50 \[\d\.\d\d, \d\.\d\d\] \| 0\.50 \[\d\.\d\d, \d\.\d\d\] \| 0\.50 \| 1\.00 \| 0\.50 \(2 archetypes\) \| tuned on \|', validation)
+    assert table[2].endswith('|  |')  # No notes for a held-out row.

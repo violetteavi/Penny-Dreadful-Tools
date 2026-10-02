@@ -1,0 +1,44 @@
+"""The similarity baseline on small rule-level decks: 60-card season 30 lists legal in seasons 30 and 39. Real decks are checked in similarity_local_test.py."""
+from archetype_classifier.data_loading.dataset import ArchetypeSnapshot, CardCount
+from archetype_classifier.data_loading.labels import LabelStatus
+from archetype_classifier.evaluation.metrics import ArchetypeTree
+from archetype_classifier.evaluation.model import FitContext, PredictDeck, TrainingDeck
+from archetype_classifier.models.similarity import SimilarityBaseline
+
+AGGRO, CONTROL, RED_DECK_WINS, BURN, AZORIUS_CONTROL = 1, 2, 16, 17, 49
+TREE = ArchetypeTree({AGGRO: ArchetypeSnapshot(AGGRO, 'Aggro', None, 0), CONTROL: ArchetypeSnapshot(CONTROL, 'Control', None, 0),
+                      RED_DECK_WINS: ArchetypeSnapshot(RED_DECK_WINS, 'Red Deck Wins', AGGRO, 1), BURN: ArchetypeSnapshot(BURN, 'Burn', AGGRO, 1),
+                      AZORIUS_CONTROL: ArchetypeSnapshot(AZORIUS_CONTROL, 'Azorius Control', CONTROL, 1)})
+LEGAL = frozenset({'Shock', 'Burst Lightning', 'Mountain', 'Essence Scatter', 'Negate', 'Island', 'Smash to Smithereens', 'Searing Spear'})
+CONTEXT = FitContext(TREE, {30: LEGAL, 39: LEGAL}, seed=0)
+
+
+def cards(**counts: int) -> tuple[CardCount, ...]:
+    return tuple(sorted((CardCount(name.replace('_', ' '), n) for name, n in counts.items()), key=lambda c: c.card))
+
+def training(deck_id: int, archetype_id: int, maindeck: tuple[CardCount, ...], sideboard: tuple[CardCount, ...] = (), reviewed: bool = True,
+             status: LabelStatus = LabelStatus.VERIFIED, source: str = 'League') -> TrainingDeck:
+    return TrainingDeck(PredictDeck(deck_id, source, maindeck, sideboard), 30, archetype_id, reviewed, status)
+
+TRAINING = [
+    training(101, RED_DECK_WINS, cards(Shock=4, Burst_Lightning=4, Mountain=52)),
+    training(102, AZORIUS_CONTROL, cards(Essence_Scatter=4, Negate=4, Island=52), sideboard=cards(Smash_to_Smithereens=2)),
+    training(103, RED_DECK_WINS, cards(Shock=4, Burst_Lightning=2, Mountain=54)),
+    training(104, RED_DECK_WINS, cards(Shock=2, Burst_Lightning=4, Mountain=54), reviewed=False, status=LabelStatus.UNVERIFIED),
+]
+
+def fitted(threshold: int | str = 20) -> SimilarityBaseline:
+    model = SimilarityBaseline({'threshold': threshold})
+    model.fit(TRAINING, [], CONTEXT)
+    return model
+
+
+# Scenario: weights come from the training decks, by the site's formula.
+
+def test_weights_come_from_the_training_decks_by_the_sites_formula() -> None:
+    weight = fitted().weight
+    assert weight('Shock') == weight('Burst Lightning') == weight('Mountain') == 1 / 0.75  # In 3 of the 4 training maindecks.
+    assert weight('Island') == weight('Negate') == 1 / 0.25
+    assert weight('Smash to Smithereens') == 1 / 0.05  # Only in a sideboard, so 0.2 of one deck in 4.
+    assert weight('Searing Spear') == 1000  # Legal in season 30, played by no training deck: the floor.
+    assert weight("Archmage's Charm") == 1000  # Never legal in a training season: also the floor.

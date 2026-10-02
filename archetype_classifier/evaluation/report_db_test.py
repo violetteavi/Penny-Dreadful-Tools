@@ -10,7 +10,7 @@ from archetype_classifier.data_loading.labels import LabelStatus
 from archetype_classifier.data_loading.splits import Split, SplitScheme
 from archetype_classifier.evaluation.model import JSON, Prediction, register
 from archetype_classifier.evaluation.report import render_report
-from archetype_classifier.evaluation.store import ModelRecord, prediction_hash, save_model, save_run
+from archetype_classifier.evaluation.store import ModelRecord, load_test_looks, prediction_hash, save_model, save_run
 from archetype_classifier.evaluation.store_db_test import BLUE, RED, store_snapshot
 from archetype_classifier.models.most_common import MostCommonArchetype
 from shared.database import Database
@@ -123,3 +123,22 @@ def test_a_validation_curve_is_shown_when_the_model_has_one(experiments_db: Data
     assert curve[:5] == ['| Threshold | hP | hR | hF |', '|---|---|---|---|', '| 10 | 0.90 | 0.50 | 0.64 |', '| **20 (chosen)** | 0.80 | 0.70 | 0.75 |', '| 30 | 0.60 | 0.80 | 0.69 |']
     mock = render(experiments_db, 1)
     assert mock[mock.index('## Validation curve') + 2] == 'No validation curve: this model has no threshold to tune.'
+
+
+# Scenario: test results need the gate, and each report logs one look.
+
+def test_test_results_need_the_gate_and_each_report_logs_one_look(experiments_db: Database, runs: tuple[int, int]) -> None:
+    run_id = save_run(experiments_db, 1, frozenset({Split.TEST}), [Prediction(401, RED_DECK_WINS, {})])
+    with pytest.raises(ValueError, match='include_test'):
+        render(experiments_db, run_id)
+    assert load_test_looks(experiments_db, run_id) == []
+    lines = render(experiments_db, run_id, include_test=True)
+    assert any(line.startswith('| test, overall | 1 |') for line in lines)
+    assert [look.rows for look in load_test_looks(experiments_db, run_id)] == [['test, overall', 'test, 0 unseen copies', 'test, new maindeck']]
+
+
+# Scenario: the same run always gives the same report.
+
+def test_the_same_run_always_gives_the_same_report(experiments_db: Database, runs: tuple[int, int]) -> None:
+    run_1, run_2 = runs
+    assert render_report(experiments_db, run_1, min_decks=1, baseline_run_id=run_2, prs=(6,)) == render_report(experiments_db, run_1, min_decks=1, baseline_run_id=run_2, prs=(6,))

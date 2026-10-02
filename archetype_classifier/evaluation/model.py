@@ -50,7 +50,12 @@ class Prediction:
     evidence: dict[str, JSON]  # What the guess rests on, so a report can trace it.
 
 class Model(Protocol):
-    """Every model is fitted, predicts, and saves what fitting learned through this one contract."""
+    """Every model is fitted, predicts, and saves what fitting learned through this one contract.
+
+    A model that tunes a threshold on its validation decks keeps the curve in its state under 'validation_curve': a list of
+    [threshold, hP, hR, hF] points, with the chosen threshold under 'threshold'. Reports show it when it's there. This is a
+    convention until a second tuned model shows what a shared validation step should look like (#33).
+    """
     name: ClassVar[str]
     version: ClassVar[int]  # Bumped by hand when behaviour changes.
     params: dict[str, JSON]

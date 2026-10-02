@@ -79,8 +79,15 @@ def score_rows(edb: Database, run_id: int, tree: ArchetypeTree, scored: DeckSet,
     guesses = store.load_guesses(edb, run_id)
     results = {}
     for row in rows:
-        decks = [ScoredDeck(i, scored.decks[i].label_id, guesses[i].guess_id, scored.decks[i].maindeck_hash) for i in sorted(row.deck_ids)]  # type: ignore[arg-type]  # Scored decks always have a label and a maindeck.
-        results[row.name] = RowScores(score(tree, decks, min_decks), bool(row.splits & training_splits), bool(row.splits & validation_splits), 0)
+        missing = sorted(i for i in row.deck_ids if i not in guesses)
+        if missing:
+            logger.warning("Row '%s': skipped %d deck%s with no stored guess: %s", row.name, len(missing), '' if len(missing) == 1 else 's', missing)
+        decks = [ScoredDeck(i, scored.decks[i].label_id, guesses[i].guess_id, scored.decks[i].maindeck_hash)  # type: ignore[arg-type]  # Scored decks always have a label and a maindeck.
+                 for i in sorted(row.deck_ids) if i in guesses]
+        if not decks:
+            logger.warning("Row '%s' has no decks with a stored guess, so it's left out", row.name)
+            continue
+        results[row.name] = RowScores(score(tree, decks, min_decks), bool(row.splits & training_splits), bool(row.splits & validation_splits), len(missing))
     if test_rows:
         store.log_test_look(edb, run_id, test_rows)  # Every look at test results is recorded, at the moment scores are computed.
     return results

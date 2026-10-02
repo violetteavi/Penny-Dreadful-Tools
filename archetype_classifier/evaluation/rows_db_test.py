@@ -1,4 +1,6 @@
 """Scoring rows from a run's stored guesses, against a real experiments database."""
+import logging
+
 import pytest
 
 from archetype_classifier.data_loading import loader
@@ -73,3 +75,26 @@ def test_test_rows_need_the_gate_and_each_scoring_logs_one_look(experiments_db: 
     names = ['test, overall', 'test, 0 unseen copies', 'test, 1–4 unseen copies', 'test, 5–12 unseen copies', 'test, 13+ unseen copies', 'test, new maindeck', 'test, repeated maindeck']
     assert list(results) == names
     assert [look.rows for look in load_test_looks(experiments_db, run_id)] == [names]
+
+
+# Scenario: a deck with no stored guess is skipped with a warning.
+
+def test_a_deck_with_no_stored_guess_is_skipped_with_a_warning(experiments_db: Database, caplog: pytest.LogCaptureFixture) -> None:
+    validation_only = frozenset({Split.VALIDATION})
+    without_202 = {i: g for i, g in GUESSES.items() if i != 202}
+    run_id = run(experiments_db, validation_only, without_202)
+    rows = build_rows(scored(validation_only), scored(TRAIN), SNAPSHOT.scheme)
+    with caplog.at_level(logging.WARNING):
+        results = score_rows(experiments_db, run_id, TREE, scored(validation_only), rows, TRAIN, VALIDATION, min_decks=1)
+    assert results['validation'].scores == score(TREE, [ScoredDeck(201, RED_DECK_WINS, RED_DECK_WINS, MAINDECK_A)], min_decks=1)
+    assert results['validation'].skipped == 1
+    assert "Row 'validation': skipped 1 deck with no stored guess: [202]" in caplog.text
+    assert 'validation, new maindeck' not in results  # Its only deck, 202, has no stored guess.
+    assert "Row 'validation, new maindeck' has no decks with a stored guess, so it's left out" in caplog.text
+
+def test_a_stored_no_guess_is_scored(experiments_db: Database) -> None:
+    validation_only = frozenset({Split.VALIDATION})
+    run_id = run(experiments_db, validation_only)  # Deck 202's stored guess is "no guess".
+    rows = build_rows(scored(validation_only), scored(TRAIN), SNAPSHOT.scheme)
+    results = score_rows(experiments_db, run_id, TREE, scored(validation_only), rows, TRAIN, VALIDATION, min_decks=1)
+    assert (results['validation, new maindeck'].scores.decks, results['validation, new maindeck'].skipped) == (1, 0)

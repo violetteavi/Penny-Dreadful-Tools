@@ -793,7 +793,7 @@ The tree: Aggro › Red Deck Wins, and Control › Azorius Control.
 
 The report is made with a macro minimum of 1 deck per archetype, and PR numbers #6 and #31.
 
-All scenarios here were proposed 2026-10-02.
+All scenarios here were confirmed 2026-10-02.
 
 ### The header says exactly what produced the numbers
 

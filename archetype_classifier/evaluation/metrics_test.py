@@ -4,7 +4,7 @@ import logging
 import pytest
 from pytest import approx
 
-from archetype_classifier.evaluation.metrics import ScoredDeck, compare, score, score_deck
+from archetype_classifier.evaluation.metrics import METRICS_VERSION, ScoredDeck, compare, score, score_deck
 from archetype_classifier.evaluation.scenario_set import AGGRO, AZORIUS_CONTROL, MONO_RED_DEVOTION, NO_GUESS, PRISONER, RED_DECK_WINS, TREE, scenario_decks
 
 THREE_PLACES = 0.0005  # Scenarios.md gives scores to three decimal places.
@@ -192,3 +192,9 @@ def test_scoring_no_decks_is_an_error(decks: list[ScoredDeck]) -> None:
 def test_comparing_models_with_no_decks_in_common_is_an_error() -> None:
     with pytest.raises(ValueError, match='No decks to compare'):
         compare(TREE, [ScoredDeck(1, PRISONER, PRISONER, 'a')], [ScoredDeck(2, PRISONER, PRISONER, 'b')])
+
+
+# Scenario: metrics are versioned (Scenarios.md, "Experiment reports").
+
+def test_metrics_are_versioned() -> None:
+    assert METRICS_VERSION == 1

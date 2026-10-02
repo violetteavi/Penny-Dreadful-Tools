@@ -158,3 +158,18 @@ def test_a_report_is_written_from_the_command_line(experiments_db: Database, run
     report.main()
     assert out.read_text() == render_report(experiments_db, run_1, min_decks=1, baseline_run_id=run_2, prs=(6, 31))
     assert capsys.readouterr().out.strip() == f'Wrote {out}'
+
+
+def test_rows_with_no_decks_both_runs_guessed_are_left_out_of_the_comparison(experiments_db: Database, runs: tuple[int, int]) -> None:
+    held_out_only = save_run(experiments_db, save_model(experiments_db, *mock_model(seed=3)), frozenset({Split.HELD_OUT}),
+                             [Prediction(i, g, {}) for i, g in RUN_2.items() if i in (301, 302)])
+    lines = render(experiments_db, 1, baseline_run_id=held_out_only)
+    comparison = lines[lines.index(f'## Compared with run {held_out_only}'):]
+    assert any(line.startswith('| held-out, no unseen cards | 1 |') for line in comparison)
+    assert not any(line.startswith('| validation') for line in comparison)
+
+def test_a_deck_with_no_guess_shows_as_a_no_guess_confusion(experiments_db: Database, runs: tuple[int, int]) -> None:
+    unsure = save_run(experiments_db, save_model(experiments_db, *mock_model(seed=4)), SCOPE, [Prediction(i, None if i == 202 else g, {}) for i, g in RUN_1.items()])
+    lines = render(experiments_db, unsure)
+    validation = lines[lines.index('### Top confusions: validation') + 2:]
+    assert validation[2] == '| Azorius Control | no guess | on | 1 | [202](https://pennydreadfulmagic.com/decks/202/) |'

@@ -121,7 +121,10 @@ def with_interval(value: float | None, interval: Interval) -> str:
 
 def number(value: float | None) -> str:
     """Two decimals, or a dash for a value that's undefined (for example, precision with no guesses)."""
-    return '—' if value is None or math.isnan(value) else f'{value:.2f}'
+    if value is None or math.isnan(value):
+        return '—'
+    text = f'{value:.2f}'
+    return '0.00' if text == '-0.00' else text  # A tiny negative difference shouldn't read as a direction.
 
 def main() -> None:
     """Render a stored run's report and write it, usually into docs/experiments/."""

@@ -1,11 +1,14 @@
 """The rows of the results table: named, versioned groups of scored decks. Scores are never stored; they're recomputed from a run's guesses (decision F)."""
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from archetype_classifier.data_loading.labels import LabelStatus
 from archetype_classifier.data_loading.slices import DeckSet, SnapshotDeck
 from archetype_classifier.data_loading.splits import Split, SplitScheme
+from archetype_classifier.evaluation import store
+from archetype_classifier.evaluation.metrics import ArchetypeTree, ScoredDeck, Scores, score
+from shared.database import Database
 
 logger = logging.getLogger(__name__)
 
@@ -59,3 +62,20 @@ def maindeck_rows(prefix: str, repeated: Keep) -> list[tuple[str, Keep]]:
 
 def in_band(low: int, high: int | None) -> Keep:
     return lambda d: d.unseen_maindeck_copies >= low and (high is None or d.unseen_maindeck_copies <= high)
+
+@dataclass(frozen=True)
+class RowScores:
+    scores: Scores
+    trained_on: bool  # The model trained on this row's split, so its scores measure fit, not generalisation.
+    tuned_on: bool  # The model tuned on this row's split, so its scores are optimistic.
+    skipped: int  # Decks in the row with no stored guess.
+
+def score_rows(edb: Database, run_id: int, tree: ArchetypeTree, scored: DeckSet, rows: Sequence[Row], training_splits: frozenset[Split],
+               validation_splits: frozenset[Split], min_decks: int, include_test: bool = False) -> dict[str, RowScores]:
+    """Score each row from a run's stored guesses. Flags are derived per deck, through its split, from the model's training and validation splits."""
+    guesses = store.load_guesses(edb, run_id)
+    results = {}
+    for row in rows:
+        decks = [ScoredDeck(i, scored.decks[i].label_id, guesses[i].guess_id, scored.decks[i].maindeck_hash) for i in sorted(row.deck_ids)]  # type: ignore[arg-type]  # Scored decks always have a label and a maindeck.
+        results[row.name] = RowScores(score(tree, decks, min_decks), bool(row.splits & training_splits), bool(row.splits & validation_splits), 0)
+    return results

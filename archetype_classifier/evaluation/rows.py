@@ -73,9 +73,14 @@ class RowScores:
 def score_rows(edb: Database, run_id: int, tree: ArchetypeTree, scored: DeckSet, rows: Sequence[Row], training_splits: frozenset[Split],
                validation_splits: frozenset[Split], min_decks: int, include_test: bool = False) -> dict[str, RowScores]:
     """Score each row from a run's stored guesses. Flags are derived per deck, through its split, from the model's training and validation splits."""
+    test_rows = [r.name for r in rows if Split.TEST in r.splits]
+    if test_rows and not include_test:
+        raise ValueError(f'Rows {test_rows} hold TEST decks, which are looked at rarely: pass include_test=True to score them')
     guesses = store.load_guesses(edb, run_id)
     results = {}
     for row in rows:
         decks = [ScoredDeck(i, scored.decks[i].label_id, guesses[i].guess_id, scored.decks[i].maindeck_hash) for i in sorted(row.deck_ids)]  # type: ignore[arg-type]  # Scored decks always have a label and a maindeck.
         results[row.name] = RowScores(score(tree, decks, min_decks), bool(row.splits & training_splits), bool(row.splits & validation_splits), 0)
+    if test_rows:
+        store.log_test_look(edb, run_id, test_rows)  # Every look at test results is recorded, at the moment scores are computed.
     return results

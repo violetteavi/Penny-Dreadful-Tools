@@ -1,4 +1,6 @@
 """Scoring rows from a run's stored guesses, against a real experiments database."""
+import pytest
+
 from archetype_classifier.data_loading import loader
 from archetype_classifier.data_loading.dataset import ArchetypeSnapshot
 from archetype_classifier.data_loading.slices import DeckSet, build_deck_set
@@ -7,7 +9,7 @@ from archetype_classifier.evaluation.metrics import ArchetypeTree, ScoredDeck, s
 from archetype_classifier.evaluation.model import Prediction
 from archetype_classifier.evaluation.rows import build_rows, score_rows
 from archetype_classifier.evaluation.rows_test import MAINDECK_A, RED_DECK_WINS, SNAPSHOT
-from archetype_classifier.evaluation.store import ModelRecord, save_model, save_run
+from archetype_classifier.evaluation.store import ModelRecord, load_test_looks, save_model, save_run
 from archetype_classifier.models.most_common import MostCommonArchetype
 from shared.database import Database
 
@@ -46,3 +48,28 @@ def test_each_row_is_scored_from_the_stored_guesses_and_flagged_for_training_and
         'validation': (False, True), 'validation, new maindeck': (False, True), 'validation, repeated maindeck': (False, True)}
     tuned_on_held_out_too = score_rows(experiments_db, run_id, TREE, scored(splits), rows, TRAIN, splits, min_decks=1)
     assert all(r.tuned_on for r in tuned_on_held_out_too.values())
+
+
+# Scenario: scoring the training decks gives one in-sample row.
+
+def test_the_in_sample_row_is_flagged_as_trained_on(experiments_db: Database) -> None:
+    run_id = run(experiments_db, TRAIN)
+    rows = build_rows(scored(TRAIN), scored(TRAIN), SNAPSHOT.scheme)
+    results = score_rows(experiments_db, run_id, TREE, scored(TRAIN), rows, TRAIN, VALIDATION, min_decks=1)
+    assert {name: (r.trained_on, r.tuned_on) for name, r in results.items()} == {'train, in-sample': (True, False)}
+
+
+# Scenario: test rows split by unseen copies, and need the gate.
+
+def test_test_rows_need_the_gate_and_each_scoring_logs_one_look(experiments_db: Database) -> None:
+    test = frozenset({Split.TEST})
+    run_id = run(experiments_db, test)
+    rows = build_rows(scored(test), scored(TRAIN), SNAPSHOT.scheme)
+    with pytest.raises(ValueError, match='include_test'):
+        score_rows(experiments_db, run_id, TREE, scored(test), rows, TRAIN, VALIDATION, min_decks=1)
+    assert load_test_looks(experiments_db, run_id) == []
+
+    results = score_rows(experiments_db, run_id, TREE, scored(test), rows, TRAIN, VALIDATION, min_decks=1, include_test=True)
+    names = ['test, overall', 'test, 0 unseen copies', 'test, 1–4 unseen copies', 'test, 5–12 unseen copies', 'test, 13+ unseen copies', 'test, new maindeck', 'test, repeated maindeck']
+    assert list(results) == names
+    assert [look.rows for look in load_test_looks(experiments_db, run_id)] == [names]

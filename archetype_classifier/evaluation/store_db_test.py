@@ -37,14 +37,17 @@ DECKS = {  # deck id -> season, split, status, label, cards
 TRAIN, VALIDATION = frozenset({Split.TRAIN}), frozenset({Split.VALIDATION})
 
 
-def store_snapshot(edb: Database, snapshot_id: int, scheme_id: int, decks: Mapping[int, tuple[int, Split, LabelStatus, int | None, DeckContents]]) -> None:
-    """Write a snapshot and its splits under one scheme straight into the experiments database, as materialise_split would."""
+def store_snapshot(edb: Database, snapshot_id: int, scheme_id: int, decks: Mapping[int, tuple[int, Split, LabelStatus, int | None, DeckContents]],
+                   unseen: Mapping[int, int] | None = None, maindecks: Mapping[int, str] | None = None) -> None:
+    """Write a snapshot and its splits under one scheme straight into the experiments database, as materialise_split would.
+    Each deck has its own maindeck and no unseen copies unless given."""
+    unseen, maindecks = unseen or {}, maindecks or {}
     edb.execute('INSERT INTO snapshot (id, deck_count, max_deck_id, notes) VALUES (%s, %s, %s, %s)', [snapshot_id, len(decks), max(decks), 'test'])
     loader.insert_rows(edb, 'archetype_snapshot', ['snapshot_id', 'archetype_id', 'name', 'parent_id', 'depth'], [[snapshot_id, *a] for a in ARCHETYPES])
     loader.insert_rows(edb, 'deck_snapshot', ['snapshot_id', *loader.DECK_FACT_COLUMNS],
-                       [[snapshot_id, i, season, 'League', True, f'{i:040x}', 60, None, None, None, None, label] for i, (season, _, _, label, _) in decks.items()])
+                       [[snapshot_id, i, season, 'League', True, maindecks.get(i, f'{i:040x}'), 60, None, None, None, None, label] for i, (season, _, _, label, _) in decks.items()])
     loader.insert_rows(edb, 'deck_split', ['snapshot_id', 'scheme_id', 'deck_id', 'split', 'exclusion_reason', 'label_status', 'label_id', 'unseen_maindeck_copies'],
-                       [[snapshot_id, scheme_id, i, split.value, ExclusionReason.STATUS_NOT_TRAINED_ON.value if split == Split.EXCLUDED else None, status.value, label, 0]
+                       [[snapshot_id, scheme_id, i, split.value, ExclusionReason.STATUS_NOT_TRAINED_ON.value if split == Split.EXCLUDED else None, status.value, label, unseen.get(i, 0)]
                         for i, (_, split, status, label, _) in decks.items()])
 
 class Site:

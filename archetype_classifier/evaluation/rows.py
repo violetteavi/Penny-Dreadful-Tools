@@ -1,10 +1,13 @@
 """The rows of the results table: named, versioned groups of scored decks. Scores are never stored; they're recomputed from a run's guesses (decision F)."""
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
 from archetype_classifier.data_loading.labels import LabelStatus
 from archetype_classifier.data_loading.slices import DeckSet, SnapshotDeck
 from archetype_classifier.data_loading.splits import Split, SplitScheme
+
+logger = logging.getLogger(__name__)
 
 ROWS_VERSION = 1  # Bump on any change to which rows exist or which decks they hold.
 PREFIXES = {Split.TRAIN: 'train', Split.HELD_OUT: 'held-out', Split.VALIDATION: 'validation', Split.TEST: 'test'}
@@ -34,7 +37,9 @@ def build_rows(scored: DeckSet, training: DeckSet, scheme: SplitScheme) -> list[
         allowed = scheme.train_statuses if split == Split.TRAIN else scheme.eval_statuses
         if LabelStatus.UNVERIFIED in allowed:
             rows.append(Row(f'{PREFIXES[split]}, unverified labels', frozenset({split}), frozenset(d.deck_id for d in decks if d.label_status == LabelStatus.UNVERIFIED)))
-    return rows
+    for empty in (r for r in rows if not r.deck_ids):
+        logger.info("Row '%s' has no decks, so it's left out", empty.name)  # The metrics module can't score an empty set.
+    return [r for r in rows if r.deck_ids]
 
 def split_rows(split: Split, repeated: Keep) -> list[tuple[str, Keep]]:
     """Each row a split's scored decks fall into, as its name and which of the split's decks it keeps."""

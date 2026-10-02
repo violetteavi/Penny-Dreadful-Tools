@@ -1,3 +1,7 @@
+import logging
+
+import pytest
+
 from archetype_classifier.data_loading.labels import LabelFacts, LabelStatus
 from archetype_classifier.data_loading.slices import Snapshot, SnapshotDeck, build_deck_set
 from archetype_classifier.data_loading.splits import Split, SplitScheme
@@ -69,3 +73,12 @@ def test_unverified_labels_get_their_own_row() -> None:
         'held-out, unseen cards': frozenset({302}),
         'held-out, unverified labels': frozenset({303}),
     }
+
+
+# Scenario: a row with no decks is left out.
+
+def test_a_row_with_no_decks_is_left_out(caplog: pytest.LogCaptureFixture) -> None:
+    no_unseen = snapshot({**SNAPSHOT.decks, 302: snapshot_deck(302, Split.HELD_OUT, 0, None)})
+    with caplog.at_level(logging.INFO):
+        assert rows({Split.HELD_OUT}, no_unseen) == {'held-out, no unseen cards': frozenset({301, 302})}
+    assert "Row 'held-out, unseen cards' has no decks, so it's left out" in caplog.text

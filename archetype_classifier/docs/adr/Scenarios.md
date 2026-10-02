@@ -769,3 +769,103 @@ The scored deck set is {HELD_OUT}, but neither held-out deck has unseen cards (d
 
 - **Expect:** the row set has a version number, 1. Any change to which rows exist or which decks they hold bumps it, and every report records it, with the metrics version and PR number (decision F).
 - **Check:** the version is exposed beside the row-building function.
+
+## Experiment reports
+
+These scenarios belong to the report (#28). A report turns one stored run into a Markdown write-up, committed in `docs/experiments/`. Scores are recomputed from the run's stored guesses every time a report is made, never stored (decision F). The report records the versions and PR numbers needed to recover what produced them.
+
+**Decks** (from "Rows of the results table"), each VERIFIED, under the typical scheme (season rule 1–38 / 39 / 40–42 with 10% held out; status rule train {VERIFIED}, eval {VERIFIED}; twins off):
+
+| Deck | Split | Label |
+|---|---|---|
+| 101 | TRAIN | Red Deck Wins |
+| 102 | TRAIN | Azorius Control |
+| 301 | HELD_OUT | Red Deck Wins |
+| 302 | HELD_OUT | Azorius Control |
+| 201 | VALIDATION | Red Deck Wins |
+| 202 | VALIDATION | Azorius Control |
+
+The tree: Aggro › Red Deck Wins, and Control › Azorius Control.
+
+**Runs:**
+- **Run 1:** model 1, the mock "most common archetype" model, version 1, trained on {TRAIN} and tuned on {VALIDATION}. Scope {HELD_OUT, VALIDATION}. It guesses Red Deck Wins for every deck.
+- **Run 2:** a baseline run of another model on the same decks. It guesses Red Deck Wins for 301 and 201, and **Control** (a parent fallback) for 302 and 202.
+
+The report is made with a macro minimum of 1 deck per archetype, and PR numbers #6 and #31.
+
+All scenarios here were proposed 2026-10-02.
+
+### The header says exactly what produced the numbers
+
+- **Expect:** a header listing:
+  - **The run:** run id 1, scope {HELD_OUT, VALIDATION}, 4 decks predicted, its prediction hash, and when it was made.
+  - **The model:** model id 1, "most common archetype" version 1, its parameters, seed, snapshot 1, scheme 1 by name, training splits {TRAIN} and validation splits {VALIDATION}, and its training and validation deck counts.
+  - **The code:** `METRICS_VERSION` 1, `ROWS_VERSION` 1, and PRs #6 and #31.
+- **Why it matters:** a committed report is the record of what was measured. Numbers may not reproduce after a metric change, but the versions and PRs say which code produced them.
+- **Check:** render run 1 and read the header.
+
+### The results table has one line per row, with intervals
+
+- **Expect:** one line per row from the row set, in its order: "held-out, no unseen cards", "held-out, unseen cards", "validation", "validation, new maindeck" and "validation, repeated maindeck". Each line gives:
+  - decks and distinct maindecks
+  - micro hF, hP and hR, each with its 95% interval
+  - exact-match rate and coverage
+  - macro hF, with the number of archetypes it averages
+  - notes: "tuned on" for the validation rows, "trained on" where it applies, and how many decks were skipped for having no stored guess
+- **Expect, for "validation"** (decks 201 and 202): micro hP **0.50**, hR **0.50**, hF **0.50**, exact match **0.50**, coverage **1.00**. Deck 201 is exact. Deck 202, Azorius Control guessed as Red Deck Wins, shares nothing with its label.
+- **Why it matters:** n and intervals on every line keep small rows from looking more certain than they are.
+- **Check:** render run 1 and read the "validation" line.
+
+### Archetypes appear by name, and confusions link to example decks
+
+- **Expect:** a "Top confusions" section for each scored split, using that split's widest row ("held-out" combines both held-out rows, then "validation"). Each confusion shows:
+  - the label and guess by name ("Azorius Control → Red Deck Wins")
+  - whether it's on or off the label's path (here, off)
+  - its deck count
+  - up to 3 example decks, linked as `https://pennydreadfulmagic.com/decks/202/`
+- **Expect, an archetype missing from the snapshot's tree:** it shows as "missing archetype 999", never as a bare id.
+- **Why it matters:** the confusions are where a reviewer starts, and the links let anyone open the decks behind them, since local deck ids match the public site.
+- **Check:** render run 1 and read the validation confusions.
+
+### A baseline run is compared deck by deck
+
+Run 1 is rendered with run 2 as its baseline.
+
+- **Expect:** a "Compared with run 2" section, with one line per row, giving run 1 minus run 2 for hF, hP, hR and exact-match rate, each with its paired interval, plus the number of decks compared and left out. For "validation":
+  - **Run 2:** micro hP **1.00**, hR **0.75**, hF **0.86**. Deck 202's guess, Control, is correct as far as it goes.
+  - **Difference** (run 1 minus run 2): hP **−0.50**, hR **−0.25**, hF **−0.36**, exact match **0.00**.
+  - 2 decks compared, 0 left out.
+- **Expect, without a baseline:** no comparison section.
+- **Why it matters:** this is how we decide whether a model beats today's guesser. Two separate intervals side by side would miss a consistent difference.
+- **Check:** render run 1 with and without run 2 as its baseline.
+
+### A validation curve is shown when the model has one
+
+- **Expect:** a model whose state includes a validation curve, a list of (threshold, hP, hR, hF), gets a "Validation curve" table, with the chosen threshold marked. The mock model has no threshold, so its report says "No validation curve: this model has no threshold to tune."
+- **Check:** render a run of the mock model, and of a stand-in model whose state has a three-point curve.
+
+### Test results need the gate, and each report logs one look
+
+A run whose scope is {TEST}.
+
+- **Expect:**
+  - rendering it without `include_test` raises an error, and nothing is logged
+  - with it, the report renders and one test look is logged for the run, naming the test rows
+- **Why it matters:** a report is the usual way test numbers are seen, so it goes through the same gate as scoring.
+- **Check:** render the test run with and without the gate, then read its test looks.
+
+### The same run always gives the same report
+
+- **Expect:** rendering run 1 twice gives identical Markdown, byte for byte. The bootstrap uses the metrics module's fixed seed, and the report contains no time of its own, only the run's stored time.
+- **Why it matters:** a re-rendered report shows a real difference only when something real changed.
+- **Check:** render run 1 twice and compare.
+
+### A report is written to `docs/experiments/` from the command line
+
+- **Expect:** running the report command with a run id, an optional baseline run id, the PR numbers, the macro minimum, `include_test` when needed, and an output path writes the Markdown there. The command prints the path.
+- **Check:** run the command for run 1 into a temporary folder and compare the file with the rendered Markdown.
+
+### Metrics are versioned
+
+- **Expect:** the metrics module has a version number, 1. Any change to how a metric is computed bumps it, and every report records it.
+- **Check:** the version is exposed beside the scoring functions.

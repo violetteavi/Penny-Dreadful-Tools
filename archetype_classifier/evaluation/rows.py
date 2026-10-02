@@ -23,7 +23,7 @@ def build_rows(scored: DeckSet, training: DeckSet, scheme: SplitScheme) -> list[
     def repeated(d: SnapshotDeck) -> bool:
         return d.maindeck_hash in training_maindecks
     rows = []
-    for split in (Split.HELD_OUT, Split.VALIDATION, Split.TEST):
+    for split in (Split.TRAIN, Split.HELD_OUT, Split.VALIDATION, Split.TEST):
         if split not in scored.splits:
             continue
         verified = [d for d in scored.decks.values() if d.split == split and d.label_status == LabelStatus.VERIFIED]
@@ -33,6 +33,8 @@ def build_rows(scored: DeckSet, training: DeckSet, scheme: SplitScheme) -> list[
 
 def split_rows(split: Split, repeated: Keep) -> list[tuple[str, Keep]]:
     """Each row a split's scored decks fall into, as its name and which of the split's decks it keeps."""
+    if split == Split.TRAIN:
+        return [('train, in-sample', lambda d: True)]  # How well the model fits the decks it learned from; not a generalisation score.
     if split == Split.HELD_OUT:
         return [('held-out, no unseen cards', lambda d: d.unseen_maindeck_copies == 0), ('held-out, unseen cards', lambda d: d.unseen_maindeck_copies > 0)]
     if split == Split.VALIDATION:

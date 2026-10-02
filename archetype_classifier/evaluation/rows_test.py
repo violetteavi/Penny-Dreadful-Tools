@@ -51,3 +51,9 @@ def test_test_rows_split_by_unseen_copies_and_by_repeated_maindeck() -> None:
         'test, new maindeck': frozenset({402, 403, 404}),
         'test, repeated maindeck': frozenset({401}),
     }
+
+
+# Scenario: scoring the training decks gives one in-sample row.
+
+def test_scoring_the_training_decks_gives_one_in_sample_row() -> None:
+    assert rows({Split.TRAIN}) == {'train, in-sample': frozenset({101, 102})}

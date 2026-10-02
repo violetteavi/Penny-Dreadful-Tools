@@ -68,3 +68,20 @@ def test_the_results_table_has_one_line_per_row_with_intervals(experiments_db: D
     validation = table[4]
     assert re.fullmatch(r'\| validation \| 2 \| 2 \| 0\.50 \[\d\.\d\d, \d\.\d\d\] \| 0\.50 \[\d\.\d\d, \d\.\d\d\] \| 0\.50 \[\d\.\d\d, \d\.\d\d\] \| 0\.50 \| 1\.00 \| 0\.50 \(2 archetypes\) \| tuned on \|', validation)
     assert table[2].endswith('|  |')  # No notes for a held-out row.
+
+
+# Scenario: archetypes appear by name, and confusions link to example decks.
+
+def test_confusions_appear_by_name_with_links_to_example_decks(experiments_db: Database, runs: tuple[int, int]) -> None:
+    lines = render(experiments_db)
+    validation = lines[lines.index('### Top confusions: validation') + 2:]
+    assert validation[0] == '| Label | Guess | Path | Decks | Example decks |'
+    assert validation[2] == '| Azorius Control | Red Deck Wins | off | 1 | [202](https://pennydreadfulmagic.com/decks/202/) |'
+    held_out = lines[lines.index('### Top confusions: held-out') + 2:]
+    assert held_out[2] == '| Azorius Control | Red Deck Wins | off | 1 | [302](https://pennydreadfulmagic.com/decks/302/) |'
+
+def test_an_archetype_missing_from_the_tree_is_named_as_missing(experiments_db: Database, runs: tuple[int, int]) -> None:
+    model_id = save_model(experiments_db, *mock_model(seed=2))
+    run_id = save_run(experiments_db, model_id, SCOPE, [Prediction(i, 999 if i == 202 else g, {}) for i, g in RUN_1.items()])
+    validation = next(line for line in render(experiments_db, run_id) if line.startswith('| validation |'))
+    assert validation.endswith('| tuned on, 1 skipped: missing archetype 999 |')

@@ -25,6 +25,14 @@ class Match:
     deck_id: int
     score: int  # A whole percentage, as the site rounds it.
 
+@dataclass(frozen=True)
+class Pick:
+    """The match a deck's label would be copied from, before the threshold is applied."""
+    deck_id: int
+    label_id: int
+    score: int
+    rule: str  # 'league' or 'gatherling'.
+
 
 @register
 class SimilarityBaseline:
@@ -51,14 +59,12 @@ class SimilarityBaseline:
 
     def predict(self, decks: Sequence[PredictDeck]) -> list[Prediction]:
         predictions = []
-        for deck, (ids, scores) in zip(decks, self.index.scores(decks)):
-            eligible = self.index.reviewed[ids] & (self.index.labels[ids] >= 0)
-            best = best_match(ids[eligible], scores[eligible], self.index.deck_ids)
-            if best is None or scores[eligible][best] < self.threshold:
+        for deck, (rows, scores) in zip(decks, self.index.scores(decks)):
+            pick = self.index.pick(deck.source, rows, scores)
+            if pick is None or pick.score < self.threshold:
                 predictions.append(Prediction(deck.deck_id, None, {}))
-                continue
-            row = ids[eligible][best]
-            predictions.append(Prediction(deck.deck_id, int(self.index.labels[row]), {'match_deck_id': int(self.index.deck_ids[row]), 'score': int(scores[eligible][best]), 'rule': 'league'}))
+            else:
+                predictions.append(Prediction(deck.deck_id, pick.label_id, {'match_deck_id': pick.deck_id, 'score': pick.score, 'rule': pick.rule}))
         return predictions
 
     def state(self) -> dict[str, JSON]:
@@ -126,6 +132,20 @@ class Index:
                 weights[shared.indices[shared.indptr[i]:shared.indptr[i + 1]]] = shared.data[shared.indptr[i]:shared.indptr[i + 1]]
                 total = sum(self.weight(c.card) for c in deck.maindeck)  # Its unseen lines count here, though nothing can share them.
                 yield rows, np.round(weights[rows] / np.maximum(total, self.totals[rows]) * 100).astype(int)
+
+    def pick(self, source: str, rows: np.ndarray, scores: np.ndarray) -> Pick | None:
+        """As the site picks: a Gatherling deck copies its single top match, if labelled; any other deck its best reviewed, labelled match."""
+        if source == 'Gatherling':
+            best = best_match(rows, scores, self.deck_ids)
+            if best is None or self.labels[rows[best]] < 0:
+                return None
+            return Pick(int(self.deck_ids[rows[best]]), int(self.labels[rows[best]]), int(scores[best]), 'gatherling')
+        eligible = self.reviewed[rows] & (self.labels[rows] >= 0)
+        best = best_match(rows[eligible], scores[eligible], self.deck_ids)
+        if best is None:
+            return None
+        row = rows[eligible][best]
+        return Pick(int(self.deck_ids[row]), int(self.labels[row]), int(scores[eligible][best]), 'league')
 
     def encode(self, decks: Sequence[PredictDeck], column: Callable[..., int | None], weights: np.ndarray | None) -> sparse.csr_matrix:
         rows, cols, data = [], [], []

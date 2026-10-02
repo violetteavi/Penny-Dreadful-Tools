@@ -72,3 +72,13 @@ def test_sharing_only_a_basic_land_isnt_a_match() -> None:
     deck = query(208, cards(Essence_Scatter=4, Negate=4, Mountain=52))  # Shares only "52 Mountain" with 101.
     assert fitted().matches(deck) == [Match(102, 67)]
     assert fitted(1).predict([deck])[0].evidence == {'match_deck_id': 102, 'score': 67, 'rule': 'league'}
+
+
+# Scenario: League decks skip unreviewed matches, and Gatherling decks don't (a rule-level check).
+
+def test_league_decks_skip_unreviewed_matches_and_gatherling_decks_dont() -> None:
+    maindeck = cards(Shock=2, Burst_Lightning=4, Mountain=54)  # Identical to 104, which isn't reviewed.
+    model = fitted()
+    league, gatherling = model.predict([query(209, maindeck, 'League'), query(209, maindeck, 'Gatherling')])
+    assert league == Prediction(209, RED_DECK_WINS, {'match_deck_id': 103, 'score': 33, 'rule': 'league'})
+    assert gatherling == Prediction(209, RED_DECK_WINS, {'match_deck_id': 104, 'score': 100, 'rule': 'gatherling'})

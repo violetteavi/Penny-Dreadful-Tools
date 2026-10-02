@@ -1,8 +1,12 @@
 """The similarity baseline on small rule-level decks: 60-card season 30 lists legal in seasons 30 and 39. Real decks are checked in similarity_local_test.py."""
+from typing import cast
+
+import pytest
+
 from archetype_classifier.data_loading.dataset import ArchetypeSnapshot, CardCount
 from archetype_classifier.data_loading.labels import LabelStatus
 from archetype_classifier.evaluation.metrics import ArchetypeTree
-from archetype_classifier.evaluation.model import FitContext, PredictDeck, Prediction, TrainingDeck
+from archetype_classifier.evaluation.model import JSON, FitContext, LabelledDeck, PredictDeck, Prediction, TrainingDeck
 from archetype_classifier.models.similarity import Match, SimilarityBaseline
 
 AGGRO, CONTROL, RED_DECK_WINS, BURN, AZORIUS_CONTROL = 1, 2, 16, 17, 49
@@ -14,7 +18,8 @@ CONTEXT = FitContext(TREE, {30: LEGAL, 39: LEGAL}, seed=0)
 
 
 def cards(**counts: int) -> tuple[CardCount, ...]:
-    return tuple(sorted((CardCount(name.replace('_', ' '), n) for name, n in counts.items()), key=lambda c: c.card))
+    """Card names written as keywords: underscores are spaces, and "_s_" is "'s " (Ranger_s_Guile is Ranger's Guile)."""
+    return tuple(sorted((CardCount(name.replace('_s_', "'s ").replace('_', ' '), n) for name, n in counts.items()), key=lambda c: c.card))
 
 def training(deck_id: int, archetype_id: int, maindeck: tuple[CardCount, ...], sideboard: tuple[CardCount, ...] = (), reviewed: bool = True,
              status: LabelStatus = LabelStatus.VERIFIED, source: str = 'League') -> TrainingDeck:
@@ -82,3 +87,41 @@ def test_league_decks_skip_unreviewed_matches_and_gatherling_decks_dont() -> Non
     league, gatherling = model.predict([query(209, maindeck, 'League'), query(209, maindeck, 'Gatherling')])
     assert league == Prediction(209, RED_DECK_WINS, {'match_deck_id': 103, 'score': 33, 'rule': 'league'})
     assert gatherling == Prediction(209, RED_DECK_WINS, {'match_deck_id': 104, 'score': 100, 'rule': 'gatherling'})
+
+
+# Scenario: the tuned threshold maximises hF on the validation decks.
+
+STOMPY = 18
+TUNING_TREE = ArchetypeTree({**{a: TREE.archetypes[a] for a in TREE.archetypes}, STOMPY: ArchetypeSnapshot(STOMPY, 'Stompy', AGGRO, 1)})
+VALIDATION = [  # Their best League matches score 100, none, none, none, 67, 33 and 33.
+    LabelledDeck(query(201, cards(Shock=4, Burst_Lightning=4, Mountain=52)), RED_DECK_WINS, 'a'),
+    LabelledDeck(query(205, cards(Shock=4, Burst_Lightning=4, Searing_Spear=4, Fiery_Temper=1, Mountain=47)), RED_DECK_WINS, 'b'),
+    LabelledDeck(query(212, cards(Shock=4, Searing_Spear=4, Fiery_Temper=4, Volcanic_Hammer=4, Mountain=44)), RED_DECK_WINS, 'c'),
+    LabelledDeck(query(260, cards(Young_Wolf=4, Nest_Invader=4, Elvish_Visionary=4, Giant_Growth=4, Savage_Swipe=4, Gather_Courage=4, Ranger_s_Guile=4,
+                                  Hunger_of_the_Howlpack=4, Aspect_of_Hydra=4, Forest=24)), STOMPY, 'd'),
+    LabelledDeck(query(208, cards(Essence_Scatter=4, Negate=4, Mountain=52)), AZORIUS_CONTROL, 'e'),
+    LabelledDeck(query(209, cards(Shock=2, Burst_Lightning=4, Mountain=54)), RED_DECK_WINS, 'f'),
+    LabelledDeck(query(210, cards(Shock=4, Mountain=56)), RED_DECK_WINS, 'g'),
+]
+
+def tuned_state(threshold: int | str) -> dict[str, JSON]:
+    model = SimilarityBaseline({'threshold': threshold})
+    model.fit(TRAINING, VALIDATION, FitContext(TUNING_TREE, CONTEXT.legal_cards, seed=0))
+    return model.state()
+
+def test_the_tuned_threshold_maximises_hf_on_the_validation_decks() -> None:
+    state = tuned_state('tuned')
+    curve = {point[0]: point[1:] for point in cast(list[list[float]], state['validation_curve'])}
+    assert list(curve) == list(range(1, 101))
+    assert curve[1] == curve[20] == curve[33] == pytest.approx([1.0, 8 / 14, 0.7273], abs=1e-4)  # Every threshold up to 33 ties at the best hF,
+    assert curve[34] == curve[67] == pytest.approx([1.0, 4 / 14, 0.4444], abs=1e-4)
+    assert curve[68] == curve[100] == pytest.approx([1.0, 2 / 14, 0.25], abs=1e-4)
+    assert state['threshold'] == 20  # so the tuned model keeps the one nearest the site's 20.
+    fixed = tuned_state(30)
+    assert (fixed['threshold'], fixed['validation_curve']) == (30, state['validation_curve'])  # A fixed threshold is kept, and the curve still recorded.
+
+
+def test_a_tuned_threshold_needs_validation_decks() -> None:
+    with pytest.raises(ValueError, match='validation decks'):
+        fitted('tuned')
+    assert fitted(20).state()['validation_curve'] == []

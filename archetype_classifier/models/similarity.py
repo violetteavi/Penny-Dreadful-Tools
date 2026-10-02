@@ -13,12 +13,15 @@ from typing import ClassVar, cast
 import numpy as np
 from scipy import sparse
 
+from archetype_classifier.evaluation.metrics import ArchetypeTree, overlap, sum_overlaps
 from archetype_classifier.evaluation.model import JSON, FitContext, LabelledDeck, PredictDeck, Prediction, TrainingDeck, register
 
 FLOOR = 0.001  # The lowest playability a card weighs as: 1 / 0.001 = 1,000.
 SIDEBOARD_WEIGHT = 0.2  # A deck playing a card only in its sideboard counts as this much of a deck, as on the site.
 BASIC_LANDS = frozenset({'Plains', 'Island', 'Swamp', 'Mountain', 'Forest'})  # Sharing only these doesn't make two decks candidates.
 CHUNK = 2000  # Query decks scored at once.
+SITE_THRESHOLD = 20  # The site's fixed threshold; a tuned threshold that ties breaks towards it.
+THRESHOLDS = range(1, 101)
 
 @dataclass(frozen=True)
 class Match:
@@ -45,8 +48,27 @@ class SimilarityBaseline:
 
     def fit(self, training: Sequence[TrainingDeck], validation: Sequence[LabelledDeck], context: FitContext) -> None:
         self.playability = playability(training, context.legal_cards)
-        self.threshold = cast(int, self.params['threshold'])
         self.index = Index(training, self.weight)
+        self.curve = self.validation_curve(validation, context.tree)
+        if self.params['threshold'] == 'tuned':
+            if not self.curve:
+                raise ValueError('A tuned threshold needs validation decks to tune on')
+            best_hf = max(hf for _, _, _, hf in self.curve)
+            self.threshold = min((t for t, _, _, hf in self.curve if hf == best_hf), key=lambda t: (abs(t - SITE_THRESHOLD), t))
+        else:
+            self.threshold = cast(int, self.params['threshold'])
+
+    def validation_curve(self, validation: Sequence[LabelledDeck], tree: ArchetypeTree) -> list[tuple[int, float | None, float, float]]:
+        """Micro hP, hR and hF on the validation decks at every whole-number threshold. Each deck's match is found once; a threshold only decides whether it's used."""
+        if not validation:
+            return []
+        picks = [self.index.pick(d.deck.source, rows, scores) for d, (rows, scores) in zip(validation, self.index.scores([d.deck for d in validation]))]
+        curve = []
+        for threshold in THRESHOLDS:
+            guesses = [p.label_id if p is not None and p.score >= threshold else None for p in picks]
+            micro = sum_overlaps(overlap(tree, d.label_id, guess) for d, guess in zip(validation, guesses)).hierarchical()
+            curve.append((threshold, micro.hp, micro.hr, micro.hf))
+        return curve
 
     def matches(self, deck: PredictDeck) -> list[Match]:
         """Every candidate training deck, best first: by score, then by higher deck id (roughly, most recent)."""
@@ -68,7 +90,8 @@ class SimilarityBaseline:
         return predictions
 
     def state(self) -> dict[str, JSON]:
-        raise NotImplementedError
+        """What fitting learned: each card's playability (its weight is 1 / playability), the threshold, and the validation curve, as the Model protocol documents."""
+        return {'playability': dict(self.playability), 'threshold': self.threshold, 'validation_curve': [list(point) for point in self.curve]}
 
     @classmethod
     def from_state(cls, params: dict[str, JSON], state: dict[str, JSON], training: Sequence[TrainingDeck], context: FitContext) -> 'SimilarityBaseline':

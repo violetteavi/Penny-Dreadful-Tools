@@ -55,3 +55,20 @@ def test_an_identical_deck_matches_at_100_and_ties_go_to_the_higher_id() -> None
     deck = query(201, cards(Shock=4, Burst_Lightning=4, Mountain=52))
     assert model.matches(deck) == [Match(101, 100), Match(104, 33), Match(103, 33)]
     assert model.predict([deck]) == [Prediction(201, RED_DECK_WINS, {'match_deck_id': 101, 'score': 100, 'rule': 'league'})]
+
+
+# Scenario: a match needs the same card and quantity.
+
+def test_a_match_needs_the_same_card_and_quantity() -> None:
+    deck = query(210, cards(Shock=4, Mountain=56))
+    assert fitted().matches(deck) == [Match(103, 33), Match(101, 33), Match(104, 0)]  # 104 plays 2 Shock: a candidate, but nothing shared.
+    assert fitted(20).predict([deck])[0].guess_id == RED_DECK_WINS
+    assert fitted(34).predict([deck]) == [Prediction(210, None, {})]
+
+
+# Scenario: sharing only a basic land isn't a match (a rule-level check).
+
+def test_sharing_only_a_basic_land_isnt_a_match() -> None:
+    deck = query(208, cards(Essence_Scatter=4, Negate=4, Mountain=52))  # Shares only "52 Mountain" with 101.
+    assert fitted().matches(deck) == [Match(102, 67)]
+    assert fitted(1).predict([deck])[0].evidence == {'match_deck_id': 102, 'score': 67, 'rule': 'league'}

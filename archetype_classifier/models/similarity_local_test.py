@@ -89,7 +89,9 @@ def test_the_baseline_agrees_with_the_sites_own_guesser(snapshot: Snapshot, site
     sample_size = int(os.environ.get('PD_LOCAL_DATA_DECKS', '20'))
     league = [i for i in validation if snapshot.decks[i].source == 'League'][::40][:sample_size * 3 // 4]
     gatherling = [i for i in validation if snapshot.decks[i].source == 'Gatherling'][::20][:sample_size - len(league)]
-    pick_differs, unlabelled_top = [], []
+    deck_differs: list[int] = []
+    label_differs: list[int] = []
+    unlabelled_top: list[int] = []
     for deck_id in league + gatherling:
         with APP.app_context():
             site_decks = deck.load_decks(f'd.id = {deck_id}')
@@ -103,7 +105,9 @@ def test_the_baseline_agrees_with_the_sites_own_guesser(snapshot: Snapshot, site
         site_pick = next((s for s in site_decks[0].similar_decks if source == 'Gatherling' or (s.reviewed and s.archetype_id is not None)), None)
         if source == 'Gatherling' and site_decks[0].similar_decks and site_decks[0].similar_decks[0].archetype_id is None:
             unlabelled_top.append(deck_id)
-        if (ours_pick.deck_id if ours_pick and ours_pick.score >= SITE_THRESHOLD else None) != (site_pick.id if site_pick else None):
-            pick_differs.append(deck_id)
-    print(f'\nChecked {len(league)} League and {len(gatherling)} Gatherling decks. The pick differs (tie order) for {len(pick_differs)}: {pick_differs}. '
-          f'Gatherling decks whose top site match is unlabelled: {len(unlabelled_top)}: {unlabelled_top}.')
+        ours_used = ours_pick if ours_pick and ours_pick.score >= SITE_THRESHOLD else None
+        if (ours_used.deck_id if ours_used else None) != (site_pick.id if site_pick else None):
+            # Tied scores are ordered by deck id here and by active date and finish on the site; often the tied decks are twins with one label.
+            (label_differs if (ours_used.label_id if ours_used else None) != (site_pick.archetype_id if site_pick else None) else deck_differs).append(deck_id)
+    print(f'\nChecked {len(league)} League and {len(gatherling)} Gatherling decks. The match differs but the label is the same for {len(deck_differs)}: {deck_differs}. '
+          f'The label differs for {len(label_differs)}: {label_differs}. Gatherling decks whose top site match is unlabelled: {len(unlabelled_top)}: {unlabelled_top}.')

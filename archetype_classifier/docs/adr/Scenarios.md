@@ -674,14 +674,14 @@ These scenarios belong to the row set (#27). A row is a named, versioned group o
 | 302 | HELD_OUT | 3 | its own |
 | 201 | VALIDATION | 0 | A (repeats deck 101) |
 | 202 | VALIDATION | 0 | its own |
-| 401 | TEST | 0 | its own |
+| 401 | TEST | 0 | B (repeats deck 102) |
 | 402 | TEST | 2 | its own |
 | 403 | TEST | 7 | its own |
-| 404 | TEST | 15 | B (repeats deck 102) |
+| 404 | TEST | 15 | its own |
 
 **Scheme**, unless a scenario says otherwise: the typical scheme (season rule 1–38 / 39 / 40–42 with 10% held out; status rule train {VERIFIED}, eval {VERIFIED}; twins off). The model trained on {TRAIN} and tuned on {VALIDATION}.
 
-**Repeated maindeck:** another TRAIN deck has the same maindeck.
+**Repeated maindeck:** another TRAIN deck has the same maindeck. Only a deck with 0 unseen copies can repeat one, since every card in a TRAIN maindeck is seen.
 
 All scenarios here were proposed 2026-10-01.
 
@@ -717,8 +717,8 @@ The scored deck set is {TEST}.
   | test, 1–4 unseen copies | 402 |
   | test, 5–12 unseen copies | 403 |
   | test, 13+ unseen copies | 404 |
-  | test, new maindeck | 401, 402, 403 |
-  | test, repeated maindeck | 404 |
+  | test, new maindeck | 402, 403, 404 |
+  | test, repeated maindeck | 401 |
 
 - **Expect, without the gate:** scoring raises an error, and nothing is scored or logged. The deck set itself can only be built with `include_test`, but the rows check again.
 - **Expect, with the gate:** one test look is logged for the run, naming the seven test rows scored.

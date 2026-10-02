@@ -879,140 +879,128 @@ These scenarios belong to the similarity baseline (#6). It's today's guesser, re
 - **Picking a label:** a League deck copies the label of its highest-ranked match that is reviewed and labelled. A Gatherling deck copies the label of its single top match.
 - **Threshold:** a match must reach it. With no qualifying match, the deck gets no guess (the root).
 
-**Scheme** for every scenario here: season rule 1–38 / 39 / 40–42 with 10% held out; status rule train {VERIFIED, UNVERIFIED}, eval {VERIFIED}; twins off. The model trains on {TRAIN} and tunes on {VALIDATION}.
+**Scheme** for every scenario here is scheme 2, "similarity baseline": season rule 1–38 / 39 / 40–42 with 10% held out; status rule train {VERIFIED, UNVERIFIED}, eval {VERIFIED}; twins off. The model trains on its 202,385 TRAIN decks and tunes on its 2,249 VALIDATION decks (season 39).
 
-**Training decks:** season 30 League decks, 60 cards each.
+**Real decks.** Unless a scenario says it's a rule-level check, the decks are real decks from snapshot 1, identified by id. The numbers were computed with the site's own formula and checked against its `similarity_score`.
 
-| Deck | Label | Status | Reviewed | Maindeck |
-|---|---|---|---|---|
-| 101 | Red Deck Wins | VERIFIED | yes | 4 Shock, 4 Burst Lightning, 52 Mountain |
-| 102 | Azorius Control | VERIFIED | yes | 4 Essence Scatter, 4 Negate, 52 Island |
-| 103 | Red Deck Wins | VERIFIED | yes | 4 Shock, 2 Burst Lightning, 54 Mountain |
-| 104 | Red Deck Wins | UNVERIFIED | no | 2 Shock, 4 Burst Lightning, 54 Mountain |
-
-**Weights.**
-- **Shock, Burst Lightning and Mountain** are each in 3 of the 4 training maindecks, so their playability is 0.75 and their weight 1 / 0.75 ≈ **1.33**.
-- **Essence Scatter, Negate and Island** are each in 1 of 4, so their playability is 0.25 and their weight **4**.
-- **Any card no training deck plays** has the floor weight, 1 / 0.001 = **1,000**.
-
-Deck totals: 101, 103 and 104 are each 4.00, and 102 is 12.00.
-
-**Validation decks:** season 39 League decks, VERIFIED, 60 cards each, every card legal in season 39.
-
-| Deck | Label | Unseen maindeck copies | Maindeck |
-|---|---|---|---|
-| 201 | Red Deck Wins | 0 | 4 Shock, 4 Burst Lightning, 52 Mountain |
-| 205 | Red Deck Wins | 5 | 4 Shock, 4 Burst Lightning, 4 Searing Spear, 1 Fiery Temper, 47 Mountain |
-| 212 | Red Deck Wins | 12 | 4 Shock, 4 Searing Spear, 4 Fiery Temper, 4 Volcanic Hammer, 44 Mountain |
-| 260 | Stompy | 60 | 4 Young Wolf, 4 Nest Invader, 4 Elvish Visionary, 4 Giant Growth, 4 Savage Swipe, 4 Gather Courage, 4 Ranger's Guile, 4 Hunger of the Howlpack, 4 Aspect of Hydra, 24 Forest |
-| 208 | Azorius Control | 0 | 4 Essence Scatter, 4 Negate, 52 Mountain |
-| 209 | Red Deck Wins | 0 | 2 Shock, 4 Burst Lightning, 54 Mountain |
-| 210 | Red Deck Wins | 0 | 4 Shock, 56 Mountain |
-
-The tree: Aggro › Red Deck Wins and Stompy, and Control › Azorius Control.
-
-All scenarios here were proposed 2026-10-02.
+All scenarios here were proposed 2026-10-02 and revised the same day to use real decks.
 
 ### Weights come from the training decks, by the site's formula
 
-- **Expect:** the weights above, rounded as the site rounds playability (5 decimals).
-  - A card played only in a training sideboard counts 0.2 of a deck, as on the site.
-  - A card legal in season 39 that no training deck plays has the floor weight.
-  - Only training decks and the training seasons count: nothing from season 39 onward.
-- **Why it matters:** the weights must not see the decks being scored. On the site they come from every deck ever played.
-- **Check:** fit on the four training decks and read the weights.
+- **Expect:**
+  - **Typical weights:**
 
-### A deck identical to a training deck matches it at 100%
+    | Card | Playability | Weight |
+    |---|---|---|
+    | Island | 0.38226 | 2.6 |
+    | Mountain | 0.32338 | 3.1 |
+    | Burst Lightning | 0.13110 | 7.6 |
+    | Make Disappear | 0.00173 | 578.0 |
 
-Deck 201, with 0 unseen copies.
+  - **The floor:** 79% of the 23,416 cards legal in the training seasons have playability below 0.001, so they weigh the floor, **1,000**. That's also the weight of a card no training deck plays, such as Archmage's Charm in season 39.
+  - **Only training decks** and the training seasons count. A card played only in a sideboard counts 0.2 of a deck, and playability is rounded to 5 decimals, as on the site.
+- **Why it matters:** the weights must not see the decks being scored. Most of the card pool sits at the floor, so an unseen card weighs no more than a rarely played one.
+- **Check:** fit on scheme 2's TRAIN decks and read the weights of these cards.
+
+### A deck identical to training decks matches at 100%, and ties go to the higher id
+
+Deck 269508, a season 39 League "Oops All Lands" deck with 0 unseen copies (21 distinct cards, total weight 2,106). Its maindeck is identical to two training decks, 264496 and 264554.
 
 - **Expect:**
-  - **Scores:** 101: **100** (all three lines shared, 4.00 / 4.00). 103: **33** (only "4 Shock" shared, 1.33 / 4.00). 104: **33** (only "4 Burst Lightning").
-  - **Ranking:** 101, then 104 and 103. They tie at 33, and a tie goes to the higher deck id.
-  - **Guess:** Red Deck Wins, with evidence: match 101, score 100, rule League.
-- **Check:** predict deck 201 at the site's threshold of 20.
+  - **Scores:** 264554 and 264496 at **100**, then 262588 at 79.
+  - **Ranking:** the tie at 100 goes to the higher deck id, so 264554 comes first.
+  - **Guess:** Oops All Lands, with evidence: match 264554, score 100, rule League.
+- **Check:** predict deck 269508 at the site's threshold of 20.
 
 ### A match needs the same card and quantity
 
-Deck 210 (4 Shock, 56 Mountain; 0 unseen).
+Deck 269508 again, against training deck 262588, another Oops All Lands deck.
 
-- **Expect:**
-  - **Scores:** 101 and 103: **33** each, because each shares only "4 Shock": 1.33 / max(2.67, 4.00). 104: 0. It plays 2 Shock and 54 Mountain, so no line matches, though it's still a candidate (it shares the name Shock).
-  - **Guess:** Red Deck Wins from 103, the higher id of the tie, with score 33.
-  - **At a threshold of 34 or more:** no guess.
-- **Check:** predict deck 210 at thresholds 20 and 34.
+- **Expect:** a score of **79**, not 100. They share most cards, but these lines differ in quantity, so they don't count as shared:
+  - Deserted Temple: 4 in 269508, 2 in 262588
+  - Temple of Deceit: 4 and 3
+  - Temple of Malady: 4 and 1
+  - Temple of Epiphany: 4 and 2
+  - Island: 4 and 1
 
-### Sharing only a basic land isn't a match
+  Cards in only one of the two decks also don't count: Forbidden Orchard, Flooded Grove, Temple of Silence, Temple of Enlightenment, Geier Reach Sanitarium and Forest.
+- **Check:** score 269508 against 262588.
 
-Deck 208 (4 Essence Scatter, 4 Negate, 52 Mountain; 0 unseen).
+### Unseen cards lower the chance of a usable match
 
-- **Expect:**
-  - **102 is the only candidate:** Essence Scatter and Negate are shared, so the score is 8.00 / max(9.33, 12.00) = **67**.
-  - **101 isn't a candidate,** although it shares the line "52 Mountain", which would score 1.33 / 9.33 = 14. They share no non-basic card. So even at a threshold of 10, 101 is never a match.
-  - **Guess:** Azorius Control from 102, with score 67.
-- **Check:** predict deck 208 at thresholds 20 and 10.
-
-### League decks skip unreviewed matches, and Gatherling decks don't
-
-Deck 209 (2 Shock, 4 Burst Lightning, 54 Mountain; 0 unseen), identical to 104.
-
-- **Expect, as a League deck:**
-  - **Scores:** 104: 100. 103: 33 ("54 Mountain"). 101: 33 ("4 Burst Lightning").
-  - **Picking:** 104 isn't reviewed, so it's skipped. The next is 103, which beats 101 on the tie by higher id.
-  - **Guess:** Red Deck Wins, with evidence: match 103, score 33, rule League.
-- **Expect, as a Gatherling deck:** the single top match is 104, and it has a label, so the guess is Red Deck Wins with evidence: match 104, score 100, rule Gatherling.
-- **One difference from the site:** the site also searches unlabelled decks, so a Gatherling deck whose top match is unlabelled gets no guess there. Our training decks are VERIFIED or UNVERIFIED, so all are labelled, and it takes the next. The local-data check counts how often this happens.
-- **Check:** predict deck 209 with each source.
-
-### Unseen cards push a deck below every threshold
-
-Decks with 0, 5, 12 and 60 unseen maindeck copies.
+Real season 39 League decks. No season 39 deck has more than 27 unseen copies, since basic lands are always seen.
 
 - **Expect:**
 
-  | Deck | Unseen copies | Its total weight | Best match | Guess |
-  |---|---|---|---|---|
-  | 201 | 0 | 4.00 | 101 at 100 | Red Deck Wins |
-  | 205 | 5 | 2,004 (two unseen lines at 1,000 each) | 101 at **0** (2.67 / 2,004) | no guess |
-  | 212 | 12 | 3,003 (three unseen lines) | 101 and 103 at **0** (1.33 / 3,003) | no guess |
-  | 260 | 60 | 10,000 (every line unseen) | **no candidates** (it shares no card at all) | no guess |
+  | Deck | Label | Unseen copies | Unseen lines | Total weight | Best match | Guess at 20 |
+  |---|---|---|---|---|---|---|
+  | 269508 | Oops All Lands | 0 | none | 2,106 | 264554 at 100 (Oops All Lands) | Oops All Lands, exact |
+  | 269653 | Izzet Madcap | 5 | 4 Archmage's Charm, 1 Shark Typhoon | 3,079 | 244684 at **21** (Izzet Spells) | **Izzet Spells: wrong branch** |
+  | 269833 | Azorius Legends Aggro | 5 | 1 Jill, Shiva's Dominant, 4 Seachrome Coast | 2,642 | 264566 at 17 (Azorius Legends Aggro) | no guess |
+  | 269466 | Hardened Scales Affinity | 12 | 4 Marketback Walker, 4 Rust Harvester, 4 Stomping Ground | 3,615 | 264841 at 9 (Hardened Scales Affinity) | no guess |
+  | 269940 | Midrange | 27 (the most in season 39) | seven lines, including 3 Breeding Pool and 4 Zanarkand, Ancient Metropolis | 10,254 | 269227 at 10 (Mono Blue Control) | no guess |
 
-- **Why it matters:** a deck's total weight counts its unseen cards at the floor weight, 1,000, while they can never be shared. So even one or two new cards push a deck below any threshold. This is the site guesser's known weakness at a rotation, and what later models must beat. It shows in the "test, by unseen copies" rows.
-- **Check:** predict decks 201, 205, 212 and 260 at thresholds 20 and 1.
+- **Expect, deck 269653:** its 21% comes almost entirely from one shared line, 4 Make Disappear (weight 578). Its two unseen lines add 2,000 to its total, while a near-match on the rest of the deck still counts for little. Its label, Izzet Madcap, is under Control › Izzet Control, and the guess, Izzet Spells, is under Aggro-Control, so it scores hF 0 with no partial credit.
+- **Expect, on the whole validation season:** the share of decks whose best match reaches 20 falls with unseen copies. In a sample of 300, it's:
+
+  | Unseen copies | 0 | 1–3 | 4–5 | 6–8 | 9–12 | 13+ |
+  |---|---|---|---|---|---|---|
+  | Best match ≥ 20 | 98 / 100 | 33 / 38 | 32 / 51 | 27 / 62 | 7 / 31 | 2 / 18 |
+
+  The experiment reports the full rows.
+- **Why it matters:** a deck's total weight counts its unseen cards at 1,000 each, while they can never be shared. So a few new cards make a good match look weak, or let a single rare shared card produce a confident wrong guess. This is what later models must beat after a rotation.
+- **Check:** predict these five decks at threshold 20, and score each against its best match.
+
+### League decks skip unreviewed matches, and Gatherling decks don't (a rule-level check)
+
+Every one of scheme 2's 202,385 training decks is reviewed, so this never changes a pick in the real data. It's still the site's rule, so it's checked with four small decks: 60-card season 30 lists of 4 Shock and 56 Mountain, with these differences:
+- **The query:** 2 Shock, 4 Burst Lightning, 54 Mountain.
+- **Its identical twin:** an unreviewed Red Deck Wins training deck.
+- **Two reviewed training decks,** one labelled Red Deck Wins and one Burn.
+
+- **Expect:**
+  - **As a League deck:** the unreviewed twin scores 100 but is skipped, so the guess comes from the best reviewed match.
+  - **As a Gatherling deck:** the guess comes from the twin.
+- **One difference from the site:** the site also searches unlabelled decks, so a Gatherling deck whose top match is unlabelled gets no guess there. Our training decks are all labelled, so it takes the next. The real-data check counts how often this happens.
+- **Check:** predict the query with each source.
+
+### Sharing only a basic land isn't a match (a rule-level check)
+
+On real decks, a shared basic land line weighs a few points against totals in the thousands, so it never reaches a threshold. It's still the site's rule, so it's checked with small decks: a query of 4 Essence Scatter, 4 Negate and 52 Mountain, and a training deck of 4 Shock, 4 Burst Lightning and 52 Mountain. They share only "52 Mountain".
+
+- **Expect:** the training deck isn't a candidate, even at a threshold of 1, because the two share no non-basic card.
+- **Check:** predict the query at threshold 1.
 
 ### The tuned threshold maximises hF on the validation decks
 
-The tuned model sweeps every whole-number threshold from 1 to 100 on validation decks 201, 205, 212, 260, 208, 209 and 210. Their best League matches score 100, none, none, none, 67, 33 and 33.
-
 - **Expect:**
-
-  | Thresholds | Guessed (all correct) | No guess | Micro hP | Micro hR | Micro hF |
-  |---|---|---|---|---|---|
-  | 1–33 | 201, 208, 209, 210 | 205, 212, 260 | 1.00 | 0.57 (8 / 14) | **0.73** |
-  | 34–67 | 201, 208 | the other five | 1.00 | 0.29 (4 / 14) | 0.44 |
-  | 68–100 | 201 | the other six | 1.00 | 0.14 (2 / 14) | 0.25 |
-
-  Every threshold from 1 to 33 ties at the best hF, so the chosen threshold is the tied one nearest the site's 20, which is **20**. The state keeps the whole curve and the chosen threshold, under the documented convention.
-- **Expect, the fixed model:** threshold 20, with no sweep, but it still records the curve for the report.
-- **Check:** fit both models with these validation decks, and read their states.
+  - **The tuned model** sweeps every whole-number threshold from 1 to 100 on scheme 2's 2,249 VALIDATION decks, scoring each with micro hF, and keeps the best. On a tie, it keeps the threshold nearest the site's 20.
+  - **The fixed model** keeps 20, with no tuning, but still records the curve for the report.
+  - **Both states** keep the curve and the chosen threshold, under the documented convention.
+  - **On the small rule-level decks,** where every guess made is correct, thresholds tie at the best hF, and the one nearest 20 is chosen.
+- **Check:**
+  - fit both models on scheme 2 and read their states
+  - unit-test the tie rule on the small decks
 
 ### Scores match the site's own function
 
-- **Expect:** for every pair of decks above, the baseline's score equals the site's `similarity_score` given the same weights, × 100 and rounded. For example, 201 against 103 is 0.333 and rounds to 33.
-- **Check:** compare with `decksite.data.deck.similarity_score` on the scenario decks. No database is needed.
+- **Expect:** for every pair of decks above, the baseline's score equals the site's `similarity_score` given the same weights, × 100 and rounded. For example, deck 269508 against 262588 scores 0.79, giving 79.
+- **Check:** compare with `decksite.data.deck.similarity_score`, on the rule-level decks without a database, and on the real decks above in the real-data check.
 
 ### A fitted baseline loads back and guesses the same
 
-- **Expect:** the state holds the card weights, the threshold and the curve, never the decks. Rebuilt from its state and the same training decks, the model guesses identically for every validation deck.
+- **Expect:** the state holds the card weights, the threshold and the curve, never the decks. Rebuilt from its state and the same training decks, the model guesses identically.
 - **Check:** save and load a fitted model, and predict again.
 
 ### On real decks, the baseline agrees with the site (skipped by default)
 
 Run only when `PD_LOCAL_DATA=1`, against the full local dump.
 
-- **Expect:** for 200 sampled real decks, each scored against the whole site with the site's own `_playability` weights:
-  - the scores, the 20% cut-off and the candidate filter equal `calculate_similar_decks` exactly
-  - the ranking agrees except where tied scores are ordered by the site's active date and finish rather than deck id, and the test reports how often that changes the pick
-  - the test also reports how often a Gatherling deck's top site match is unlabelled
+- **Expect:**
+  - **The real decks above:** the scores, guesses and best matches in this section.
+  - **200 sampled real decks,** each scored against the whole site with the site's own `_playability` weights:
+    - the scores, the 20% cut-off and the candidate filter equal `calculate_similar_decks` exactly
+    - the ranking agrees except where tied scores are ordered by the site's active date and finish rather than deck id, and the test reports how often that changes the pick
+  - **It also reports** how often a Gatherling deck's top site match is unlabelled.
 - **Why it matters:** it proves the reimplementation is today's guesser, and it can be re-run whenever we doubt it.
 - **Check:** `PD_LOCAL_DATA=1 pytest` on this test.

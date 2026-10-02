@@ -1,6 +1,7 @@
 """Experiment reports: one stored run turned into Markdown, committed in docs/experiments/. Scores are recomputed from the run's stored guesses every time (decision F)."""
 import math
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import cast
 
 from archetype_classifier.data_loading import loader
@@ -121,3 +122,22 @@ def with_interval(value: float | None, interval: Interval) -> str:
 def number(value: float | None) -> str:
     """Two decimals, or a dash for a value that's undefined (for example, precision with no guesses)."""
     return '—' if value is None or math.isnan(value) else f'{value:.2f}'
+
+def main() -> None:
+    """Render a stored run's report and write it, usually into docs/experiments/."""
+    import argparse
+    parser = argparse.ArgumentParser(description=main.__doc__)
+    parser.add_argument('run_id', type=int)
+    parser.add_argument('--baseline', type=int, help='a run to compare with, deck by deck')
+    parser.add_argument('--pr', type=int, action='append', default=[], help='a PR that produced the run (repeatable)')
+    parser.add_argument('--min-decks', type=int, required=True, help='the fewest decks an archetype needs to count in macro averages')
+    parser.add_argument('--include-test', action='store_true', help='allow test-season results; logs a test look')
+    parser.add_argument('--out', type=Path, required=True)
+    args = parser.parse_args()
+    markdown = render_report(loader.experiments_db(), args.run_id, args.min_decks, args.baseline, args.pr, args.include_test)
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(markdown)
+    print(f'Wrote {args.out}')
+
+if __name__ == '__main__':
+    main()

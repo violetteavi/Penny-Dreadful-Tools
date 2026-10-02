@@ -1,6 +1,8 @@
 """Reports rendered from stored runs in a real experiments database."""
 import dataclasses
 import re
+import sys
+from pathlib import Path
 from typing import ClassVar
 
 import pytest
@@ -8,6 +10,7 @@ import pytest
 from archetype_classifier.data_loading import loader
 from archetype_classifier.data_loading.labels import LabelStatus
 from archetype_classifier.data_loading.splits import Split, SplitScheme
+from archetype_classifier.evaluation import report
 from archetype_classifier.evaluation.model import JSON, Prediction, register
 from archetype_classifier.evaluation.report import render_report
 from archetype_classifier.evaluation.store import ModelRecord, load_test_looks, prediction_hash, save_model, save_run
@@ -142,3 +145,16 @@ def test_test_results_need_the_gate_and_each_report_logs_one_look(experiments_db
 def test_the_same_run_always_gives_the_same_report(experiments_db: Database, runs: tuple[int, int]) -> None:
     run_1, run_2 = runs
     assert render_report(experiments_db, run_1, min_decks=1, baseline_run_id=run_2, prs=(6,)) == render_report(experiments_db, run_1, min_decks=1, baseline_run_id=run_2, prs=(6,))
+
+
+# Scenario: a report is written to docs/experiments/ from the command line.
+
+def test_a_report_is_written_from_the_command_line(experiments_db: Database, runs: tuple[int, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+                                                   capsys: pytest.CaptureFixture[str]) -> None:
+    run_1, run_2 = runs
+    out = tmp_path / 'docs' / 'experiments' / '20261002_most_common.md'
+    monkeypatch.setattr(loader, 'experiments_db', lambda: experiments_db)
+    monkeypatch.setattr(sys, 'argv', ['report', str(run_1), '--baseline', str(run_2), '--pr', '6', '--pr', '31', '--min-decks', '1', '--out', str(out)])
+    report.main()
+    assert out.read_text() == render_report(experiments_db, run_1, min_decks=1, baseline_run_id=run_2, prs=(6, 31))
+    assert capsys.readouterr().out.strip() == f'Wrote {out}'

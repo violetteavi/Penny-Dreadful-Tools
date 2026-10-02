@@ -2,8 +2,8 @@
 from archetype_classifier.data_loading.dataset import ArchetypeSnapshot, CardCount
 from archetype_classifier.data_loading.labels import LabelStatus
 from archetype_classifier.evaluation.metrics import ArchetypeTree
-from archetype_classifier.evaluation.model import FitContext, PredictDeck, TrainingDeck
-from archetype_classifier.models.similarity import SimilarityBaseline
+from archetype_classifier.evaluation.model import FitContext, PredictDeck, Prediction, TrainingDeck
+from archetype_classifier.models.similarity import Match, SimilarityBaseline
 
 AGGRO, CONTROL, RED_DECK_WINS, BURN, AZORIUS_CONTROL = 1, 2, 16, 17, 49
 TREE = ArchetypeTree({AGGRO: ArchetypeSnapshot(AGGRO, 'Aggro', None, 0), CONTROL: ArchetypeSnapshot(CONTROL, 'Control', None, 0),
@@ -42,3 +42,16 @@ def test_weights_come_from_the_training_decks_by_the_sites_formula() -> None:
     assert weight('Smash to Smithereens') == 1 / 0.05  # Only in a sideboard, so 0.2 of one deck in 4.
     assert weight('Searing Spear') == 1000  # Legal in season 30, played by no training deck: the floor.
     assert weight("Archmage's Charm") == 1000  # Never legal in a training season: also the floor.
+
+
+def query(deck_id: int, maindeck: tuple[CardCount, ...], source: str = 'League') -> PredictDeck:
+    return PredictDeck(deck_id, source, maindeck, ())
+
+
+# Scenario: a deck identical to training decks matches at 100%, and ties go to the higher id.
+
+def test_an_identical_deck_matches_at_100_and_ties_go_to_the_higher_id() -> None:
+    model = fitted()
+    deck = query(201, cards(Shock=4, Burst_Lightning=4, Mountain=52))
+    assert model.matches(deck) == [Match(101, 100), Match(104, 33), Match(103, 33)]
+    assert model.predict([deck]) == [Prediction(201, RED_DECK_WINS, {'match_deck_id': 101, 'score': 100, 'rule': 'league'})]

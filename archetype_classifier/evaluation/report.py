@@ -1,13 +1,14 @@
 """Experiment reports: one stored run turned into Markdown, committed in docs/experiments/. Scores are recomputed from the run's stored guesses every time (decision F)."""
 import math
 from collections.abc import Mapping, Sequence
+from typing import cast
 
 from archetype_classifier.data_loading import loader
 from archetype_classifier.data_loading.dataset import ArchetypeSnapshot
 from archetype_classifier.data_loading.slices import DeckSet, build_deck_set
 from archetype_classifier.data_loading.splits import Split
 from archetype_classifier.evaluation.metrics import METRICS_VERSION, ArchetypeTree, Confusion, Interval, ScoredDeck, compare, in_tree, score
-from archetype_classifier.evaluation.model import Prediction
+from archetype_classifier.evaluation.model import JSON, Prediction
 from archetype_classifier.evaluation.rows import PREFIXES, ROWS_VERSION, Row, RowScores, build_rows, score_rows
 from archetype_classifier.evaluation.store import canonical, load_guesses, load_model_record, load_run, splits_text
 from shared.database import Database
@@ -20,7 +21,7 @@ EXAMPLE_DECKS = 3
 def render_report(edb: Database, run_id: int, min_decks: int, baseline_run_id: int | None = None, prs: Sequence[int] = (), include_test: bool = False) -> str:
     """The Markdown report for a stored run. It contains no time of its own, so the same run always gives the same report."""
     run = load_run(edb, run_id)
-    record, _ = load_model_record(edb, run.model_id)
+    record, state = load_model_record(edb, run.model_id)
     scheme = loader.load_scheme(edb, record.scheme_id)
     lines = [
         f'# Run {run.id}: {record.name} v{record.version}',
@@ -49,6 +50,7 @@ def render_report(edb: Database, run_id: int, min_decks: int, baseline_run_id: i
     results = score_rows(edb, run.id, tree, scored, rows, record.training_splits, record.validation_splits, min_decks, include_test)
     lines += ['', '## Results', '', '| Row | Decks | Maindecks | hF | hP | hR | Exact match | Coverage | Macro hF | Notes |', '|---|---|---|---|---|---|---|---|---|---|']
     lines += [result_line(name, r) for name, r in results.items()]
+    lines += curve_lines(state)
     guesses = load_guesses(edb, run.id)
     for split in (Split.TRAIN, Split.HELD_OUT, Split.VALIDATION, Split.TEST):
         widest = sorted({i for row in rows if split in row.splits and not row.name.endswith('unverified labels') for i in row.deck_ids} & set(guesses))
@@ -58,6 +60,18 @@ def render_report(edb: Database, run_id: int, min_decks: int, baseline_run_id: i
     if baseline_run_id is not None:
         lines += comparison_lines(run.id, baseline_run_id, rows, scored, guesses, load_guesses(edb, baseline_run_id), tree)
     return '\n'.join(lines) + '\n'
+
+def curve_lines(state: Mapping[str, JSON]) -> list[str]:
+    """The model's validation curve, if it keeps one in its state (as the Model protocol documents), with the chosen threshold marked."""
+    lines = ['', '## Validation curve', '']
+    curve = state.get('validation_curve')
+    if not isinstance(curve, list) or not curve:
+        return lines + ['No validation curve: this model has no threshold to tune.']
+    lines += ['| Threshold | hP | hR | hF |', '|---|---|---|---|']
+    for threshold, hp, hr, hf in cast(list[list[float]], curve):  # The documented shape: [threshold, hP, hR, hF] points.
+        shown = f'**{threshold} (chosen)**' if threshold == state.get('threshold') else str(threshold)
+        lines.append(f'| {shown} | {number(hp)} | {number(hr)} | {number(hf)} |')
+    return lines
 
 def comparison_lines(run_id: int, baseline_run_id: int, rows: Sequence[Row], scored: DeckSet, guesses: Mapping[int, Prediction],
                      baseline: Mapping[int, Prediction], tree: ArchetypeTree) -> list[str]:

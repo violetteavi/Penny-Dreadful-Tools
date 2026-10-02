@@ -1,12 +1,14 @@
 """Reports rendered from stored runs in a real experiments database."""
+import dataclasses
 import re
+from typing import ClassVar
 
 import pytest
 
 from archetype_classifier.data_loading import loader
 from archetype_classifier.data_loading.labels import LabelStatus
 from archetype_classifier.data_loading.splits import Split, SplitScheme
-from archetype_classifier.evaluation.model import Prediction
+from archetype_classifier.evaluation.model import JSON, Prediction, register
 from archetype_classifier.evaluation.report import render_report
 from archetype_classifier.evaluation.store import ModelRecord, prediction_hash, save_model, save_run
 from archetype_classifier.evaluation.store_db_test import BLUE, RED, store_snapshot
@@ -100,3 +102,24 @@ def test_a_baseline_run_is_compared_deck_by_deck(experiments_db: Database, runs:
     validation = next(line for line in comparison if line.startswith('| validation |'))
     assert re.fullmatch(r'\| validation \| 2 \| 0 \| -0\.36 \[-?\d\.\d\d, -?\d\.\d\d\] \| -0\.50 \[-?\d\.\d\d, -?\d\.\d\d\] \| -0\.25 \[-?\d\.\d\d, -?\d\.\d\d\] \| 0\.00 \[-?\d\.\d\d, -?\d\.\d\d\] \|', validation)
     assert not any(line.startswith('## Compared with') for line in render(experiments_db, run_1))
+
+
+# Scenario: a validation curve is shown when the model has one.
+
+@register
+class Tuned(MostCommonArchetype):
+    """A stand-in model that tuned a threshold, keeping its curve in its state as the Model protocol documents."""
+    name: ClassVar[str] = 'tuned (test)'
+
+    def state(self) -> dict[str, JSON]:
+        return {**super().state(), 'threshold': 20, 'validation_curve': [[10, 0.9, 0.5, 0.643], [20, 0.8, 0.7, 0.747], [30, 0.6, 0.8, 0.686]]}
+
+def test_a_validation_curve_is_shown_when_the_model_has_one(experiments_db: Database, runs: tuple[int, int]) -> None:
+    _, record = mock_model(seed=0)
+    tuned = Tuned.from_state({}, {'archetype_id': RED_DECK_WINS, 'training_decks_with_archetype': 1, 'training_decks': 2}, [], None)  # type: ignore[arg-type]
+    model_id = save_model(experiments_db, tuned, dataclasses.replace(record, name='tuned (test)'))
+    lines = render(experiments_db, save_run(experiments_db, model_id, SCOPE, [Prediction(i, g, {}) for i, g in RUN_1.items()]))
+    curve = lines[lines.index('## Validation curve') + 2:]
+    assert curve[:5] == ['| Threshold | hP | hR | hF |', '|---|---|---|---|', '| 10 | 0.90 | 0.50 | 0.64 |', '| **20 (chosen)** | 0.80 | 0.70 | 0.75 |', '| 30 | 0.60 | 0.80 | 0.69 |']
+    mock = render(experiments_db, 1)
+    assert mock[mock.index('## Validation curve') + 2] == 'No validation curve: this model has no threshold to tune.'

@@ -95,7 +95,13 @@ class SimilarityBaseline:
 
     @classmethod
     def from_state(cls, params: dict[str, JSON], state: dict[str, JSON], training: Sequence[TrainingDeck], context: FitContext) -> 'SimilarityBaseline':
-        raise NotImplementedError
+        """The weights and threshold come from the state; the training decks only rebuild the index of what to search."""
+        model = cls(params)
+        model.playability = cast(dict[str, float], state['playability'])
+        model.threshold = cast(int, state['threshold'])
+        model.curve = [cast(tuple[int, float | None, float, float], tuple(point)) for point in cast(list[list[float]], state['validation_curve'])]
+        model.index = Index(training, model.weight)
+        return model
 
 
 def playability(training: Sequence[TrainingDeck], legal_cards: Mapping[int, frozenset[str]]) -> dict[str, float]:

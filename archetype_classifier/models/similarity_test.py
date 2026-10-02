@@ -6,7 +6,7 @@ import pytest
 from archetype_classifier.data_loading.dataset import ArchetypeSnapshot, CardCount
 from archetype_classifier.data_loading.labels import LabelStatus
 from archetype_classifier.evaluation.metrics import ArchetypeTree
-from archetype_classifier.evaluation.model import JSON, FitContext, LabelledDeck, PredictDeck, Prediction, TrainingDeck
+from archetype_classifier.evaluation.model import JSON, FitContext, LabelledDeck, PredictDeck, Prediction, TrainingDeck, model_class
 from archetype_classifier.models.similarity import Match, SimilarityBaseline
 
 AGGRO, CONTROL, RED_DECK_WINS, BURN, AZORIUS_CONTROL = 1, 2, 16, 17, 49
@@ -125,3 +125,36 @@ def test_a_tuned_threshold_needs_validation_decks() -> None:
     with pytest.raises(ValueError, match='validation decks'):
         fitted('tuned')
     assert fitted(20).state()['validation_curve'] == []
+
+
+# Scenario: scores match the site's own function.
+
+def test_scores_match_the_sites_own_function() -> None:
+    from decksite.data.deck import similarity_score  # Imported first: the site's packages import each other in this order.
+    from magic.models import Deck
+    from magic.models.cardref import CardRef
+
+    def site_deck(maindeck: tuple[CardCount, ...]) -> Deck:
+        deck = Deck({})
+        deck.maindeck = [CardRef(c.card, c.n) for c in maindeck]
+        return deck
+
+    model = fitted()
+    training = {d.deck.deck_id: site_deck(d.deck.maindeck) for d in TRAINING}
+    compared = 0
+    for v in VALIDATION:
+        for match in model.matches(v.deck):
+            assert match.score == round(similarity_score(site_deck(v.deck.maindeck), training[match.deck_id], model.playability) * 100)
+            compared += 1
+    assert compared == 16  # Candidates: 3 each for decks 201, 205, 212, 209 and 210, 1 for 208, and none for 260.
+
+
+# Scenario: a fitted baseline loads back and guesses the same.
+
+def test_a_fitted_baseline_loads_back_and_guesses_the_same() -> None:
+    model = SimilarityBaseline({'threshold': 'tuned'})
+    model.fit(TRAINING, VALIDATION, FitContext(TUNING_TREE, CONTEXT.legal_cards, seed=0))
+    rebuilt = model_class('similarity').from_state(model.params, model.state(), TRAINING, CONTEXT)
+    decks = [v.deck for v in VALIDATION]
+    assert rebuilt.predict(decks) == model.predict(decks)
+    assert rebuilt.state() == model.state()

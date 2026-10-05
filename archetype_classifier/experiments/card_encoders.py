@@ -33,7 +33,7 @@ REPRINT_GROUPS = [["Ajani's Response", 'Grounded for Life', 'Seized from Slumber
 VANILLAS = ['Plated Seastrider', 'Kalonian Tusker', "Garruk's Gorehorn", 'Coral Eel', 'Spined Wurm']
 LIST_CARDS = [
     # Edge cases from the #7 grilling.
-    'Seized from Slumber', 'Swift Response', 'Llanowar Elves', 'Shock', 'Burst Lightning', 'Kalonian Tusker', 'Shatterskull Smashing',
+    'Seized from Slumber', 'Swift Response', 'Llanowar Elves', 'Shock', 'Burst Lightning', 'Kalonian Tusker', 'Hagra Mauling',
     # The user's staples.
     'Cancel', 'Distress', "Inventor's Fair", 'Eater of Virtue', 'Kumano Faces Kakkazan', 'Discovery // Dispersal', 'Horned Loch-Whale',
     # The most-played non-land cards in seasons 39-43.
@@ -118,6 +118,9 @@ def main() -> None:
     recent, latest = load_play_counts(39, NEW_SEASON), load_play_counts(NEW_SEASON, NEW_SEASON)
     new_shown = sorted((c.name for c in new if latest.get(c.name)), key=lambda n: (-latest[n], n))[:NEW_CARDS_SHOWN]
     print(f'{len(pool)} cards: {len(old)} before season {NEW_SEASON}, {len(new)} new in it', flush=True)
+    names = {c.name for c in pool}
+    if missing := [n for n in [*LIST_CARDS, *VANILLAS, *(n for g in REPRINT_GROUPS for n in g)] if n not in names]:
+        raise SystemExit(f'Not in the card pool: {", ".join(missing)}')
 
     results: dict[str, Any] = {'stage': 1, 'recipe': BASE.label, 'pool': len(pool), 'list_cards': LIST_CARDS,
                                'new_cards_shown': {n: latest[n] for n in new_shown}, 'card_text': {}, 'encoders': {}}

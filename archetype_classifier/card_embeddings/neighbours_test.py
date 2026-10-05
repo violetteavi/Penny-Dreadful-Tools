@@ -1,8 +1,11 @@
+from pathlib import Path
+
 import numpy as np
 import pytest
 
-from archetype_classifier.card_embeddings.embeddings import Embeddings
-from archetype_classifier.card_embeddings.neighbours import Neighbour, build_neighbours
+from archetype_classifier.card_embeddings.embeddings import Embeddings, save_embeddings
+from archetype_classifier.card_embeddings.neighbours import Neighbour, build_neighbours, main
+from archetype_classifier.data_loading import loader
 
 
 def unit(*rows: list[float]) -> np.ndarray:
@@ -29,3 +32,28 @@ def test_among_limits_the_cards_searched() -> None:
 def test_an_unknown_card_is_named_in_the_error() -> None:
     with pytest.raises(ValueError, match='Lightning Bolt is not in these embeddings'):
         build_neighbours(EMBEDDINGS, 'Lightning Bolt', 3)
+
+
+# The command-line tool.
+
+@pytest.fixture
+def saved(tmp_path: Path) -> Path:
+    save_embeddings(Embeddings(EMBEDDINGS.names, EMBEDDINGS.matrix, {'encoder': 'fake', 'recipe': {'stats': False, 'mask': False}}), tmp_path)
+    return tmp_path
+
+def test_the_tool_prints_a_cards_neighbours_from_saved_embeddings(saved: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    main(['Shock', '--encoder', 'fake', '-n', '2', '--dir', str(saved)])
+    assert capsys.readouterr().out == ('Shock: fake, base, 5 cards\n'
+                                       '  1  1.000  Burst Lightning\n'
+                                       '  2  0.949  Lightning Strike\n')
+
+def test_season_limits_the_tool_to_cards_legal_that_season(saved: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(loader, 'load_legal_cards', lambda seasons: {43: frozenset({'Shock', 'Cancel', 'Counterspell'})})
+    main(['Shock', '--encoder', 'fake', '-n', '5', '--season', '43', '--dir', str(saved)])
+    assert capsys.readouterr().out == ('Shock: fake, base, 5 cards, among the 3 legal in season 43\n'
+                                       '  1  0.000  Cancel\n'
+                                       '  2  0.000  Counterspell\n')
+
+def test_the_tool_says_how_to_build_missing_embeddings(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit, match='No embeddings at .*bge-small__stats.npy: build them with python -m archetype_classifier.experiments.card_encoders'):
+        main(['Shock', '--recipe', 'stats', '--dir', str(tmp_path)])

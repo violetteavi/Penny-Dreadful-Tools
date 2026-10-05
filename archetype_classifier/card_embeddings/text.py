@@ -20,6 +20,7 @@ BASE = TextRecipe()
 STATS = TextRecipe(stats=True)
 MASKED = TextRecipe(mask=True)
 MASK = '~'
+RECIPES = {r.label: r for r in (BASE, STATS, MASKED, TextRecipe(stats=True, mask=True))}
 FACE_SEPARATOR = '\n//\n'
 
 

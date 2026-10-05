@@ -36,10 +36,12 @@ def build_embeddings(cards: Sequence[Card], recipe: TextRecipe, encoder: Encoder
                                  'over_token_limit': 0 if encoder.max_tokens is None else sum(n > encoder.max_tokens for n in encoder.token_counts(texts))}
     return Embeddings(tuple(c.name for c in ordered), matrix, manifest)
 
+def embeddings_path(directory: Path, encoder: str, recipe: TextRecipe) -> Path:
+    return directory / f'{encoder}__{recipe.label}.npy'
+
 def save_embeddings(embeddings: Embeddings, directory: Path = EMBEDDINGS_DIR) -> Path:
     """Writes the .npy and its .json, and returns the .npy's path."""
-    recipe = TextRecipe(**cast(dict[str, bool], embeddings.manifest['recipe']))
-    path = directory / f"{embeddings.manifest['encoder']}__{recipe.label}.npy"
+    path = embeddings_path(directory, str(embeddings.manifest['encoder']), TextRecipe(**cast(dict[str, bool], embeddings.manifest['recipe'])))
     directory.mkdir(parents=True, exist_ok=True)
     np.save(path, embeddings.matrix)
     path.with_suffix('.json').write_text(json.dumps({'manifest': embeddings.manifest, 'names': embeddings.names}, indent=1))

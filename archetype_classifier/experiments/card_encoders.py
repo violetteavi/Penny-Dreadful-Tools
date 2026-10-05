@@ -1,4 +1,4 @@
-"""The #7 experiment, stage 1: every encoder on the base recipe over the whole card pool.
+"""The #7 experiment. Stage 1: every encoder on the base recipe over the whole card pool. Stage 2: one encoder (potion) in each text format.
 
 For each encoder it embeds the cards legal before season 43, then the 461 cards new in season 43 on their own, and merges them, which is how a new set
 would be added. It times each step, checks that embedding cards in a different batch moves no vector beyond the tolerance, runs the card-representation
@@ -9,6 +9,12 @@ whose neighbour lists differ most between encoders. Embeddings go to archetype_c
     uv run --group archetypes python -m archetype_classifier.experiments.card_encoders --stage 1 --date 20261005 --encoders gte-modernbert
 
 With --encoders, only those encoders are run; the others keep their results from the existing results file and their saved embeddings.
+
+Stage 2 embeds the whole pool once per text format (--recipes) with each of --encoders (potion by default). For each format it runs the scenarios,
+builds neighbour lists for the chosen cards and for cards whose lists stage 1 showed being pulled by names, measures how much of each card's top 10 it
+shares with the base format, and lists the played cards whose neighbours each format changes most.
+
+    uv run --group archetypes python -m archetype_classifier.experiments.card_encoders --stage 2 --date 20261005
 """
 import argparse
 import json
@@ -25,7 +31,7 @@ from archetype_classifier.card_embeddings.embeddings import EMBEDDINGS_DIR, Embe
 from archetype_classifier.card_embeddings.encoders import ENCODERS, load_encoder
 from archetype_classifier.card_embeddings.neighbours import build_all_neighbours, build_neighbours, build_overlap, build_rank
 from archetype_classifier.card_embeddings.pool import Card, load_card_pool
-from archetype_classifier.card_embeddings.text import BASE, build_card_text
+from archetype_classifier.card_embeddings.text import BASE, RECIPES, build_card_text
 from decksite.database import db
 
 OUT = Path(__file__).parents[1] / 'docs' / 'experiments'
@@ -42,6 +48,12 @@ LIST_CARDS = [
     # The most-played non-land cards in seasons 39-43.
     'Chain Lightning', 'Birds of Paradise', 'Malcolm, Alluring Scoundrel', "Archmage's Charm", 'Mana Leak', 'Luminarch Aspirant',
 ]
+NAME_CARDS = [  # Stage 1 showed names pulling these cards' neighbours: other cards named Malcolm or ...Bolt, other Eldrazi titans, legendaries.
+    'Plasma Bolt', 'Kozilek, Butcher of Truth', 'Ilharg, the Raze-Boar', 'Momo, Friendly Flier', 'Progenitus', 'Ertai Resurrected', 'Tersa Lightshatter',
+]
+NEAR_BURST = ['Shivan Fire', 'Roil Eruption']  # The cards the user judges closest in spirit to Burst Lightning.
+STAGE2_RECIPES = ('base', 'json', 'json+masked', 'stats', 'labels')
+CHANGED_SHOWN = 6  # Played cards per format whose top 10 it changes most against the base format.
 NEW_CARDS_SHOWN = 12  # The most-played cards new in season 43.
 PLAYED = 20  # Decks in seasons 39-43 a card needs to count as played, for the disagreement list.
 DISAGREEMENT_SHOWN = 15
@@ -65,6 +77,17 @@ def similarity(e: Embeddings, a: str, b: str) -> float:
 def neighbour_list(e: Embeddings, card: str, among: set[str] | None = None) -> list[list[Any]]:
     return [[n.name, round(n.similarity, 4)] for n in build_neighbours(e, card, LIST_SIZE, among)]
 
+def build_scenarios(e: Embeddings) -> dict[str, Any]:
+    """The card-representation scenarios, plus the user's Burst Lightning neighbours and Leaf Gilder's tie with Llanowar Elves."""
+    return {
+        'reprints_lowest_similarity': [min(similarity(e, g[0], other) for other in g[1:]) for g in REPRINT_GROUPS],
+        'swift_response': {r: [build_rank(e, r, 'Swift Response'), similarity(e, r, 'Swift Response')] for r in REPRINT_GROUPS[0]},
+        'shock_burst': [build_rank(e, 'Shock', 'Burst Lightning'), build_rank(e, 'Burst Lightning', 'Shock'), similarity(e, 'Shock', 'Burst Lightning')],
+        'near_burst': {n: [build_rank(e, 'Burst Lightning', n), similarity(e, 'Burst Lightning', n)] for n in NEAR_BURST},
+        'leaf_gilder': [build_rank(e, 'Llanowar Elves', 'Leaf Gilder'), similarity(e, 'Llanowar Elves', 'Leaf Gilder')],
+        'vanillas': {f'{a} / {b}': similarity(e, a, b) for a, b in combinations(VANILLAS, 2)},
+    }
+
 def run_encoder(name: str, old: Sequence[Card], new: Sequence[Card], new_shown: Sequence[str]) -> tuple[dict[str, Any], Embeddings]:
     encoder, load_seconds = timed(load_encoder, name)
     old_embeddings, old_seconds = timed(build_embeddings, old, BASE, encoder)
@@ -80,13 +103,7 @@ def run_encoder(name: str, old: Sequence[Card], new: Sequence[Card], new_shown: 
         'max_tokens': encoder.max_tokens, 'over_token_limit': embeddings.manifest['over_token_limit'],
         'seconds': {'load': load_seconds, 'old_cards': old_seconds, 'new_cards': new_seconds}, 'cards': {'old': len(old), 'new': len(new)},
         'largest_batch_change': batch_change,
-        'scenarios': {
-            'reprints_lowest_similarity': [min(similarity(embeddings, g[0], other) for other in g[1:]) for g in REPRINT_GROUPS],
-            'swift_response': {r: [build_rank(embeddings, r, 'Swift Response'), similarity(embeddings, r, 'Swift Response')] for r in REPRINT_GROUPS[0]},
-            'shock_burst': [build_rank(embeddings, 'Shock', 'Burst Lightning'), build_rank(embeddings, 'Burst Lightning', 'Shock'),
-                            similarity(embeddings, 'Shock', 'Burst Lightning')],
-            'vanillas': {f'{a} / {b}': similarity(embeddings, a, b) for a, b in combinations(VANILLAS, 2)},
-        },
+        'scenarios': build_scenarios(embeddings),
         'lists': {card: neighbour_list(embeddings, card) for card in LIST_CARDS},
         'new_card_lists': {card: neighbour_list(embeddings, card, old_names) for card in new_shown},
     }
@@ -109,11 +126,59 @@ def build_disagreement(all_embeddings: dict[str, Embeddings], played: set[str]) 
                           'lists': {enc: [names[j] for j in tops[enc][i]] for enc in all_embeddings}} for i in least],
     }
 
+def run_stage2(pool: Sequence[Card], encoder_names: Sequence[str], recipe_labels: Sequence[str], played: set[str]) -> dict[str, Any]:
+    """Each encoder in each text format: timings, scenarios, lists, and how each format's top 10s differ from the base format's."""
+    results: dict[str, Any] = {}
+    for name in encoder_names:
+        encoder = load_encoder(name)
+        formats: dict[str, Any] = {}
+        tops = {}
+        for label in recipe_labels:
+            embeddings, seconds = timed(build_embeddings, pool, RECIPES[label], encoder)
+            save_embeddings(embeddings)
+            tops[label] = build_all_neighbours(embeddings, LIST_SIZE)
+            formats[label] = {'seconds': seconds, 'over_token_limit': embeddings.manifest['over_token_limit'], 'scenarios': build_scenarios(embeddings),
+                              'lists': {card: neighbour_list(embeddings, card) for card in [*LIST_CARDS, *NAME_CARDS]}}
+            print(f"{name} {label}: {seconds:.1f}s; Shock/Burst #{formats[label]['scenarios']['shock_burst'][0]}/#{formats[label]['scenarios']['shock_burst'][1]}", flush=True)
+        names = embeddings.names
+        candidates = [i for i, n in enumerate(names) if n in played]
+        for label in recipe_labels:
+            overlap = build_overlap(tops[label], tops['base'])
+            formats[label]['overlap_with_base'] = float(overlap.mean())
+            formats[label]['overlap_with_base_played'] = float(overlap[candidates].mean())
+            if label != 'base':
+                changed = sorted(candidates, key=lambda i: (overlap[i], names[i]))[:CHANGED_SHOWN]
+                formats[label]['most_changed'] = [{'card': names[i], 'overlap': float(overlap[i]), 'base': [names[j] for j in tops['base'][i]],
+                                                   'format': [names[j] for j in tops[label][i]]} for i in changed]
+        results[name] = formats
+    return results
+
+def main_stage2(args: argparse.Namespace, pool: Sequence[Card], recent: dict[str, int]) -> None:
+    by_name = {c.name: c for c in pool}
+    encoder_names = args.encoders or ['potion']
+    recipe_labels = args.recipes or list(STAGE2_RECIPES)
+    if 'base' not in recipe_labels:
+        recipe_labels = ['base', *recipe_labels]  # The comparison needs it.
+    played = {n for n, decks in recent.items() if decks >= PLAYED}
+    results: dict[str, Any] = {'stage': 2, 'pool': len(pool), 'list_cards': LIST_CARDS, 'name_cards': NAME_CARDS, 'near_burst': NEAR_BURST,
+                               'played_cards': len(played & set(by_name)), 'encoders': run_stage2(pool, encoder_names, recipe_labels, played)}
+    shown = {*LIST_CARDS, *NAME_CARDS, *NEAR_BURST}
+    for formats in results['encoders'].values():
+        for f in formats.values():
+            shown |= {n for ns in f['lists'].values() for n, _ in ns}
+            shown |= {n for c in f.get('most_changed', []) for n in [c['card'], *c['base'], *c['format']]}
+    results['card_text'] = {label: {n: build_card_text(by_name[n], RECIPES[label]) for n in sorted(shown)} for label in recipe_labels}
+    OUT.mkdir(parents=True, exist_ok=True)
+    path = OUT / f'{args.date}_card_encoders_stage2.json'
+    path.write_text(json.dumps(results, indent=1, ensure_ascii=False))
+    print(f'Wrote {path}')
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--stage', type=int, choices=[1], required=True)
+    parser.add_argument('--stage', type=int, choices=[1, 2], required=True)
     parser.add_argument('--date', required=True, help='YYYYMMDD, for the results file name')
-    parser.add_argument('--encoders', nargs='+', choices=ORDER, help='run only these; the rest come from the existing results file')
+    parser.add_argument('--encoders', nargs='+', choices=ORDER, help='stage 1: run only these, the rest come from the existing results file; stage 2: default potion')
+    parser.add_argument('--recipes', nargs='+', choices=sorted(RECIPES), help=f'stage 2 only; default {", ".join(STAGE2_RECIPES)}')
     args = parser.parse_args()
 
     pool = load_card_pool()
@@ -123,8 +188,11 @@ def main() -> None:
     new_shown = sorted((c.name for c in new if latest.get(c.name)), key=lambda n: (-latest[n], n))[:NEW_CARDS_SHOWN]
     print(f'{len(pool)} cards: {len(old)} before season {NEW_SEASON}, {len(new)} new in it', flush=True)
     names = {c.name for c in pool}
-    if missing := [n for n in [*LIST_CARDS, *VANILLAS, *(n for g in REPRINT_GROUPS for n in g)] if n not in names]:
+    if missing := [n for n in [*LIST_CARDS, *NAME_CARDS, *NEAR_BURST, 'Leaf Gilder', *VANILLAS, *(n for g in REPRINT_GROUPS for n in g)] if n not in names]:
         raise SystemExit(f'Not in the card pool: {", ".join(missing)}')
+    if args.stage == 2:
+        main_stage2(args, pool, recent)
+        return
 
     path = OUT / f'{args.date}_card_encoders_stage{args.stage}.json'
     previous = json.loads(path.read_text())['encoders'] if args.encoders else {}

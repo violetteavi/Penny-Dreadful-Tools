@@ -3,12 +3,15 @@
 A stat a face doesn't have is absent (present 0), never a 0 value: a sorcery's power isn't a 0-power creature's. Defense is left out until the cards import
 stores it (#38); produced mana is a candidate for #36.
 """
+import logging
 import re
 
 import numpy as np
 
 from archetype_classifier.card_embeddings.pool import Card, Face
 from magic import layout, mana
+
+logger = logging.getLogger(__name__)
 
 COLOURS = ('W', 'U', 'B', 'R', 'G', 'C', 'S')  # S is snow mana, which magic.mana parses as a colour.
 SUPERTYPES = ('Basic', 'Legendary', 'Snow', 'World')
@@ -22,6 +25,8 @@ STRUCTURED_COLUMNS = (*(f'front.{c}' for c in BLOCK), *(f'back.{c}' for c in BLO
 
 
 def build_structured_vector(card: Card) -> np.ndarray:
+    if len(card.faces) > 2:
+        logger.warning('%s has %d faces; the structured vector uses the first two', card.name, len(card.faces))
     back = face_block(card.faces[1]) if len(card.faces) > 1 else [0.0] * len(BLOCK)
     layouts = [float(card.layout == lo) for lo in LAYOUTS]
     return np.array([*face_block(card.faces[0]), *back, *layouts], dtype=np.float32)

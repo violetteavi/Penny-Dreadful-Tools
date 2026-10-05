@@ -15,7 +15,10 @@ EMBEDDINGS = Embeddings(('Burst Lightning', 'Cancel', 'Counterspell', 'Lightning
 
 
 def test_the_nearest_cards_come_first_with_their_cosine_similarity_and_the_card_itself_left_out() -> None:
-    assert build_neighbours(EMBEDDINGS, 'Shock', 2) == [Neighbour('Burst Lightning', pytest.approx(1.0)), Neighbour('Lightning Strike', pytest.approx(3 / np.sqrt(10)))]
+    neighbours = build_neighbours(EMBEDDINGS, 'Shock', 2)
+    assert [n.name for n in neighbours] == ['Burst Lightning', 'Lightning Strike']
+    assert [n.similarity for n in neighbours] == pytest.approx([1.0, 3 / np.sqrt(10)])
+    assert all(isinstance(n, Neighbour) for n in neighbours)
 
 def test_ties_are_broken_by_name() -> None:
     assert [n.name for n in build_neighbours(EMBEDDINGS, 'Shock', 4)][2:] == ['Cancel', 'Counterspell']

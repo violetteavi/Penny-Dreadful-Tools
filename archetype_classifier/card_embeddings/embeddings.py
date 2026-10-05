@@ -1,6 +1,12 @@
-"""Card embeddings: one unit-length row per card, in name order, with a manifest saying how they were made."""
+"""Card embeddings: one unit-length row per card, in name order, with a manifest saying how they were made.
+
+They are saved as <encoder>__<recipe>.npy beside a .json holding the manifest and the card names, in archetype_classifier/embeddings/ (gitignored).
+"""
+import json
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import cast
 
 import numpy as np
 
@@ -9,6 +15,7 @@ from archetype_classifier.card_embeddings.pool import Card
 from archetype_classifier.card_embeddings.text import TEXT_VERSION, TextRecipe, build_card_text
 from archetype_classifier.evaluation.model import JSON
 
+EMBEDDINGS_DIR = Path(__file__).parents[1] / 'embeddings'
 TOLERANCE = 1e-5  # How far a card's vector may move between runs (batching noise) and still count as the same.
 
 
@@ -28,3 +35,19 @@ def build_embeddings(cards: Sequence[Card], recipe: TextRecipe, encoder: Encoder
                                  'cards': len(ordered), 'max_tokens': encoder.max_tokens,
                                  'over_token_limit': sum(n > encoder.max_tokens for n in encoder.token_counts(texts))}
     return Embeddings(tuple(c.name for c in ordered), matrix, manifest)
+
+def save_embeddings(embeddings: Embeddings, directory: Path = EMBEDDINGS_DIR) -> Path:
+    """Writes the .npy and its .json, and returns the .npy's path."""
+    recipe = TextRecipe(**cast(dict[str, bool], embeddings.manifest['recipe']))
+    path = directory / f"{embeddings.manifest['encoder']}__{recipe.label}.npy"
+    directory.mkdir(parents=True, exist_ok=True)
+    np.save(path, embeddings.matrix)
+    path.with_suffix('.json').write_text(json.dumps({'manifest': embeddings.manifest, 'names': embeddings.names}, indent=1))
+    return path
+
+def load_embeddings(path: Path) -> Embeddings:
+    matrix = np.load(path)
+    saved = json.loads(path.with_suffix('.json').read_text())
+    if len(saved['names']) != matrix.shape[0]:
+        raise ValueError(f"{path.name} has {matrix.shape[0]} rows but its manifest lists {len(saved['names'])} cards")
+    return Embeddings(tuple(saved['names']), matrix, saved['manifest'])

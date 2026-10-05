@@ -10,6 +10,11 @@ class TextRecipe:
     stats: bool = False  # Put the mana cost and stats before the type line.
     mask: bool = False  # Replace the face's own name with ~.
 
+    @property
+    def label(self) -> str:
+        """'base', 'stats', 'masked' or 'stats+masked', for file names and reports."""
+        return '+'.join(part for part, used in (('stats', self.stats), ('masked', self.mask)) if used) or 'base'
+
 TEXT_VERSION = 1  # Bump whenever a recipe's output changes, so old embeddings aren't mistaken for new ones.
 BASE = TextRecipe()
 STATS = TextRecipe(stats=True)

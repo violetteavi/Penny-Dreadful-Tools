@@ -1,11 +1,14 @@
 import hashlib
+import json
 from collections.abc import Sequence
+from pathlib import Path
 
 import numpy as np
+import pytest
 
-from archetype_classifier.card_embeddings.embeddings import TOLERANCE, build_embeddings
+from archetype_classifier.card_embeddings.embeddings import TOLERANCE, build_embeddings, load_embeddings, save_embeddings
 from archetype_classifier.card_embeddings.pool import Card, Face
-from archetype_classifier.card_embeddings.text import BASE, STATS, TEXT_VERSION
+from archetype_classifier.card_embeddings.text import BASE, MASKED, STATS, TEXT_VERSION
 
 
 class FakeEncoder:
@@ -56,3 +59,21 @@ def test_adding_cards_leaves_every_existing_row_within_the_tolerance() -> None:
     after = build_embeddings([SHOCK, OPT, CANCEL], BASE, FakeEncoder())
     rows = {n: after.matrix[i] for i, n in enumerate(after.names)}
     assert all(np.allclose(before.matrix[i], rows[n], atol=TOLERANCE, rtol=0) for i, n in enumerate(before.names))
+
+
+def test_saved_embeddings_load_back_the_same_from_a_file_named_by_encoder_and_recipe(tmp_path: Path) -> None:
+    embeddings = build_embeddings([SHOCK, OPT, CANCEL], MASKED, FakeEncoder())
+    path = save_embeddings(embeddings, tmp_path)
+    assert path == tmp_path / 'fake__masked.npy' and (tmp_path / 'fake__masked.json').exists()
+    loaded = load_embeddings(path)
+    assert loaded.names == embeddings.names and loaded.manifest == embeddings.manifest
+    assert np.array_equal(loaded.matrix, embeddings.matrix)
+
+def test_a_manifest_that_doesnt_match_its_matrix_fails_and_names_the_file(tmp_path: Path) -> None:
+    path = save_embeddings(build_embeddings([SHOCK, OPT], BASE, FakeEncoder()), tmp_path)
+    manifest_path = tmp_path / 'fake__base.json'
+    saved = json.loads(manifest_path.read_text())
+    saved['names'].append('Cancel')
+    manifest_path.write_text(json.dumps(saved))
+    with pytest.raises(ValueError, match='fake__base.npy has 2 rows but its manifest lists 3 cards'):
+        load_embeddings(path)

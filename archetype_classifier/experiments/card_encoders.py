@@ -35,7 +35,7 @@ LIST_CARDS = [
     # Edge cases from the #7 grilling.
     'Seized from Slumber', 'Swift Response', 'Llanowar Elves', 'Shock', 'Burst Lightning', 'Kalonian Tusker', 'Hagra Mauling',
     # The user's staples.
-    'Cancel', 'Distress', "Inventor's Fair", 'Eater of Virtue', 'Kumano Faces Kakkazan', 'Discovery // Dispersal', 'Horned Loch-Whale',
+    'Cancel', 'Distress', 'Eiganjo Castle', 'Eater of Virtue',  # Eiganjo Castle stands in for Inventor's Fair, never legal. 'Kumano Faces Kakkazan', 'Discovery // Dispersal', 'Horned Loch-Whale',
     # The most-played non-land cards in seasons 39-43.
     'Chain Lightning', 'Birds of Paradise', 'Malcolm, Alluring Scoundrel', "Archmage's Charm", 'Mana Leak', 'Luminarch Aspirant',
 ]

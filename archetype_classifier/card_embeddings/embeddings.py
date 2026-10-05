@@ -6,7 +6,7 @@ import json
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 
@@ -55,7 +55,7 @@ def embeddings_path(directory: Path, encoder: str, recipe: TextRecipe) -> Path:
 
 def save_embeddings(embeddings: Embeddings, directory: Path = EMBEDDINGS_DIR) -> Path:
     """Writes the .npy and its .json, and returns the .npy's path."""
-    path = embeddings_path(directory, str(embeddings.manifest['encoder']), TextRecipe(**cast(dict[str, bool], embeddings.manifest['recipe'])))
+    path = embeddings_path(directory, str(embeddings.manifest['encoder']), TextRecipe(**cast(dict[str, Any], embeddings.manifest['recipe'])))
     directory.mkdir(parents=True, exist_ok=True)
     np.save(path, embeddings.matrix)
     path.with_suffix('.json').write_text(json.dumps({'manifest': embeddings.manifest, 'names': embeddings.names}, indent=1))

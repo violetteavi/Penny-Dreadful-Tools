@@ -6,7 +6,7 @@ Terms follow [CONTEXT.md](../../CONTEXT.md). Scenarios marked **Tentative** are 
 
 ## Card representation
 
-A card's text, as the encoder reads it, is its type line and its rules text with both faces joined. The rules text is Scryfall's oracle text as it stands, reminder text included. Comparison arms add the mana cost and stats to the text, or replace the card's own name with `~`. The structured vector beside the text embedding is described under "Missing stats are absent, not zero". Settled in the [#7 grilling](https://github.com/violetteavi/Penny-Dreadful-Tools/issues/7#issuecomment-6001591778).
+A card's text, as the encoder reads it, is its type line and its rules text with both faces joined. The rules text is Scryfall's oracle text as it stands, reminder text included. Other formats compare against this base text ([agreed 2026-10-05](https://github.com/violetteavi/Penny-Dreadful-Tools/issues/7#issuecomment-6005656796)): a JSON object with labelled fields (`manaCost`, `type`, `text`, `power`, `toughness`, `loyalty`; a double-faced card as `layout` plus a `faces` list), with and without each face's own name written as `~`; cost, type line and stats on one line (`{R}{R} Creature — Human Assassin 2/2`); and the same with inline labels (`Cost: {R}{R} Type: Creature — Human Assassin Power: 2 Toughness: 2`). A cost or stat a face lacks is always left out. The structured vector beside the text embedding is described under "Missing stats are absent, not zero". Settled in the [#7 grilling](https://github.com/violetteavi/Penny-Dreadful-Tools/issues/7#issuecomment-6001591778).
 
 ### Functional reprints get the same representation
 

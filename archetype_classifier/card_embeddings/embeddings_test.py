@@ -44,11 +44,11 @@ def test_rows_follow_the_cards_names_in_order_and_are_unit_length() -> None:
 def test_the_encoder_reads_the_recipes_text() -> None:
     encoder = FakeEncoder()
     build_embeddings([SHOCK], STATS, encoder)
-    assert encoder.seen == ['{R} · Instant\nShock deals 2 damage to any target.']
+    assert encoder.seen == ['{R} Instant\nShock deals 2 damage to any target.']
 
 def test_the_manifest_says_how_the_embeddings_were_made_and_how_many_cards_ran_past_the_token_limit() -> None:
     embeddings = build_embeddings([SHOCK, OPT, CANCEL], BASE, FakeEncoder())
-    assert embeddings.manifest == {'encoder': 'fake', 'revision': 'r1', 'recipe': {'stats': False, 'mask': False}, 'text_version': TEXT_VERSION,
+    assert embeddings.manifest == {'encoder': 'fake', 'revision': 'r1', 'recipe': {'style': 'plain', 'mask': False}, 'text_version': TEXT_VERSION,
                                    'cards': 3, 'max_tokens': 4, 'over_token_limit': 2}  # 'Instant Shock deals …' and 'Instant Scry 1. Draw …'.
 
 

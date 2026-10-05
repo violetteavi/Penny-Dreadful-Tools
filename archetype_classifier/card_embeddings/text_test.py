@@ -1,5 +1,7 @@
+import json
+
 from archetype_classifier.card_embeddings.pool import Card, Face
-from archetype_classifier.card_embeddings.text import BASE, MASKED, STATS, build_card_text, build_masked_text
+from archetype_classifier.card_embeddings.text import BASE, JSON, JSON_MASKED, LABELS, MASKED, RECIPES, STATS, build_card_text, build_masked_text
 
 REBUKE_TEXT = 'This spell costs {3} less to cast if it targets a tapped creature.\nDestroy target creature.'
 
@@ -17,7 +19,7 @@ def test_the_four_removal_reprints_get_identical_text() -> None:
 
 def test_the_three_mana_elves_get_identical_text_in_every_arm() -> None:
     elves = [Card(n, 'normal', (Face(n, '{G}', 1, 'Creature — Elf Druid', '{T}: Add {G}.', '1', '1'),)) for n in ('Llanowar Elves', 'Elvish Mystic', 'Fyndhorn Elves')]
-    for recipe in (BASE, STATS, MASKED):
+    for recipe in RECIPES.values():
         assert len({build_card_text(e, recipe) for e in elves}) == 1
 
 def test_a_basic_land_keeps_its_reminder_text() -> None:
@@ -52,18 +54,18 @@ def test_in_the_base_arm_the_three_vanilla_beasts_are_just_their_type_line() -> 
     assert {build_card_text(c, BASE) for c in (PLATED_SEASTRIDER, KALONIAN_TUSKER, GARRUKS_GOREHORN)} == {'Creature — Beast'}
 
 def test_the_stats_arm_puts_cost_and_stats_first_so_the_beasts_differ() -> None:
-    assert build_card_text(PLATED_SEASTRIDER, STATS) == '{U}{U} · Creature — Beast · 1/4'
-    assert build_card_text(KALONIAN_TUSKER, STATS) == '{G}{G} · Creature — Beast · 3/3'
-    assert build_card_text(GARRUKS_GOREHORN, STATS) == '{4}{G} · Creature — Beast · 7/3'
+    assert build_card_text(PLATED_SEASTRIDER, STATS) == '{U}{U} Creature — Beast 1/4'
+    assert build_card_text(KALONIAN_TUSKER, STATS) == '{G}{G} Creature — Beast 3/3'
+    assert build_card_text(GARRUKS_GOREHORN, STATS) == '{4}{G} Creature — Beast 7/3'
 
 def test_the_stats_arm_leaves_out_what_a_face_doesnt_have() -> None:
     jaya_text = ('+1: Add {R}{R}{R}. Spend this mana only to cast instant or sorcery spells.\n+1: Discard up to three cards, then draw that many cards.\n'
                  '−8: You get an emblem with "You may cast instant and sorcery spells from your graveyard. If a spell cast this way would be put into your graveyard, exile it instead."')
     jaya = Card('Jaya Ballard', 'normal', (Face('Jaya Ballard', '{2}{R}{R}{R}', 5, 'Legendary Planeswalker — Jaya', jaya_text, loyalty='5'),))
     land = Card('Forest', 'normal', (Face('Forest', '', 0, 'Basic Land — Forest', '({T}: Add {G}.)'),))
-    assert build_card_text(jaya, STATS) == '{2}{R}{R}{R} · Legendary Planeswalker — Jaya · Loyalty 5\n' + jaya_text
+    assert build_card_text(jaya, STATS) == '{2}{R}{R}{R} Legendary Planeswalker — Jaya 5\n' + jaya_text  # Loyalty is implied by the type.
     assert build_card_text(land, STATS) == 'Basic Land — Forest\n({T}: Add {G}.)'
-    assert build_card_text(KUMANO, STATS).split('\n//\n')[1].startswith('Enchantment Creature — Human Shaman · 2/2\n')
+    assert build_card_text(KUMANO, STATS).split('\n//\n')[1].startswith('Enchantment Creature — Human Shaman 2/2\n')
 
 
 SHOCK = instant('Shock', '{R}', 1, 'Shock deals 2 damage to any target.')
@@ -113,3 +115,64 @@ def test_each_face_is_masked_against_its_own_name() -> None:
     front, back = build_card_text(huntmaster, MASKED).split('\n//\n')
     assert 'transforms into ~, create' in front and 'Fells' not in front
     assert 'transforms into ~, it deals' in back and 'Fells' not in back
+
+
+# The stage 2 text formats, agreed 2026-10-05 (#7): JSON with labelled fields (with and without masking), Scryfall text with cost and stats, and
+# Scryfall text with inline labels.
+
+RAZORKIN_TEXT = 'This creature has first strike during your turn.\nWhenever an opponent draws a card, this creature deals 1 damage to them.'
+RAZORKIN = Card('Razorkin Needlehead', 'normal', (Face('Razorkin Needlehead', '{R}{R}', 2, 'Creature — Human Assassin', RAZORKIN_TEXT, '2', '2'),))
+HUNTMASTER_TEXT = ('Whenever this creature enters or transforms into Huntmaster of the Fells, create a 2/2 green Wolf creature token and you gain 2 life.\n'
+                   'At the beginning of each upkeep, if no spells were cast last turn, transform this creature.')
+RAVAGER_TEXT = ("Trample\nWhenever this creature transforms into Ravager of the Fells, it deals 2 damage to target opponent or planeswalker and 2 damage to up to "
+                "one target creature that player or that planeswalker's controller controls.\n"
+                'At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.')
+HUNTMASTER = Card('Huntmaster of the Fells', 'transform', (Face('Huntmaster of the Fells', '{2}{R}{G}', 4, 'Creature — Human Werewolf', HUNTMASTER_TEXT, '2', '2'),
+                                                           Face('Ravager of the Fells', '', 4, 'Creature — Werewolf', RAVAGER_TEXT, '4', '4')))
+HAGRA_MAULING = Card('Hagra Mauling', 'modal_dfc', (
+    Face('Hagra Mauling', '{2}{B}{B}', 4, 'Instant', 'This spell costs {1} less to cast if an opponent controls no basic lands.\nDestroy target creature.'),
+    Face('Hagra Broodpit', '', 4, 'Land', 'This land enters tapped.\n{T}: Add {B}.')))
+
+def test_the_json_format_labels_each_field_and_leaves_out_what_the_card_lacks() -> None:
+    assert build_card_text(RAZORKIN, JSON) == (
+        '{\n'
+        '  "manaCost": "{R}{R}",\n'
+        '  "type": "Creature — Human Assassin",\n'
+        '  "text": "This creature has first strike during your turn.\\nWhenever an opponent draws a card, this creature deals 1 damage to them.",\n'
+        '  "power": "2",\n'
+        '  "toughness": "2"\n'
+        '}')
+
+def test_the_json_format_lists_a_double_faced_cards_faces_with_its_layout() -> None:
+    assert json.loads(build_card_text(HUNTMASTER, JSON)) == {'layout': 'transform', 'faces': [
+        {'manaCost': '{2}{R}{G}', 'type': 'Creature — Human Werewolf', 'text': HUNTMASTER_TEXT, 'power': '2', 'toughness': '2'},
+        {'type': 'Creature — Werewolf', 'text': RAVAGER_TEXT, 'power': '4', 'toughness': '4'}]}
+
+def test_the_json_format_gives_loyalty_its_own_field_and_a_vanilla_creature_no_text() -> None:
+    jaya = Card('Jaya Ballard', 'normal', (Face('Jaya Ballard', '{2}{R}{R}{R}', 5, 'Legendary Planeswalker — Jaya', '+1: Add {R}{R}{R}.', loyalty='5'),))
+    assert json.loads(build_card_text(jaya, JSON)) == {'manaCost': '{2}{R}{R}{R}', 'type': 'Legendary Planeswalker — Jaya', 'text': '+1: Add {R}{R}{R}.', 'loyalty': '5'}
+    assert json.loads(build_card_text(KALONIAN_TUSKER, JSON)) == {'manaCost': '{G}{G}', 'type': 'Creature — Beast', 'power': '3', 'toughness': '3'}
+
+def test_the_masked_json_format_masks_each_faces_own_name_in_its_text() -> None:
+    faces = json.loads(build_card_text(HUNTMASTER, JSON_MASKED))['faces']
+    assert faces[0]['text'] == HUNTMASTER_TEXT.replace('Huntmaster of the Fells', '~')
+    assert faces[1]['text'] == RAVAGER_TEXT.replace('Ravager of the Fells', '~')
+    assert build_card_text(RAZORKIN, JSON_MASKED) == build_card_text(RAZORKIN, JSON)  # Its text never names it.
+
+def test_the_stats_format_puts_cost_type_and_stats_before_each_faces_text() -> None:
+    assert build_card_text(RAZORKIN, STATS) == '{R}{R} Creature — Human Assassin 2/2\n' + RAZORKIN_TEXT
+    assert build_card_text(HUNTMASTER, STATS) == ('{2}{R}{G} Creature — Human Werewolf 2/2\n' + HUNTMASTER_TEXT + '\n//\n'
+                                                   'Creature — Werewolf 4/4\n' + RAVAGER_TEXT)
+
+def test_the_labels_format_names_each_field_with_a_colon() -> None:
+    assert build_card_text(RAZORKIN, LABELS) == 'Cost: {R}{R} Type: Creature — Human Assassin Power: 2 Toughness: 2\n' + RAZORKIN_TEXT
+    assert build_card_text(HUNTMASTER, LABELS) == ('Cost: {2}{R}{G} Type: Creature — Human Werewolf Power: 2 Toughness: 2\n' + HUNTMASTER_TEXT + '\n//\n'
+                                                    'Type: Creature — Werewolf Power: 4 Toughness: 4\n' + RAVAGER_TEXT)
+
+def test_the_labels_format_leaves_out_a_land_faces_missing_cost_and_gives_loyalty_a_label() -> None:
+    assert build_card_text(HAGRA_MAULING, LABELS).split('\n//\n')[1] == 'Type: Land\nThis land enters tapped.\n{T}: Add {B}.'
+    jaya = Card('Jaya Ballard', 'normal', (Face('Jaya Ballard', '{2}{R}{R}{R}', 5, 'Legendary Planeswalker — Jaya', '+1: Add {R}{R}{R}.', loyalty='5'),))
+    assert build_card_text(jaya, LABELS) == 'Cost: {2}{R}{R}{R} Type: Legendary Planeswalker — Jaya Loyalty: 5\n+1: Add {R}{R}{R}.'
+
+def test_each_format_has_a_label_for_file_names_and_reports() -> None:
+    assert {label: r.label for label, r in RECIPES.items()} == {label: label for label in ('base', 'masked', 'stats', 'labels', 'json', 'json+masked')}

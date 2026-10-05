@@ -1,36 +1,66 @@
-"""The text an encoder reads for a card: each face's type line and rules text, faces joined in order."""
+"""The text an encoder reads for a card, in one of several formats.
+
+- base: each face's type line and rules text (stage 1).
+- stats: each face's mana cost, type line and stats on one line ('{R}{R} Creature — Human Assassin 2/2'), then its rules text.
+- labels: the same with each field named ('Cost: {R}{R} Type: Creature — Human Assassin Power: 2 Toughness: 2'), then its rules text.
+- json: a JSON object with labelled fields (manaCost, type, text, power, toughness, loyalty), a field the face lacks left out; a card with several faces
+  is {"layout": ..., "faces": [...]}. Like minimaxir's mtg-embeddings, without name, rarity or sets.
+
+Text formats join faces with a line holding //. Reminder text is always kept, and a cost or stat a face lacks is always left out. Masking writes a face's
+own name in its rules text as ~ (agreed formats 2026-10-05, #7).
+"""
+import json
 import re
 from dataclasses import dataclass
+from typing import Literal
 
 from archetype_classifier.card_embeddings.pool import Card, Face
+
+Style = Literal['plain', 'stats', 'labels', 'json']
 
 
 @dataclass(frozen=True)
 class TextRecipe:
-    stats: bool = False  # Put the mana cost and stats before the type line.
-    mask: bool = False  # Replace the face's own name with ~.
+    style: Style = 'plain'
+    mask: bool = False  # Replace each face's own name in its rules text with ~.
 
     @property
     def label(self) -> str:
-        """'base', 'stats', 'masked' or 'stats+masked', for file names and reports."""
-        return '+'.join(part for part, used in (('stats', self.stats), ('masked', self.mask)) if used) or 'base'
+        """For file names and reports: 'base', 'masked', 'stats', 'labels', 'json' or 'json+masked'."""
+        name = 'base' if self.style == 'plain' else self.style
+        if not self.mask:
+            return name
+        return 'masked' if self.style == 'plain' else f'{name}+masked'
 
-TEXT_VERSION = 1  # Bump whenever a recipe's output changes, so old embeddings aren't mistaken for new ones.
+TEXT_VERSION = 2  # Bump whenever a recipe's output changes, so old embeddings aren't mistaken for new ones. 2: the stats format lost its ' · '.
 BASE = TextRecipe()
-STATS = TextRecipe(stats=True)
 MASKED = TextRecipe(mask=True)
+STATS = TextRecipe('stats')
+LABELS = TextRecipe('labels')
+JSON = TextRecipe('json')
+JSON_MASKED = TextRecipe('json', mask=True)
+RECIPES = {r.label: r for r in (BASE, MASKED, STATS, LABELS, JSON, JSON_MASKED)}
 MASK = '~'
-RECIPES = {r.label: r for r in (BASE, STATS, MASKED, TextRecipe(stats=True, mask=True))}
 FACE_SEPARATOR = '\n//\n'
 
 
 def build_card_text(card: Card, recipe: TextRecipe) -> str:
+    if recipe.style == 'json':
+        faces = [face_fields(face, recipe) for face in card.faces]
+        return json.dumps(faces[0] if len(faces) == 1 else {'layout': card.layout, 'faces': faces}, indent=2, ensure_ascii=False)
     return FACE_SEPARATOR.join(face_text(face, recipe) for face in card.faces)
 
 def face_text(face: Face, recipe: TextRecipe) -> str:
-    header = stats_line(face) if recipe.stats else face.type_line
-    rules = build_masked_text(face)[0] if recipe.mask else face.oracle_text
-    return '\n'.join(part for part in (header, rules) if part)
+    header = {'plain': face.type_line, 'stats': stats_line(face), 'labels': labels_line(face)}[recipe.style]
+    return '\n'.join(part for part in (header, rules_text(face, recipe)) if part)
+
+def face_fields(face: Face, recipe: TextRecipe) -> dict[str, str]:
+    fields = {'manaCost': face.mana_cost, 'type': face.type_line, 'text': rules_text(face, recipe), 'power': face.power, 'toughness': face.toughness,
+              'loyalty': face.loyalty}
+    return {k: v for k, v in fields.items() if v}
+
+def rules_text(face: Face, recipe: TextRecipe) -> str:
+    return build_masked_text(face)[0] if recipe.mask else face.oracle_text
 
 def build_masked_text(face: Face) -> tuple[str, tuple[str, ...]]:
     """The face's rules text with its own name written as ~, and the short names it masked beyond the full name, for the spot-check.
@@ -46,7 +76,11 @@ def whole_word(name: str) -> re.Pattern[str]:
     return re.compile(rf'(?<!\w){re.escape(name)}(?!\w)')
 
 def stats_line(face: Face) -> str:
-    """The type line with the mana cost before it and the stats after it, leaving out any the face doesn't have: '{U}{U} · Creature — Beast · 1/4'."""
+    """Mana cost, type line and stats, leaving out any the face doesn't have: '{U}{U} Creature — Beast 1/4'. Loyalty is a bare number, implied by the type."""
     stats = f'{face.power}/{face.toughness}' if face.power is not None and face.toughness is not None else None
-    loyalty = f'Loyalty {face.loyalty}' if face.loyalty is not None else None
-    return ' · '.join(part for part in (face.mana_cost, face.type_line, stats, loyalty) if part)
+    return ' '.join(part for part in (face.mana_cost, face.type_line, stats, face.loyalty) if part)
+
+def labels_line(face: Face) -> str:
+    """Each field named with a colon, leaving out any the face doesn't have: 'Cost: {R}{R} Type: Creature — Human Assassin Power: 2 Toughness: 2'."""
+    fields = (('Cost', face.mana_cost), ('Type', face.type_line), ('Power', face.power), ('Toughness', face.toughness), ('Loyalty', face.loyalty))
+    return ' '.join(f'{name}: {value}' for name, value in fields if value)

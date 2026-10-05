@@ -38,7 +38,7 @@ def test_an_unknown_card_is_named_in_the_error() -> None:
 
 @pytest.fixture
 def saved(tmp_path: Path) -> Path:
-    save_embeddings(Embeddings(EMBEDDINGS.names, EMBEDDINGS.matrix, {'encoder': 'fake', 'recipe': {'stats': False, 'mask': False}}), tmp_path)
+    save_embeddings(Embeddings(EMBEDDINGS.names, EMBEDDINGS.matrix, {'encoder': 'fake', 'recipe': {'style': 'plain', 'mask': False}}), tmp_path)
     return tmp_path
 
 def test_the_tool_prints_a_cards_neighbours_from_saved_embeddings(saved: Path, capsys: pytest.CaptureFixture[str]) -> None:

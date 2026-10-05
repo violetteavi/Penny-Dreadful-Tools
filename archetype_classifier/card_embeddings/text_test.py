@@ -1,5 +1,5 @@
 from archetype_classifier.card_embeddings.pool import Card, Face
-from archetype_classifier.card_embeddings.text import BASE, STATS, build_card_text
+from archetype_classifier.card_embeddings.text import BASE, MASKED, STATS, build_card_text, build_masked_text
 
 REBUKE_TEXT = 'This spell costs {3} less to cast if it targets a tapped creature.\nDestroy target creature.'
 
@@ -14,6 +14,15 @@ def test_the_four_removal_reprints_get_identical_text() -> None:
     names = ["Ajani's Response", 'Grounded for Life', 'Seized from Slumber', 'Luminous Rebuke']
     texts = {build_card_text(instant(n, '{4}{W}', 5, REBUKE_TEXT), BASE) for n in names}
     assert texts == {'Instant\n' + REBUKE_TEXT}
+
+def test_the_three_mana_elves_get_identical_text_in_every_arm() -> None:
+    elves = [Card(n, 'normal', (Face(n, '{G}', 1, 'Creature — Elf Druid', '{T}: Add {G}.', '1', '1'),)) for n in ('Llanowar Elves', 'Elvish Mystic', 'Fyndhorn Elves')]
+    for recipe in (BASE, STATS, MASKED):
+        assert len({build_card_text(e, recipe) for e in elves}) == 1
+
+def test_a_basic_land_keeps_its_reminder_text() -> None:
+    forest = Card('Forest', 'normal', (Face('Forest', '', 0, 'Basic Land — Forest', '({T}: Add {G}.)'),))
+    assert build_card_text(forest, BASE) == 'Basic Land — Forest\n({T}: Add {G}.)'
 
 KUMANO = Card('Kumano Faces Kakkazan', 'transform', (
     Face('Kumano Faces Kakkazan', '{R}', 1, 'Enchantment — Saga',
@@ -53,3 +62,43 @@ def test_the_stats_arm_leaves_out_what_a_face_doesnt_have() -> None:
     assert build_card_text(jaya, STATS) == '{2}{R}{R}{R} · Legendary Planeswalker — Jaya · Loyalty 5\n+1: …'
     assert build_card_text(land, STATS) == 'Basic Land — Forest\n({T}: Add {G}.)'
     assert build_card_text(KUMANO, STATS).split('\n//\n')[1].startswith('Enchantment Creature — Human Shaman · 2/2\n')
+
+
+SHOCK = instant('Shock', '{R}', 1, 'Shock deals 2 damage to any target.')
+BURST_LIGHTNING = instant('Burst Lightning', '{R}', 1, 'Kicker {4} (You may pay an additional {4} as you cast this spell.)\n'
+                                                       'Burst Lightning deals 2 damage to any target. If this spell was kicked, it deals 4 damage instead.')
+
+
+# Scenario: a card's name in its own text doesn't push it away from its peers (Scenarios.md, "Card representation").
+
+def test_the_masked_arm_writes_tilde_for_the_cards_own_name() -> None:
+    assert build_card_text(SHOCK, MASKED) == 'Instant\n~ deals 2 damage to any target.'
+    assert build_card_text(BURST_LIGHTNING, MASKED) == ('Instant\nKicker {4} (You may pay an additional {4} as you cast this spell.)\n'
+                                                        '~ deals 2 damage to any target. If this spell was kicked, it deals 4 damage instead.')
+
+def test_the_base_arm_leaves_the_name_in() -> None:
+    assert build_card_text(SHOCK, BASE) == 'Instant\nShock deals 2 damage to any target.'
+
+def test_a_possessive_is_masked_and_the_rest_of_the_word_kept() -> None:
+    temple = Card('Wayfaring Temple', 'normal', (Face('Wayfaring Temple', '{1}{G}{W}', 3, 'Creature — Elemental',
+                  "Wayfaring Temple's power and toughness are each equal to the number of creatures you control.", '*', '*'),))
+    assert build_card_text(temple, MASKED) == "Creature — Elemental\n~'s power and toughness are each equal to the number of creatures you control."
+
+def test_a_legendarys_short_name_is_masked_and_reported_for_the_spot_check() -> None:
+    odric = Face('Odric, Master Tactician', '{2}{W}{W}', 4, 'Legendary Creature — Human Soldier',
+                 'First strike\nWhenever Odric and at least three other creatures attack, you choose which creatures block this combat and how those creatures block.', '3', '4')
+    assert build_masked_text(odric) == ('First strike\nWhenever ~ and at least three other creatures attack, you choose which creatures block this combat and how those creatures block.',
+                                        ('Odric',))
+
+def test_a_name_inside_a_longer_word_is_left_alone() -> None:
+    assert build_masked_text(Face('Shock', '{R}', 1, 'Instant', 'Shockwave and Shocked stay; Shock goes.')) == ('Shockwave and Shocked stay; ~ goes.', ())
+
+def test_a_short_name_is_masked_only_on_a_legendary() -> None:
+    assert build_masked_text(Face('Will, the Wise', '{U}', 1, 'Creature — Human', 'Will draw.')) == ('Will draw.', ())
+
+def test_each_face_is_masked_against_its_own_name() -> None:
+    ikoria = Card('Invasion of Ikoria', 'transform', (
+        Face('Invasion of Ikoria', '{X}{G}{G}', 2, 'Battle — Siege', 'When this Siege enters, search for Zilortha.'),
+        Face('Zilortha, Apex of Ikoria', '', 2, 'Legendary Creature — Dinosaur', 'Zilortha attacks. Invasion of Ikoria stays.', '8', '8')))
+    assert build_card_text(ikoria, MASKED) == ('Battle — Siege\nWhen this Siege enters, search for Zilortha.\n//\n'
+                                               'Legendary Creature — Dinosaur\n~ attacks. Invasion of Ikoria stays.')

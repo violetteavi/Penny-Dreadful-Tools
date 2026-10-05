@@ -43,19 +43,19 @@ Vanilla creatures have no rules text, so the base arm sees only their type line:
 
 | Card | Cost | Type line | Stats |
 |---|---|---|---|
-| Headless Horseman | {2}{B} | Creature — Zombie Knight | 2/2 |
-| Rotting Fensnake | {3}{B} | Creature — Zombie Snake | 5/1 |
-| Rotting Mastodon | {4}{B} | Creature — Zombie Elephant | 2/8 |
+| Plated Seastrider | {U}{U} | Creature — Beast | 1/4 |
+| Kalonian Tusker | {G}{G} | Creature — Beast | 3/3 |
+| Garruk's Gorehorn | {4}{G} | Creature — Beast | 7/3 |
 | Coral Eel | {1}{U} | Creature — Fish | 2/1 |
 | Spined Wurm | {4}{G} | Creature — Wurm | 5/4 |
 
-All five are vanilla in the cards database, and all were legal in at least one season. The three Zombies were legal together in seasons 13–43.
+All five are vanilla in the cards database, and all were legal in at least one season. The three Beasts have only the subtype Beast, so nothing but their cost and stats tells them apart. They were legal together in seasons 17–26.
 
 - **Expect:**
-  - **Base arm:** the three Zombies are each other's nearest vanilla neighbours, ahead of Coral Eel and Spined Wurm, because they share the Zombie type. A 2/2 for three, a 5/1 for four and a 2/8 for five look nearly alike, since nothing in the text tells them apart.
-  - **Stats-in-the-text arm:** the Zombies move apart from each other. A {4}{B} 2/8 wall and a {3}{B} 5/1 attacker are no longer near-identical.
+  - **Base arm:** the three Beasts have the same text, `Creature — Beast`, so their vectors are identical (similarity 1) under every encoder. Coral Eel and Spined Wurm differ from them only by subtype.
+  - **Stats-in-the-text arm:** the Beasts move apart. A {U}{U} 1/4 blocker, a {G}{G} 3/3 and a {4}{G} 7/3 are no longer identical. How far they move apart, compared with how far Spined Wurm ({4}{G} 5/4) sits from Garruk's Gorehorn ({4}{G} 7/3), shows whether the encoder reads costs and stats or only notices that the text changed.
   - **Structured vector:** it tells all five apart exactly, by mana value, pips, power and toughness, whatever the encoder does.
-- **Why it matters:** cost and stats decide what a vanilla creature does in a deck. This scenario shows whether an encoder reads "{4}{B}" and "2/8" at all, which decides whether the stats-in-the-text arm is worth keeping.
+- **Why it matters:** cost and stats decide what a vanilla creature does in a deck. This scenario shows whether an encoder reads "{4}{G}" and "7/3" at all, which decides whether the stats-in-the-text arm is worth keeping.
 - **Check:** pairwise similarities among the five in the base arm and the stats-in-the-text arm. The change between the arms is the measure; thresholds are to be set once measured.
 
 ### Missing stats are absent, not zero

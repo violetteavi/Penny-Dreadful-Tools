@@ -33,7 +33,7 @@ def build_embeddings(cards: Sequence[Card], recipe: TextRecipe, encoder: Encoder
     matrix /= np.linalg.norm(matrix, axis=1, keepdims=True)
     manifest: dict[str, JSON] = {'encoder': encoder.name, 'revision': encoder.revision, 'recipe': asdict(recipe), 'text_version': TEXT_VERSION,
                                  'cards': len(ordered), 'max_tokens': encoder.max_tokens,
-                                 'over_token_limit': sum(n > encoder.max_tokens for n in encoder.token_counts(texts))}
+                                 'over_token_limit': 0 if encoder.max_tokens is None else sum(n > encoder.max_tokens for n in encoder.token_counts(texts))}
     return Embeddings(tuple(c.name for c in ordered), matrix, manifest)
 
 def save_embeddings(embeddings: Embeddings, directory: Path = EMBEDDINGS_DIR) -> Path:

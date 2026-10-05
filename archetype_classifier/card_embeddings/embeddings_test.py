@@ -15,7 +15,7 @@ class FakeEncoder:
     """Deterministic and torch-free: each text becomes a fixed vector derived from its hash, and a token is a word."""
     name = 'fake'
     revision = 'r1'
-    max_tokens = 4
+    max_tokens: int | None = 4
 
     def __init__(self) -> None:
         self.seen: list[str] = []
@@ -77,3 +77,9 @@ def test_a_manifest_that_doesnt_match_its_matrix_fails_and_names_the_file(tmp_pa
     manifest_path.write_text(json.dumps(saved))
     with pytest.raises(ValueError, match='fake__base.npy has 2 rows but its manifest lists 3 cards'):
         load_embeddings(path)
+
+def test_an_encoder_with_no_token_limit_cuts_off_no_card() -> None:
+    encoder = FakeEncoder()
+    encoder.max_tokens = None
+    manifest = build_embeddings([SHOCK, OPT, CANCEL], BASE, encoder).manifest
+    assert (manifest['max_tokens'], manifest['over_token_limit']) == (None, 0)

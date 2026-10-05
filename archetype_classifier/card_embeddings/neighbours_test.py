@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from archetype_classifier.card_embeddings.embeddings import Embeddings, save_embeddings
-from archetype_classifier.card_embeddings.neighbours import Neighbour, build_neighbours, main
+from archetype_classifier.card_embeddings.neighbours import Neighbour, build_all_neighbours, build_neighbours, build_overlap, build_rank, main
 from archetype_classifier.data_loading import loader
 
 
@@ -57,3 +57,15 @@ def test_season_limits_the_tool_to_cards_legal_that_season(saved: Path, capsys: 
 def test_the_tool_says_how_to_build_missing_embeddings(tmp_path: Path) -> None:
     with pytest.raises(SystemExit, match='No embeddings at .*bge-small__stats.npy: build them with python -m archetype_classifier.experiments.card_encoders'):
         main(['Shock', '--recipe', 'stats', '--dir', str(tmp_path)])
+
+
+def test_a_cards_rank_in_another_cards_list() -> None:
+    assert [build_rank(EMBEDDINGS, 'Shock', other) for other in ('Burst Lightning', 'Lightning Strike', 'Counterspell')] == [1, 2, 4]
+
+def test_every_cards_top_neighbours_at_once_match_its_own_list() -> None:
+    top = build_all_neighbours(EMBEDDINGS, 2, chunk=2)
+    assert {name: [EMBEDDINGS.names[i] for i in row] for name, row in zip(EMBEDDINGS.names, top)} == \
+        {name: [n.name for n in build_neighbours(EMBEDDINGS, name, 2)] for name in EMBEDDINGS.names}
+
+def test_overlap_is_the_share_of_two_lists_in_common() -> None:
+    assert build_overlap(np.array([[1, 2, 3], [4, 5, 6]]), np.array([[3, 2, 9], [7, 8, 9]])).tolist() == pytest.approx([2 / 3, 0])

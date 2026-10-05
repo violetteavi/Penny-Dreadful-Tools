@@ -36,6 +36,20 @@ def build_embeddings(cards: Sequence[Card], recipe: TextRecipe, encoder: Encoder
                                  'over_token_limit': 0 if encoder.max_tokens is None else sum(n > encoder.max_tokens for n in encoder.token_counts(texts))}
     return Embeddings(tuple(c.name for c in ordered), matrix, manifest)
 
+IDENTITY = ('encoder', 'revision', 'recipe', 'text_version', 'max_tokens')  # Manifest fields that must match for embeddings to be merged.
+
+
+def merge_embeddings(a: Embeddings, b: Embeddings) -> Embeddings:
+    """Both sets of rows in one, in name order: how a new set's cards are added without re-embedding the old ones."""
+    if any(a.manifest[k] != b.manifest[k] for k in IDENTITY):
+        raise ValueError('Only embeddings from the same encoder, revision, recipe and text version can be merged')
+    if repeated := sorted(set(a.names) & set(b.names)):
+        raise ValueError(f'Already embedded: {", ".join(repeated)}')
+    names = a.names + b.names
+    order = sorted(range(len(names)), key=lambda i: names[i])
+    manifest = {**a.manifest, 'cards': len(names), 'over_token_limit': cast(int, a.manifest['over_token_limit']) + cast(int, b.manifest['over_token_limit'])}
+    return Embeddings(tuple(names[i] for i in order), np.concatenate([a.matrix, b.matrix])[order], manifest)
+
 def embeddings_path(directory: Path, encoder: str, recipe: TextRecipe) -> Path:
     return directory / f'{encoder}__{recipe.label}.npy'
 

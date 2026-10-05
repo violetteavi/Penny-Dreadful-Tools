@@ -7,6 +7,8 @@ from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
+
 from archetype_classifier.card_embeddings.embeddings import EMBEDDINGS_DIR, Embeddings, embeddings_path, load_embeddings
 from archetype_classifier.card_embeddings.text import RECIPES
 from archetype_classifier.data_loading import loader
@@ -25,6 +27,29 @@ def build_neighbours(embeddings: Embeddings, card: str, n: int, among: Collectio
     similarities = embeddings.matrix @ embeddings.matrix[embeddings.names.index(card)]  # Rows are unit length, so a dot product is the cosine.
     candidates = [(float(s), name) for name, s in zip(embeddings.names, similarities) if name != card and (among is None or name in among)]
     return [Neighbour(name, s) for s, name in sorted(candidates, key=lambda c: (-c[0], c[1]))[:n]]
+
+
+def build_rank(embeddings: Embeddings, card: str, other: str) -> int:
+    """Where other comes in card's neighbour list, counting from 1."""
+    return [n.name for n in build_neighbours(embeddings, card, len(embeddings.names))].index(other) + 1
+
+def build_all_neighbours(embeddings: Embeddings, n: int, chunk: int = 1000) -> np.ndarray:
+    """Every card's n nearest neighbours as row indices, one row per card, in build_neighbours' order. Embeddings must be in name order (as built),
+    so that breaking ties by index breaks them by name. Cards are compared a chunk at a time to keep memory down."""
+    top = np.empty((len(embeddings.names), n), dtype=np.int64)
+    for start in range(0, len(embeddings.names), chunk):
+        similarities = embeddings.matrix[start:start + chunk] @ embeddings.matrix.T
+        rows = np.arange(similarities.shape[0])
+        similarities[rows, rows + start] = -np.inf  # Leave each card out of its own list.
+        nth = -np.partition(-similarities, n - 1, axis=1)[:, n - 1]  # Each row's n-th best similarity.
+        for row in rows:
+            candidates = np.flatnonzero(similarities[row] >= nth[row])  # Everything at least as good, ties included.
+            top[start + row] = candidates[np.lexsort((candidates, -similarities[row, candidates]))][:n]
+    return top
+
+def build_overlap(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """For each row, the share of the cards in two neighbour lists that they have in common."""
+    return np.array([len(set(x) & set(y)) / len(x) for x, y in zip(a.tolist(), b.tolist())])
 
 
 def main(argv: Sequence[str] | None = None) -> None:

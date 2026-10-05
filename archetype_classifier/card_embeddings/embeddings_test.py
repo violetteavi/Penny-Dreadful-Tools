@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from archetype_classifier.card_embeddings.embeddings import TOLERANCE, build_embeddings, load_embeddings, save_embeddings
+from archetype_classifier.card_embeddings.embeddings import TOLERANCE, build_embeddings, load_embeddings, merge_embeddings, save_embeddings
 from archetype_classifier.card_embeddings.pool import Card, Face
 from archetype_classifier.card_embeddings.text import BASE, MASKED, STATS, TEXT_VERSION
 
@@ -83,3 +83,21 @@ def test_an_encoder_with_no_token_limit_cuts_off_no_card() -> None:
     encoder.max_tokens = None
     manifest = build_embeddings([SHOCK, OPT, CANCEL], BASE, encoder).manifest
     assert (manifest['max_tokens'], manifest['over_token_limit']) == (None, 0)
+
+
+# Adding a set: embed only the new cards and merge them in.
+
+def test_merging_puts_both_sets_of_rows_in_name_order_and_sums_the_manifests() -> None:
+    old, new = build_embeddings([SHOCK, OPT], BASE, FakeEncoder()), build_embeddings([CANCEL], BASE, FakeEncoder())
+    merged = merge_embeddings(old, new)
+    whole = build_embeddings([SHOCK, OPT, CANCEL], BASE, FakeEncoder())
+    assert merged.names == whole.names and merged.manifest == whole.manifest
+    assert np.allclose(merged.matrix, whole.matrix, atol=TOLERANCE, rtol=0)
+
+def test_merging_embeddings_from_different_encoders_or_recipes_fails() -> None:
+    with pytest.raises(ValueError, match='Only embeddings from the same encoder, revision, recipe and text version can be merged'):
+        merge_embeddings(build_embeddings([SHOCK], BASE, FakeEncoder()), build_embeddings([OPT], STATS, FakeEncoder()))
+
+def test_merging_a_card_already_there_fails() -> None:
+    with pytest.raises(ValueError, match='Already embedded: Shock'):
+        merge_embeddings(build_embeddings([SHOCK], BASE, FakeEncoder()), build_embeddings([SHOCK, OPT], BASE, FakeEncoder()))

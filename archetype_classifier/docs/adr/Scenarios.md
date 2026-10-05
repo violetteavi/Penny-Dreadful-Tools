@@ -6,13 +6,19 @@ Terms follow [CONTEXT.md](../../CONTEXT.md). Scenarios marked **Tentative** are 
 
 ## Card representation
 
+A card's text, as the encoder reads it, is its type line and its rules text with both faces joined. The rules text is Scryfall's oracle text as it stands, reminder text included. Comparison arms add the mana cost and stats to the text, or replace the card's own name with `~`. The structured vector beside the text embedding is described under "Missing stats are absent, not zero". Settled in the [#7 grilling](https://github.com/violetteavi/Penny-Dreadful-Tools/issues/7#issuecomment-6001591778).
+
 ### Functional reprints get the same representation
 
-Ajani's Response, Grounded for Life, Seized from Slumber and Luminous Rebuke are the same card under four names. All four are {4}{W} instants reading "This spell costs {3} less to cast if it targets a tapped creature. Destroy target creature."
+Two groups of cards are each one card under several names:
 
-- **Expect:** the card representation treats them as one card. Their vectors are identical or nearly so, and each is closer to the other three than to any card with different rules text.
-- **Why it matters:** new sets often reprint an effect under a new name. Here, Ajani's Response and Grounded for Life first appear in season 42, so they are unseen cards in the test split, while Seized from Slumber (from season 35) and Luminous Rebuke (from season 36) are in the training data. A classifier can only use the new names if the representation maps them onto the old ones.
-- **Check:** pairwise similarity among the four, and each card's nearest neighbours in the whole card pool.
+- **Removal:** Ajani's Response, Grounded for Life, Seized from Slumber and Luminous Rebuke are all {4}{W} instants reading "This spell costs {3} less to cast if it targets a tapped creature. Destroy target creature."
+- **Mana elves:** Llanowar Elves, Elvish Mystic and Fyndhorn Elves are all {G} 1/1 Creature — Elf Druid reading "{T}: Add {G}."
+
+- **Expect:** the card representation treats each group as one card. Their vectors are identical, and each is closer to the rest of its group than to any card with different text.
+- **Why it matters:** new sets often reprint an effect under a new name. Here, Ajani's Response and Grounded for Life first appear in season 42, so they are unseen cards in the test split, while Seized from Slumber (from season 35) and Luminous Rebuke (from season 36) are in the training data. A classifier can only use the new names if the representation maps them onto the old ones. The elves show the same thing for a creature, where the stats, cost and type line must match too.
+- **Note:** within each group, Scryfall's oracle text, type line, cost and stats are already identical and none of them contains the card's name. So every encoder and every arm passes this scenario. It checks the card-text builder (no name, no printing details leaking in), not the choice of encoder.
+- **Check:** pairwise similarity within each group (exactly 1), and each card's nearest neighbours in the whole card pool.
 
 ### Near-equivalent cards are close
 
@@ -20,6 +26,61 @@ Swift Response ({1}{W} instant, "Destroy target tapped creature.") does the same
 
 - **Expect:** Swift Response is very close to the four reprints, among their nearest neighbours in the card pool, though not identical to them.
 - **Check:** Swift Response's rank and similarity in each reprint's nearest-neighbour list. The exact rank or similarity cut-off is to be set once card embeddings are measured.
+
+### A card's name in its own text doesn't push it away from its peers
+
+Shock ({R} instant, "Shock deals 2 damage to any target.") and Burst Lightning ({R} instant, "Kicker {4} (You may pay an additional {4} as you cast this spell.) Burst Lightning deals 2 damage to any target. If this spell was kicked, it deals 4 damage instead.") do the same job for the same cost: two damage to any target for one red mana. Burst Lightning can also be kicked for four damage. Both are legal in seasons 39 and 43.
+
+Scryfall's oracle text still names the card wherever a spell deals damage. Of the 1,603 legal faces whose text names the card, 816 are damage sources like these.
+
+- **Expect:** Burst Lightning is among Shock's nearest neighbours, and Shock among Burst Lightning's, in every arm. They are not identical: the kicker is a real difference. In the `~` arm, where both names become `~`, they are at least as close as in the base arm.
+- **Why it matters:** burn spells are the core of Red Deck Wins and its children. If a name in the text pulls apart two cards that do the same thing, an unseen burn spell won't land next to the burn spells a classifier knows.
+- **Check:** each card's rank and similarity in the other's nearest-neighbour list, in the base arm and the `~` arm. The difference between the two arms shows how much the names cost. The cut-off is to be set once card embeddings are measured.
+
+### Vanilla creatures differ only in cost, stats and type line
+
+Vanilla creatures have no rules text, so the base arm sees only their type line:
+
+| Card | Cost | Type line | Stats |
+|---|---|---|---|
+| Headless Horseman | {2}{B} | Creature — Zombie Knight | 2/2 |
+| Rotting Fensnake | {3}{B} | Creature — Zombie Snake | 5/1 |
+| Rotting Mastodon | {4}{B} | Creature — Zombie Elephant | 2/8 |
+| Coral Eel | {1}{U} | Creature — Fish | 2/1 |
+| Spined Wurm | {4}{G} | Creature — Wurm | 5/4 |
+
+All five are vanilla in the cards database, and all were legal in at least one season. The three Zombies were legal together in seasons 13–43.
+
+- **Expect:**
+  - **Base arm:** the three Zombies are each other's nearest vanilla neighbours, ahead of Coral Eel and Spined Wurm, because they share the Zombie type. A 2/2 for three, a 5/1 for four and a 2/8 for five look nearly alike, since nothing in the text tells them apart.
+  - **Stats-in-the-text arm:** the Zombies move apart from each other. A {4}{B} 2/8 wall and a {3}{B} 5/1 attacker are no longer near-identical.
+  - **Structured vector:** it tells all five apart exactly, by mana value, pips, power and toughness, whatever the encoder does.
+- **Why it matters:** cost and stats decide what a vanilla creature does in a deck. This scenario shows whether an encoder reads "{4}{B}" and "2/8" at all, which decides whether the stats-in-the-text arm is worth keeping.
+- **Check:** pairwise similarities among the five in the base arm and the stats-in-the-text arm. The change between the arms is the measure; thresholds are to be set once measured.
+
+### Missing stats are absent, not zero
+
+The structured vector records power, toughness and loyalty each as three numbers: **present** (0 or 1), **value** (0 when absent, clipped at 15) and **variable** (1 for `*` or `X`). Alongside them are mana value, pips per colour (W, U, B, R, G, C) plus generic, X and hybrid or Phyrexian, card types and supertypes as yes/no columns, and layout columns. Each face gets its own block; a single-faced card's back block is all zeros.
+
+| Card | Power (present, value, variable) | Toughness | Loyalty | Mana value, pips |
+|---|---|---|---|---|
+| Distress ({B}{B} sorcery) | 0, 0, 0 | 0, 0, 0 | 0, 0, 0 | 2; B 2 |
+| Ornithopter ({0} artifact creature, 0/2) | **1, 0, 0** | 1, 2, 0 | 0, 0, 0 | 0; none |
+| Wayfaring Temple ({1}{G}{W} creature, \*/\*) | 1, 0, **1** | 1, 0, **1** | 0, 0, 0 | 3; generic 1, G 1, W 1 |
+| Jaya Ballard ({2}{R}{R}{R} planeswalker, loyalty 5) | 0, 0, 0 | 0, 0, 0 | 1, 5, 0 | 5; generic 2, R 3 |
+
+- **Expect:** each card gets exactly the numbers in the table. Distress's power reads "absent", and Ornithopter's reads "present, and 0". The two are never equal.
+- **Why it matters:** a sorcery has no power. A value of 0 alone would make it look like a 0-power creature, which Ornithopter really is.
+- **Check:** build the structured vector for each card and compare it with the table.
+- **Open question: defense.** The cards database stores no defense for battles. It has no `defense` column, and the 36 legal battles (such as Invasion of Tolvada) have no loyalty, power or toughness either. Either leave defense out for now, or add it to the cards import from Scryfall, which is outside this effort's code.
+
+### Adding a set changes no other card's vector
+
+Season 43 added 461 cards that are new to the pool, 148 of them from The Hobbit (HOB).
+
+- **Expect:** embed the cards legal in seasons 1–42, then embed the full pool including those 461. Every card in both runs gets the same vector, up to floating-point noise from batching (each element within 1e-5).
+- **Why it matters:** a new set arrives about every two months. A frozen encoder reads each card on its own, so adding cards should need no other change: no re-embedding of old cards and no retraining of the encoder. If old vectors moved, every model built on them would have to be refitted at each set.
+- **Check:** compare the two runs' vectors for the shared cards. Also report how long the 461 new cards take to embed with each encoder.
 
 ## Scoring against the archetype tree
 

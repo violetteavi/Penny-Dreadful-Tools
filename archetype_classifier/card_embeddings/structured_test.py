@@ -68,7 +68,9 @@ def test_a_split_cards_halves_fill_the_two_blocks_and_hybrid_mana_pays_for_both_
     assert block(DISCOVERY, 'back') == {'mana_value': 5, 'generic': 3, 'pips.U': 1, 'pips.B': 1, 'type.Instant': 1}
 
 @pytest.mark.parametrize(('card', 'expected'), [
-    (single('Gut Shot', '{R/P}', 1, 'Instant'), {'mana_value': 1, 'phyrexian': 1, 'pips.R': 1, 'type.Instant': 1}),
+    (single('Spined Thopter', '{2}{U/P}', 3, 'Artifact Creature — Phyrexian Thopter', '2', '1'),
+     {'mana_value': 3, 'generic': 2, 'phyrexian': 1, 'pips.U': 1, 'type.Artifact': 1, 'type.Creature': 1,
+      'power.present': 1, 'power.value': 2, 'toughness.present': 1, 'toughness.value': 1}),
     (single('Spectral Procession', '{2/W}{2/W}{2/W}', 6, 'Sorcery'), {'mana_value': 6, 'hybrid': 3, 'pips.W': 3, 'type.Sorcery': 1}),
     (single('Invasion of Ikoria', '{X}{G}{G}', 2, 'Battle — Siege'), {'mana_value': 2, 'x': 1, 'pips.G': 2, 'type.Battle': 1}),
     (single("Giant's Ire", '{3}{R}', 4, 'Kindred Sorcery — Giant'), {'mana_value': 4, 'generic': 3, 'pips.R': 1, 'type.Kindred': 1, 'type.Sorcery': 1}),
@@ -80,7 +82,7 @@ def test_unusual_costs_and_types(card: Card, expected: dict[str, float]) -> None
 @pytest.mark.parametrize(('card', 'power', 'toughness'), [
     (single('Impervious Greatwurm', '{7}{G}{G}{G}', 10, 'Creature — Wurm', '16', '16'), (1, 15, 0), (1, 15, 0)),  # Clipped at 15.
     (single('Spinal Parasite', '{5}', 5, 'Artifact Creature — Insect', '-1', '-1'), (1, -1, 0), (1, -1, 0)),
-    (single('Tarmogoyf', '{1}{G}', 2, 'Creature — Lhurgoyf', '*', '1+*'), (1, 0, 1), (1, 1, 1)),
+    (single('Lhurgoyf', '{2}{G}{G}', 4, 'Creature — Lhurgoyf', '*', '1+*'), (1, 0, 1), (1, 1, 1)),
 ])
 def test_large_negative_and_partly_variable_stats(card: Card, power: tuple[int, int, int], toughness: tuple[int, int, int]) -> None:
     assert (stat(card, 'front', 'power'), stat(card, 'front', 'toughness')) == (power, toughness)

@@ -3,9 +3,11 @@ import pytest
 from archetype_classifier.card_embeddings.pool import Card, Face, SiteCard, build_card_pool
 
 SHOCK = Face('Shock', '{R}', 1, 'Instant', 'Shock deals 2 damage to any target.')
-DISCOVERY = Face('Discovery', '{1}{U/B}', 2, 'Sorcery', 'Surveil 2, then draw a card.')
-DISPERSAL = Face('Dispersal', '{3}{U}{B}', 5, 'Instant', 'Each opponent returns a nonland permanent …')
-TAZEEM = Face('Tazeem', '', 0, 'Plane — Zendikar', 'Creatures can\'t block. …')
+DISCOVERY = Face('Discovery', '{1}{U/B}', 2, 'Sorcery', 'Surveil 2, then draw a card. (To surveil 2, look at the top two cards of your library, then put any number of '
+                                                       'them into your graveyard and the rest on top of your library in any order.)')
+DISPERSAL = Face('Dispersal', '{3}{U}{B}', 5, 'Instant', "Each opponent returns a nonland permanent they control with the greatest mana value among permanents they "
+                                                         "control to its owner's hand, then discards a card.")
+TAZEEM = Face('Tazeem', '', 0, 'Plane — Zendikar', "Creatures can't block.\nWhenever chaos ensues, draw a card for each land you control.")
 
 SITE_CARDS = [SiteCard(99, 'Shock', 'normal'), SiteCard(20430, 'Discovery // Dispersal', 'split'), SiteCard(1234, 'Tazeem', 'planar')]
 FACES = {99: (SHOCK,), 20430: (DISCOVERY, DISPERSAL), 1234: (TAZEEM,)}

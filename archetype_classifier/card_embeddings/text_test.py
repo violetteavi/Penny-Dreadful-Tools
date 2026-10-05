@@ -57,9 +57,11 @@ def test_the_stats_arm_puts_cost_and_stats_first_so_the_beasts_differ() -> None:
     assert build_card_text(GARRUKS_GOREHORN, STATS) == '{4}{G} · Creature — Beast · 7/3'
 
 def test_the_stats_arm_leaves_out_what_a_face_doesnt_have() -> None:
-    jaya = Card('Jaya Ballard', 'normal', (Face('Jaya Ballard', '{2}{R}{R}{R}', 5, 'Legendary Planeswalker — Jaya', '+1: …', loyalty='5'),))
+    jaya_text = ('+1: Add {R}{R}{R}. Spend this mana only to cast instant or sorcery spells.\n+1: Discard up to three cards, then draw that many cards.\n'
+                 '−8: You get an emblem with "You may cast instant and sorcery spells from your graveyard. If a spell cast this way would be put into your graveyard, exile it instead."')
+    jaya = Card('Jaya Ballard', 'normal', (Face('Jaya Ballard', '{2}{R}{R}{R}', 5, 'Legendary Planeswalker — Jaya', jaya_text, loyalty='5'),))
     land = Card('Forest', 'normal', (Face('Forest', '', 0, 'Basic Land — Forest', '({T}: Add {G}.)'),))
-    assert build_card_text(jaya, STATS) == '{2}{R}{R}{R} · Legendary Planeswalker — Jaya · Loyalty 5\n+1: …'
+    assert build_card_text(jaya, STATS) == '{2}{R}{R}{R} · Legendary Planeswalker — Jaya · Loyalty 5\n' + jaya_text
     assert build_card_text(land, STATS) == 'Basic Land — Forest\n({T}: Add {G}.)'
     assert build_card_text(KUMANO, STATS).split('\n//\n')[1].startswith('Enchantment Creature — Human Shaman · 2/2\n')
 
@@ -90,15 +92,24 @@ def test_a_legendarys_short_name_is_masked_and_reported_for_the_spot_check() -> 
     assert build_masked_text(odric) == ('First strike\nWhenever ~ and at least three other creatures attack, you choose which creatures block this combat and how those creatures block.',
                                         ('Odric',))
 
-def test_a_name_inside_a_longer_word_is_left_alone() -> None:
-    assert build_masked_text(Face('Shock', '{R}', 1, 'Instant', 'Shockwave and Shocked stay; Shock goes.')) == ('Shockwave and Shocked stay; ~ goes.', ())
+def test_the_name_is_matched_case_sensitively_as_a_whole_word() -> None:
+    fly = Face('Fly', '{U}', 1, 'Enchantment — Aura', 'Enchant creature\nEnchanted creature has flying and "Whenever this creature deals combat damage to a player, '
+               'venture into the dungeon." (Enter the first room or advance to the next room.)')
+    assert build_masked_text(fly) == (fly.oracle_text, ())  # "flying" stays.
 
 def test_a_short_name_is_masked_only_on_a_legendary() -> None:
-    assert build_masked_text(Face('Will, the Wise', '{U}', 1, 'Creature — Human', 'Will draw.')) == ('Will draw.', ())
+    nivix = Face('Nivix, Aerie of the Firemind', '', 0, 'Land', "{T}: Add {C}.\n{2}{U}{R}, {T}: Exile the top card of your library. Until your next turn, you may cast it if it's an instant or sorcery spell.")
+    assert build_masked_text(nivix) == (nivix.oracle_text, ())
 
 def test_each_face_is_masked_against_its_own_name() -> None:
-    ikoria = Card('Invasion of Ikoria', 'transform', (
-        Face('Invasion of Ikoria', '{X}{G}{G}', 2, 'Battle — Siege', 'When this Siege enters, search for Zilortha.'),
-        Face('Zilortha, Apex of Ikoria', '', 2, 'Legendary Creature — Dinosaur', 'Zilortha attacks. Invasion of Ikoria stays.', '8', '8')))
-    assert build_card_text(ikoria, MASKED) == ('Battle — Siege\nWhen this Siege enters, search for Zilortha.\n//\n'
-                                               'Legendary Creature — Dinosaur\n~ attacks. Invasion of Ikoria stays.')
+    huntmaster = Card('Huntmaster of the Fells', 'transform', (
+        Face('Huntmaster of the Fells', '{2}{R}{G}', 4, 'Creature — Human Werewolf',
+             'Whenever this creature enters or transforms into Huntmaster of the Fells, create a 2/2 green Wolf creature token and you gain 2 life.\n'
+             'At the beginning of each upkeep, if no spells were cast last turn, transform this creature.', '2', '2'),
+        Face('Ravager of the Fells', '', 4, 'Creature — Werewolf',
+             "Trample\nWhenever this creature transforms into Ravager of the Fells, it deals 2 damage to target opponent or planeswalker and 2 damage to up to "
+             "one target creature that player or that planeswalker's controller controls.\n"
+             'At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.', '4', '4')))
+    front, back = build_card_text(huntmaster, MASKED).split('\n//\n')
+    assert 'transforms into ~, create' in front and 'Fells' not in front
+    assert 'transforms into ~, it deals' in back and 'Fells' not in back

@@ -6,6 +6,9 @@ scenarios, and builds neighbour lists for the chosen cards and for the most-play
 whose neighbour lists differ most between encoders. Embeddings go to archetype_classifier/embeddings/ (gitignored); results to docs/experiments/.
 
     uv run --group archetypes python -m archetype_classifier.experiments.card_encoders --stage 1 --date 20261005
+    uv run --group archetypes python -m archetype_classifier.experiments.card_encoders --stage 1 --date 20261005 --encoders gte-modernbert
+
+With --encoders, only those encoders are run; the others keep their results from the existing results file and their saved embeddings.
 """
 import argparse
 import json
@@ -18,7 +21,7 @@ from typing import Any
 
 import numpy as np
 
-from archetype_classifier.card_embeddings.embeddings import Embeddings, build_embeddings, merge_embeddings, save_embeddings
+from archetype_classifier.card_embeddings.embeddings import EMBEDDINGS_DIR, Embeddings, build_embeddings, embeddings_path, load_embeddings, merge_embeddings, save_embeddings
 from archetype_classifier.card_embeddings.encoders import ENCODERS, load_encoder
 from archetype_classifier.card_embeddings.neighbours import build_all_neighbours, build_neighbours, build_overlap, build_rank
 from archetype_classifier.card_embeddings.pool import Card, load_card_pool
@@ -26,7 +29,7 @@ from archetype_classifier.card_embeddings.text import BASE, build_card_text
 from decksite.database import db
 
 OUT = Path(__file__).parents[1] / 'docs' / 'experiments'
-ORDER = ('potion', 'minilm', 'bge-small', 'bge-base')  # Fastest first.
+ORDER = ('potion', 'minilm', 'bge-small', 'bge-base', 'gte-modernbert')  # Fastest first.
 NEW_SEASON = 43
 LIST_SIZE = 10
 REPRINT_GROUPS = [["Ajani's Response", 'Grounded for Life', 'Seized from Slumber', 'Luminous Rebuke'], ['Llanowar Elves', 'Elvish Mystic', 'Fyndhorn Elves']]
@@ -110,6 +113,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--stage', type=int, choices=[1], required=True)
     parser.add_argument('--date', required=True, help='YYYYMMDD, for the results file name')
+    parser.add_argument('--encoders', nargs='+', choices=ORDER, help='run only these; the rest come from the existing results file')
     args = parser.parse_args()
 
     pool = load_card_pool()
@@ -122,19 +126,24 @@ def main() -> None:
     if missing := [n for n in [*LIST_CARDS, *VANILLAS, *(n for g in REPRINT_GROUPS for n in g)] if n not in names]:
         raise SystemExit(f'Not in the card pool: {", ".join(missing)}')
 
+    path = OUT / f'{args.date}_card_encoders_stage{args.stage}.json'
+    previous = json.loads(path.read_text())['encoders'] if args.encoders else {}
     results: dict[str, Any] = {'stage': 1, 'recipe': BASE.label, 'pool': len(pool), 'list_cards': LIST_CARDS,
                                'new_cards_shown': {n: latest[n] for n in new_shown}, 'card_text': {}, 'encoders': {}}
     by_name = {c.name: c for c in pool}
     all_embeddings = {}
     for name in ORDER:
-        results['encoders'][name], all_embeddings[name] = run_encoder(name, old, new, new_shown)
+        if args.encoders and name not in args.encoders:
+            if name in previous:
+                results['encoders'][name], all_embeddings[name] = previous[name], load_embeddings(embeddings_path(EMBEDDINGS_DIR, name, BASE))
+        else:
+            results['encoders'][name], all_embeddings[name] = run_encoder(name, old, new, new_shown)
     shown = set(LIST_CARDS) | set(new_shown) | {n for r in results['encoders'].values() for lists in (r['lists'], r['new_card_lists']) for ns in lists.values() for n, _ in ns}
     results['disagreement'] = build_disagreement(all_embeddings, {n for n, decks in recent.items() if decks >= PLAYED})
     shown |= {n for d in results['disagreement']['least_agreed'] for ns in [[d['card']], *d['lists'].values()] for n in ns}
     results['card_text'] = {n: build_card_text(by_name[n], BASE) for n in sorted(shown)}
 
     OUT.mkdir(parents=True, exist_ok=True)
-    path = OUT / f'{args.date}_card_encoders_stage{args.stage}.json'
     path.write_text(json.dumps(results, indent=1, ensure_ascii=False))
     print(f'Wrote {path}')
 

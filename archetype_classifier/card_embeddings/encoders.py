@@ -33,6 +33,7 @@ ENCODERS = {
     'bge-base': EncoderSpec('BAAI/bge-base-en-v1.5', 'a5beb1e3e68b9ab74eb54cfd186867f64f240e1a', 768),
     'potion': EncoderSpec('minishlab/potion-base-8M', 'bf8b056651a2c21b8d2565580b8569da283cab23', 256),
     'minilm': EncoderSpec('sentence-transformers/all-MiniLM-L6-v2', '1110a243fdf4706b3f48f1d95db1a4f5529b4d41', 384),
+    'gte-modernbert': EncoderSpec('Alibaba-NLP/gte-modernbert-base', 'e7f32e3c00f91d699e8c43b53106206bcc72bb22', 768),
 }
 
 

@@ -51,19 +51,25 @@ def rank(embeddings: Embeddings, card: str, other: str) -> int:
     return [n.name for n in build_neighbours(embeddings, card, len(embeddings.names))].index(other) + 1
 
 
+# Scenario: functional reprints get the same representation (Scenarios.md, "Card representation").
+
 @pytest.mark.parametrize('recipe', [BASE, STATS, MASKED], ids=lambda r: r.label)
 def test_functional_reprints_get_the_same_vector(embedded: dict[str, Embeddings], recipe: TextRecipe) -> None:
     embeddings = embedded[recipe.label]
     for group in REPRINT_GROUPS:
         assert all(similarity(embeddings, group[0], other) == pytest.approx(1, abs=TOLERANCE) for other in group[1:])
 
+# Scenarios: near-equivalent cards are close; a card's name in its own text doesn't push it away from its peers (Scenarios.md, "Card representation").
+
 def test_near_equivalents_and_names_in_text_are_reported(encoder: Encoder, embedded: dict[str, Embeddings]) -> None:
     for recipe in (BASE, MASKED):
         embeddings = embedded[recipe.label]
-        print(f"\n{encoder.name} {recipe.label}: Swift Response is #{rank(embeddings, 'Seized from Slumber', 'Swift Response')} for Seized from Slumber "
-              f"({similarity(embeddings, 'Seized from Slumber', 'Swift Response'):.3f}); "
+        swift = ', '.join(f"#{rank(embeddings, r, 'Swift Response')} for {r} ({similarity(embeddings, r, 'Swift Response'):.3f})" for r in REPRINT_GROUPS[0])
+        print(f"\n{encoder.name} {recipe.label}: Swift Response is {swift}; "
               f"Burst Lightning is #{rank(embeddings, 'Shock', 'Burst Lightning')} for Shock, Shock #{rank(embeddings, 'Burst Lightning', 'Shock')} "
               f"for Burst Lightning ({similarity(embeddings, 'Shock', 'Burst Lightning'):.3f})", end='')
+
+# Scenario: vanilla creatures differ only in cost, stats and type line (Scenarios.md, "Card representation").
 
 def test_the_vanilla_beasts_are_identical_in_the_base_arm_and_the_stats_arm_is_reported(encoder: Encoder, embedded: dict[str, Embeddings]) -> None:
     base = embedded[BASE.label]
@@ -71,6 +77,8 @@ def test_the_vanilla_beasts_are_identical_in_the_base_arm_and_the_stats_arm_is_r
     stats = embedded[STATS.label]
     pairs = [(a, b) for i, a in enumerate(VANILLAS) for b in VANILLAS[i + 1:]]
     print(f'\n{encoder.name}: ' + '; '.join(f'{a} / {b} base {similarity(base, a, b):.3f} stats {similarity(stats, a, b):.3f}' for a, b in pairs), end='')
+
+# Scenario: adding a set changes no other card's vector (Scenarios.md, "Card representation").
 
 def test_adding_the_cards_new_in_season_43_moves_no_other_vector(encoder: Encoder, pool: dict[str, Card], sample: list[Card], embedded: dict[str, Embeddings]) -> None:
     new = [c for c in pool.values() if min(c.seasons) == 43]

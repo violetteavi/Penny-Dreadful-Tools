@@ -92,3 +92,12 @@ def test_a_card_with_more_than_two_faces_uses_the_first_two_and_warns(caplog: py
     card = Card(' // '.join(names), 'split', tuple(Face(n, '{1}{W}', 2, 'Instant', '') for n in names))
     assert len(build_structured_vector(card)) == len(STRUCTURED_COLUMNS)
     assert 'Who // What // When // Where // Why has 5 faces' in caplog.text
+
+
+# Scenario: vanilla creatures differ only in cost, stats and type line (Scenarios.md, "Card representation").
+
+def test_the_structured_vector_tells_the_five_vanilla_creatures_apart() -> None:
+    vanillas = [single('Plated Seastrider', '{U}{U}', 2, 'Creature — Beast', '1', '4'), single('Kalonian Tusker', '{G}{G}', 2, 'Creature — Beast', '3', '3'),
+                single("Garruk's Gorehorn", '{4}{G}', 5, 'Creature — Beast', '7', '3'), single('Coral Eel', '{1}{U}', 2, 'Creature — Fish', '2', '1'),
+                single('Spined Wurm', '{4}{G}', 5, 'Creature — Wurm', '5', '4')]
+    assert len({build_structured_vector(c).tobytes() for c in vanillas}) == 5

@@ -10,8 +10,8 @@ class TextRecipe:
     mask: bool = False  # Replace the face's own name with ~.
 
 BASE = TextRecipe()
+FACE_SEPARATOR = '\n//\n'
 
 
 def build_card_text(card: Card, recipe: TextRecipe) -> str:
-    face = card.faces[0]
-    return f'{face.type_line}\n{face.oracle_text}'
+    return FACE_SEPARATOR.join(f'{face.type_line}\n{face.oracle_text}' for face in card.faces)

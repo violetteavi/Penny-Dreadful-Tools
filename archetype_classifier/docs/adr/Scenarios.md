@@ -72,7 +72,7 @@ The structured vector records power, toughness and loyalty each as three numbers
 - **Expect:** each card gets exactly the numbers in the table. Distress's power reads "absent", and Ornithopter's reads "present, and 0". The two are never equal.
 - **Why it matters:** a sorcery has no power. A value of 0 alone would make it look like a 0-power creature, which Ornithopter really is.
 - **Check:** build the structured vector for each card and compare it with the table.
-- **Open question: defense.** The cards database stores no defense for battles. It has no `defense` column, and the 36 legal battles (such as Invasion of Tolvada) have no loyalty, power or toughness either. Either leave defense out for now, or add it to the cards import from Scryfall, which is outside this effort's code.
+- **Open question: defense.** The cards database stores no defense for the 36 legal battles. Scryfall does report it, on the battle face: Invasion of Ikoria has `"defense": "6"`, and its back face, Zilortha, Apex of Ikoria, is 8/8. Our cards import drops it, for two reasons: the `face` table has no `defense` column, and `single_face_value` in `magic/multiverse.py` copies `power`, `toughness` and `loyalty` but not `defense`. Upstream issue [PennyDreadfulMTG#11170](https://github.com/PennyDreadfulMTG/Penny-Dreadful-Tools/issues/11170) (2023) covers adding it. **Proposed:** leave defense out of the structured vector until that is fixed; #36 can add it afterwards.
 
 ### Adding a set changes no other card's vector
 

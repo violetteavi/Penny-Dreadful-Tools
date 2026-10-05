@@ -27,3 +27,17 @@ KUMANO = Card('Kumano Faces Kakkazan', 'transform', (
 def test_a_double_faced_card_joins_its_faces_in_order() -> None:
     assert build_card_text(KUMANO, BASE) == ('Enchantment — Saga\n' + KUMANO.faces[0].oracle_text + '\n//\n'
                                              'Enchantment Creature — Human Shaman\n' + KUMANO.faces[1].oracle_text)
+
+
+def vanilla(name: str, mana_cost: str, cmc: float, type_line: str, power: str, toughness: str) -> Card:
+    return Card(name, 'normal', (Face(name, mana_cost, cmc, type_line, '', power, toughness),))
+
+PLATED_SEASTRIDER = vanilla('Plated Seastrider', '{U}{U}', 2, 'Creature — Beast', '1', '4')
+KALONIAN_TUSKER = vanilla('Kalonian Tusker', '{G}{G}', 2, 'Creature — Beast', '3', '3')
+GARRUKS_GOREHORN = vanilla("Garruk's Gorehorn", '{4}{G}', 5, 'Creature — Beast', '7', '3')
+
+
+# Scenario: vanilla creatures differ only in cost, stats and type line (Scenarios.md, "Card representation").
+
+def test_in_the_base_arm_the_three_vanilla_beasts_are_just_their_type_line() -> None:
+    assert {build_card_text(c, BASE) for c in (PLATED_SEASTRIDER, KALONIAN_TUSKER, GARRUKS_GOREHORN)} == {'Creature — Beast'}

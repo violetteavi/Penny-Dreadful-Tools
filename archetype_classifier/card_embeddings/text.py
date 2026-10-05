@@ -1,7 +1,7 @@
 """The text an encoder reads for a card: each face's type line and rules text, faces joined in order."""
 from dataclasses import dataclass
 
-from archetype_classifier.card_embeddings.pool import Card
+from archetype_classifier.card_embeddings.pool import Card, Face
 
 
 @dataclass(frozen=True)
@@ -14,4 +14,7 @@ FACE_SEPARATOR = '\n//\n'
 
 
 def build_card_text(card: Card, recipe: TextRecipe) -> str:
-    return FACE_SEPARATOR.join(f'{face.type_line}\n{face.oracle_text}' for face in card.faces)
+    return FACE_SEPARATOR.join(face_text(face) for face in card.faces)
+
+def face_text(face: Face) -> str:
+    return '\n'.join(part for part in (face.type_line, face.oracle_text) if part)

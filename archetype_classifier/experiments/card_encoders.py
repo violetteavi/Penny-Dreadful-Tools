@@ -21,6 +21,11 @@ each structured scheme (current, log, numbers). It runs the scenarios and the us
 combination and the other chosen cards for the log scheme at a few alphas, with the stats text format alongside for reference.
 
     uv run --group archetypes python -m archetype_classifier.experiments.card_encoders --stage 2b --date 20261005
+
+Stage 2c is stage 2b on the masked text format (each face's own name as ~), with extra checks and diagnostics: each column group's share of the
+standardised vectors, and text, structured and combined cosines for chosen pairs.
+
+    uv run --group archetypes python -m archetype_classifier.experiments.card_encoders --stage 2c --date 20261005
 """
 import argparse
 import json
@@ -33,12 +38,12 @@ from typing import Any
 
 import numpy as np
 
-from archetype_classifier.card_embeddings.combined import build_combined, build_standardisation
+from archetype_classifier.card_embeddings.combined import build_combined, build_group_shares, build_standardisation
 from archetype_classifier.card_embeddings.embeddings import EMBEDDINGS_DIR, Embeddings, build_embeddings, embeddings_path, load_embeddings, merge_embeddings, save_embeddings
 from archetype_classifier.card_embeddings.encoders import ENCODERS, load_encoder
 from archetype_classifier.card_embeddings.neighbours import build_all_neighbours, build_neighbours, build_overlap, build_rank
 from archetype_classifier.card_embeddings.pool import Card, load_card_pool
-from archetype_classifier.card_embeddings.structured import Scheme, build_structured_vector
+from archetype_classifier.card_embeddings.structured import Scheme, build_structured_vector, structured_columns
 from archetype_classifier.card_embeddings.text import BASE, RECIPES, STATS, build_card_text
 from decksite.database import db
 
@@ -64,12 +69,25 @@ STAGE2_RECIPES = ('base', 'json', 'json+masked', 'stats', 'labels')
 CHANGED_SHOWN = 6  # Played cards per format whose top 10 it changes most against the base format.
 FOCUS_CHECKS = {  # The user's reading of stage 2 (2026-10-05): each focus card, and the cards that should (or shouldn't) be near it.
     'Kalonian Tusker': ['Werewolf Pack Leader', 'Jibbirik Omnivore'],
-    'Lightning Strike': ['Explosive Welcome'],  # Should drop: the same text, five more mana.
+    'Lightning Strike': ['Searing Spear', 'Open Fire', 'Explosive Welcome'],  # Searing Spear is a functional reprint; Explosive Welcome should drop.
     'Eater of Virtue': ['Bonesplitter'],
 }
 ALPHAS = (0.0, 0.2, 0.4, 0.6, 0.8, 1.0)
 SCHEMES: tuple[Scheme, ...] = ('current', 'log', 'numbers')
 SHOWN_SCHEME, SHOWN_ALPHAS = 'log', (1.0, 0.8, 0.6, 0.4)  # For the chosen cards beyond the focus cards.
+DIAGNOSTIC_PAIRS = [('Lightning Strike', o) for o in ('Searing Spear', 'Open Fire', 'Lightning Blast', 'Explosive Welcome')] + \
+    [('Kalonian Tusker', 'Werewolf Pack Leader'), ('Kalonian Tusker', 'Jibbirik Omnivore'), ('Eater of Virtue', 'Bonesplitter')]
+DIAGNOSTIC_ALPHAS = (0.2, 0.6)
+COLUMN_GROUPS = {'mana_value': 'mana value', 'generic': 'cost breakdown', 'x': 'cost breakdown', 'hybrid': 'cost breakdown', 'phyrexian': 'cost breakdown',
+                 'pips': 'colour', 'colour': 'colour', 'power': 'stats', 'toughness': 'stats', 'loyalty': 'stats', 'type': 'types', 'supertype': 'types'}
+
+
+def column_group(column: str) -> str:
+    if column.startswith('back.'):
+        return 'back face'
+    if column.startswith('layout.'):
+        return 'layout'
+    return COLUMN_GROUPS[column.split('.')[1]]
 NEW_CARDS_SHOWN = 12  # The most-played cards new in season 43.
 PLAYED = 20  # Decks in seasons 39-43 a card needs to count as played, for the disagreement list.
 DISAGREEMENT_SHOWN = 15
@@ -173,16 +191,25 @@ def main_stage2b(args: argparse.Namespace, pool: Sequence[Card], recent: dict[st
     by_name = {c.name: c for c in pool}
     played = {n for n, decks in recent.items() if decks >= PLAYED}
     encoder = load_encoder('potion')
-    text = build_embeddings(pool, BASE, encoder)
+    text_recipe = RECIPES[args.text or ('masked' if args.stage == '2c' else 'base')]
+    text = build_embeddings(pool, text_recipe, encoder)
     stats_text = build_embeddings(pool, STATS, encoder)
     cards = [by_name[n] for n in text.names]
     candidates = [i for i, n in enumerate(text.names) if n in played]
     base_top = build_all_neighbours(text, LIST_SIZE)
     shown_cards = [c for c in [*LIST_CARDS, *NAME_CARDS] if c not in FOCUS_CHECKS]
     combos: dict[str, Any] = {}
+    shares: dict[str, Any] = {}
+    pairs: dict[str, Any] = {f'{a} / {b}': {'text': similarity(text, a, b)} for a, b in DIAGNOSTIC_PAIRS}
     for scheme in SCHEMES:
         standardised = build_standardisation(np.stack([build_structured_vector(c, scheme) for c in cards]))
         rows = standardised.apply(np.stack([build_structured_vector(c, scheme) for c in cards]))
+        shares[scheme] = build_group_shares(rows, structured_columns(scheme), column_group)
+        structured_only = build_combined(text, rows, 0.0)
+        for a, b in DIAGNOSTIC_PAIRS:
+            pair = pairs[f'{a} / {b}']
+            pair[scheme] = {'structured': similarity(structured_only, a, b),
+                            **{str(alpha): similarity(build_combined(text, rows, alpha), a, b) for alpha in DIAGNOSTIC_ALPHAS}}
         for alpha in ALPHAS:
             e = build_combined(text, rows, alpha, scheme)
             top = build_all_neighbours(e, LIST_SIZE)
@@ -198,7 +225,7 @@ def main_stage2b(args: argparse.Namespace, pool: Sequence[Card], recent: dict[st
             print(f'{scheme} alpha {alpha}: {focus}', flush=True)
     reference: dict[str, Any] = {'scenarios': build_scenarios(stats_text), 'lists': {card: neighbour_list(stats_text, card) for card in [*FOCUS_CHECKS, *shown_cards]},
                  'focus': {card: {o: [build_rank(stats_text, card, o), similarity(stats_text, card, o)] for o in others} for card, others in FOCUS_CHECKS.items()}}
-    results = {'stage': '2b', 'pool': len(pool), 'encoder': 'potion', 'text': BASE.label, 'alphas': ALPHAS, 'schemes': SCHEMES, 'focus_checks': FOCUS_CHECKS,
+    results = {'stage': args.stage, 'pool': len(pool), 'encoder': 'potion', 'text': text_recipe.label, 'group_shares': shares, 'pairs': pairs, 'alphas': ALPHAS, 'schemes': SCHEMES, 'focus_checks': FOCUS_CHECKS,
                'shown_scheme': SHOWN_SCHEME, 'shown_alphas': SHOWN_ALPHAS, 'shown_cards': shown_cards, 'played_cards': len(candidates),
                'combos': combos, 'stats_text': reference}
     shown = {*FOCUS_CHECKS, *shown_cards, *(o for others in FOCUS_CHECKS.values() for o in others)}
@@ -206,7 +233,7 @@ def main_stage2b(args: argparse.Namespace, pool: Sequence[Card], recent: dict[st
         shown |= {n for ns in combo['lists'].values() for n, _ in ns}
     results['card_text'] = {n: build_card_text(by_name[n], STATS) for n in sorted(shown)}
     OUT.mkdir(parents=True, exist_ok=True)
-    path = OUT / f'{args.date}_card_encoders_stage2b.json'
+    path = OUT / f'{args.date}_card_encoders_stage{args.stage}.json'
     path.write_text(json.dumps(results, indent=1, ensure_ascii=False))
     print(f'Wrote {path}')
 
@@ -237,9 +264,10 @@ def main_stage2(args: argparse.Namespace, pool: Sequence[Card], recent: dict[str
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--stage', choices=['1', '2', '2b'], required=True)
+    parser.add_argument('--stage', choices=['1', '2', '2b', '2c'], required=True)
     parser.add_argument('--date', required=True, help='YYYYMMDD, for the results file name')
     parser.add_argument('--encoders', nargs='+', choices=ORDER, help='stage 1: run only these, the rest come from the existing results file; stage 2: default potion')
+    parser.add_argument('--text', choices=sorted(RECIPES), help='stages 2b and 2c: the text format combined with the structured vector (default base for 2b, masked for 2c)')
     parser.add_argument('--recipes', nargs='+', choices=sorted(RECIPES), help=f'stage 2 only; default {", ".join(STAGE2_RECIPES)}')
     args = parser.parse_args()
 
@@ -256,7 +284,7 @@ def main() -> None:
     if args.stage == '2':
         main_stage2(args, pool, recent)
         return
-    if args.stage == '2b':
+    if args.stage in ('2b', '2c'):
         main_stage2b(args, pool, recent)
         return
 

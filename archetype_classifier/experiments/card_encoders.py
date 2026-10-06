@@ -170,6 +170,11 @@ def main_stage2(args: argparse.Namespace, pool: Sequence[Card], recent: dict[str
     results['card_text'] = {label: {n: build_card_text(by_name[n], RECIPES[label]) for n in sorted(shown)} for label in recipe_labels}
     OUT.mkdir(parents=True, exist_ok=True)
     path = OUT / f'{args.date}_card_encoders_stage2.json'
+    if path.exists():  # Keep the other encoders' results: each run adds or replaces only its own.
+        previous = json.loads(path.read_text())
+        results['encoders'] = {**previous['encoders'], **results['encoders']}
+        for label, texts in previous['card_text'].items():
+            results['card_text'][label] = {**texts, **results['card_text'].get(label, {})}
     path.write_text(json.dumps(results, indent=1, ensure_ascii=False))
     print(f'Wrote {path}')
 

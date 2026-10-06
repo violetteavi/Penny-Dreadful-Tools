@@ -32,6 +32,11 @@ similarity, compared on front faces (split cards summed). It also runs the avera
 third each) for the comparison section, with per-group diagnostics for chosen pairs.
 
     uv run --group archetypes python -m archetype_classifier.experiments.card_encoders --stage 2d --date 20261005
+
+Stage 2e is stage 2d with average thirds as the main approach (the one whose lists cover every chosen card) and alpha = 0, 0.4, 0.5, 0.6, with exact
+thirds for comparison; --alphas overrides the alphas (alpha 1, the text alone, is always added as the baseline).
+
+    uv run --group archetypes python -m archetype_classifier.experiments.card_encoders --stage 2e --date 20261006
 """
 import argparse
 import json
@@ -86,6 +91,9 @@ DIAGNOSTIC_PAIRS = [('Lightning Strike', o) for o in ('Searing Spear', 'Open Fir
 DIAGNOSTIC_ALPHAS = (0.2, 0.6)
 STAGE2D_PAIRS = [*DIAGNOSTIC_PAIRS, *(('Jace, Wielder of Mysteries', c) for c in ('Adeline, Resplendent Cathar', 'Chandra, Pyromaster', 'Chandra, Pyrogenius'))]
 COMPARISON_ALPHA = 0.6  # The alpha at which the comparison section shows lists.
+STAGE2E_ALPHAS = (0.0, 0.4, 0.5, 0.6)
+STAGE2E_SHOWN_ALPHAS = (1.0, 0.6, 0.5, 0.4)
+STAGE2E_DIAGNOSTIC_ALPHAS = (0.4, 0.6)
 COLUMN_GROUPS = {'mana_value': 'mana value', 'generic': 'cost breakdown', 'x': 'cost breakdown', 'hybrid': 'cost breakdown', 'phyrexian': 'cost breakdown',
                  'pips': 'colour', 'colour': 'colour', 'power': 'stats', 'toughness': 'stats', 'loyalty': 'stats', 'type': 'types', 'supertype': 'types'}
 
@@ -265,13 +273,16 @@ def main_stage2d(args: argparse.Namespace, pool: Sequence[Card], recent: dict[st
     candidates = [i for i, n in enumerate(text.names) if n in played]
     base_top = build_all_neighbours(text, LIST_SIZE)
     shown_cards = [c for c in [*LIST_CARDS, *NAME_CARDS] if c not in FOCUS_CHECKS]
+    main = 'average' if args.stage == '2e' else 'exact'  # The approach whose lists cover every chosen card.
+    alphas = tuple(sorted({*(args.alphas or (STAGE2E_ALPHAS if args.stage == '2e' else ALPHAS)), 1.0}))
+    shown_alphas = STAGE2E_SHOWN_ALPHAS if args.stage == '2e' else SHOWN_ALPHAS
+    diagnostic_alphas = STAGE2E_DIAGNOSTIC_ALPHAS if args.stage == '2e' else DIAGNOSTIC_ALPHAS
     combos: dict[str, Any] = {}
-    for alpha in ALPHAS:
-        exact = GroupedSimilarity(text, numbers, centring, alpha)
-        exact_cards = [*FOCUS_CHECKS, *(shown_cards if alpha in SHOWN_ALPHAS else [])]
-        combos[f'exact@{alpha}'] = {'approach': 'exact', 'alpha': alpha, **stage2d_combo(exact, base_top, candidates, exact_cards)}
-        average = build_combined(text, average_rows, alpha, 'average thirds')
-        combos[f'average@{alpha}'] = {'approach': 'average', 'alpha': alpha, **stage2d_combo(average, base_top, candidates, list(FOCUS_CHECKS))}
+    for alpha in alphas:
+        approaches = {'exact': GroupedSimilarity(text, numbers, centring, alpha), 'average': build_combined(text, average_rows, alpha, 'average thirds')}
+        for approach, similarities in approaches.items():
+            cards = [*FOCUS_CHECKS, *(shown_cards if approach == main and alpha in shown_alphas else [])]
+            combos[f'{approach}@{alpha}'] = {'approach': approach, 'alpha': alpha, **stage2d_combo(similarities, base_top, candidates, cards)}
         for approach in ('exact', 'average'):
             focus = '; '.join(f'{o} #{r[0]}' for checks in combos[f'{approach}@{alpha}']['focus'].values() for o, r in checks.items())
             print(f'{approach} alpha {alpha}: {focus}', flush=True)
@@ -281,15 +292,15 @@ def main_stage2d(args: argparse.Namespace, pool: Sequence[Card], recent: dict[st
         groups = GroupedSimilarity(text, numbers, centring, 1.0).group_similarities(a, b)
         pairs[f'{a} / {b}'] = {
             'text': groups['text'], 'mana value': groups['mana value'], 'colour': groups['colour'], 'stats': groups['stats'],
-            'exact': {'structured': groups['structured'], **{str(al): al * groups['text'] + (1 - al) * groups['structured'] for al in DIAGNOSTIC_ALPHAS}},
+            'exact': {'structured': groups['structured'], **{str(al): al * groups['text'] + (1 - al) * groups['structured'] for al in diagnostic_alphas}},
             'average': {'structured': similarity(structured_only, a, b),
-                        **{str(al): similarity(build_combined(text, average_rows, al), a, b) for al in DIAGNOSTIC_ALPHAS}},
+                        **{str(al): similarity(build_combined(text, average_rows, al), a, b) for al in diagnostic_alphas}},
         }
     reference: dict[str, Any] = {'scenarios': build_scenarios(stats_text), 'lists': {card: neighbour_list(stats_text, card) for card in [*FOCUS_CHECKS, *shown_cards]},
                                  'focus': {card: {o: [build_rank(stats_text, card, o), similarity(stats_text, card, o)] for o in others}
                                            for card, others in FOCUS_CHECKS.items()}}
-    results = {'stage': '2d', 'pool': len(pool), 'encoder': 'potion', 'text': MASKED.label, 'alphas': ALPHAS, 'focus_checks': FOCUS_CHECKS,
-               'shown_alphas': SHOWN_ALPHAS, 'shown_cards': shown_cards, 'comparison_alpha': COMPARISON_ALPHA, 'played_cards': len(candidates),
+    results = {'stage': args.stage, 'main': main, 'pool': len(pool), 'encoder': 'potion', 'text': MASKED.label, 'alphas': alphas, 'focus_checks': FOCUS_CHECKS,
+               'shown_alphas': shown_alphas, 'diagnostic_alphas': diagnostic_alphas, 'shown_cards': shown_cards, 'comparison_alpha': COMPARISON_ALPHA, 'played_cards': len(candidates),
                'colour_means': centring.mean.tolist(), 'average_value_means': average_fit.value_means.tolist(),
                'average_group_scales': average_fit.scales.tolist(),
                'average_group_shares': build_group_shares(average_rows, AVERAGE_THIRDS_COLUMNS, average_thirds_group),
@@ -299,7 +310,7 @@ def main_stage2d(args: argparse.Namespace, pool: Sequence[Card], recent: dict[st
         shown |= {n for ns in combo['lists'].values() for n, _ in ns}
     results['card_text'] = {n: build_card_text(by_name[n], STATS) for n in sorted(shown)}
     OUT.mkdir(parents=True, exist_ok=True)
-    path = OUT / f'{args.date}_card_encoders_stage2d.json'
+    path = OUT / f'{args.date}_card_encoders_stage{args.stage}.json'
     path.write_text(json.dumps(results, indent=1, ensure_ascii=False))
     print(f'Wrote {path}')
 
@@ -330,7 +341,8 @@ def main_stage2(args: argparse.Namespace, pool: Sequence[Card], recent: dict[str
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--stage', choices=['1', '2', '2b', '2c', '2d'], required=True)
+    parser.add_argument('--stage', choices=['1', '2', '2b', '2c', '2d', '2e'], required=True)
+    parser.add_argument('--alphas', nargs='+', type=float, help='stages 2d and 2e: the alphas to run (alpha 1 is always added)')
     parser.add_argument('--date', required=True, help='YYYYMMDD, for the results file name')
     parser.add_argument('--encoders', nargs='+', choices=ORDER, help='stage 1: run only these, the rest come from the existing results file; stage 2: default potion')
     parser.add_argument('--text', choices=sorted(RECIPES), help='stages 2b and 2c: the text format combined with the structured vector (default base for 2b, masked for 2c)')
@@ -350,7 +362,7 @@ def main() -> None:
     if args.stage == '2':
         main_stage2(args, pool, recent)
         return
-    if args.stage == '2d':
+    if args.stage in ('2d', '2e'):
         main_stage2d(args, pool, recent)
         return
     if args.stage in ('2b', '2c'):

@@ -4,6 +4,7 @@ Structured columns are standardised with statistics fitted once and then frozen,
 The combined vector for a card is [sqrt(alpha) * text, sqrt(1 - alpha) * structured / |structured|], so the dot product of two combined vectors is
 alpha * text cosine + (1 - alpha) * structured cosine, and the result is an ordinary Embeddings that the neighbour functions work on unchanged.
 """
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -33,3 +34,11 @@ def build_combined(text: Embeddings, structured: np.ndarray, alpha: float, schem
     matrix = np.hstack([np.sqrt(alpha) * text.matrix, np.sqrt(1 - alpha) * unit]).astype(np.float32)
     manifest = {**text.manifest, 'alpha': alpha, **({'structured': scheme} if scheme else {})}
     return Embeddings(text.names, matrix, manifest)
+
+def build_group_shares(rows: np.ndarray, columns: Sequence[str], group_of: Callable[[str], str]) -> dict[str, float]:
+    """Each column group's share of a row's squared length, averaged over the rows that aren't all zero: how much each group can move a cosine."""
+    squares = rows.astype(np.float64) ** 2
+    totals = squares.sum(axis=1)
+    kept = squares[totals > 0] / totals[totals > 0, None]
+    groups = [group_of(c) for c in columns]
+    return {g: float(kept[:, [i for i, x in enumerate(groups) if x == g]].sum(axis=1).mean()) for g in dict.fromkeys(groups)}

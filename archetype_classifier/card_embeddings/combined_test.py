@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from archetype_classifier.card_embeddings.combined import build_combined, build_standardisation
+from archetype_classifier.card_embeddings.combined import build_combined, build_group_shares, build_standardisation
 from archetype_classifier.card_embeddings.embeddings import Embeddings
 from archetype_classifier.card_embeddings.neighbours import build_neighbours
 
@@ -63,3 +63,11 @@ def test_a_card_with_an_all_zero_structured_row_keeps_only_its_text() -> None:
 def test_structured_rows_must_match_the_text_rows() -> None:
     with pytest.raises(ValueError, match='4 cards of text but 3 structured rows'):
         build_combined(TEXT, STRUCTURED[:3], 0.5)
+
+
+# How much of each card's standardised vector each column group takes up, averaged over cards.
+
+def test_group_shares_average_each_groups_share_of_each_rows_squared_length() -> None:
+    rows = np.array([[3, 4, 0], [0, 0, 2], [0, 0, 0]], dtype=np.float32)  # Shares: (9/25, 16/25, 0) and (0, 0, 1); an all-zero row is skipped.
+    shares = build_group_shares(rows, ('front.mana_value', 'front.colour.R', 'back.mana_value'), lambda c: c.split('.')[1])
+    assert shares == pytest.approx({'mana_value': (9 / 25 + 1) / 2, 'colour': (16 / 25) / 2})

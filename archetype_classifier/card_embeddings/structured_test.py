@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from archetype_classifier.card_embeddings.pool import Card, Face
-from archetype_classifier.card_embeddings.structured import STRUCTURED_COLUMNS, Scheme, build_structured_vector, structured_columns
+from archetype_classifier.card_embeddings.structured import ABSENT, STRUCTURED_COLUMNS, CardNumbers, Scalar, Scheme, build_card_numbers, build_front_numbers, build_structured_vector, structured_columns
 
 
 def single(name: str, mana_cost: str, cmc: float, type_line: str, power: str | None = None, toughness: str | None = None, loyalty: str | None = None) -> Card:
@@ -150,3 +150,51 @@ def test_the_numbers_scheme_keeps_only_mana_value_colours_and_stats() -> None:
 def test_the_current_scheme_is_the_default_and_unchanged() -> None:
     assert structured_columns('current') == STRUCTURED_COLUMNS
     assert np.array_equal(build_structured_vector(KALONIAN_TUSKER), build_structured_vector(KALONIAN_TUSKER, 'current'))
+
+
+# Front-face numbers for stage 2d (#7 spec, 2026-10-05): mana value, power, toughness and loyalty as (present, variable, fixed), and colours, from the
+# front face only, except that a split card sums both halves' mana values and takes both halves' colours.
+
+LIGHTNING_STRIKE = single('Lightning Strike', '{1}{R}', 2, 'Instant')
+FIREBALL = single('Fireball', '{X}{R}', 1, 'Sorcery')
+FOREST = single('Forest', '', 0, 'Basic Land — Forest')
+SHAPESHIFTER = single('Shapeshifter', '{6}', 6, 'Artifact Creature — Shapeshifter', '*', '7-*')
+SOULS_OF_THE_LOST = single('Souls of the Lost', '{1}{B}', 2, 'Creature — Spirit', '*', '*+1')
+NISSA = single('Nissa, Steward of Elements', '{X}{G}{U}', 2, 'Legendary Planeswalker — Nissa', loyalty='X')
+JACE = single('Jace, Wielder of Mysteries', '{1}{U}{U}{U}', 4, 'Legendary Planeswalker — Jace', loyalty='4')
+FIRE_ICE = Card('Fire // Ice', 'split', (Face('Fire', '{1}{R}', 2, 'Instant', ''), Face('Ice', '{1}{U}', 2, 'Instant', '')))
+HUNTMASTER = Card('Huntmaster of the Fells', 'transform', (Face('Huntmaster of the Fells', '{2}{R}{G}', 4, 'Creature — Human Werewolf', '', '2', '2'),
+                                                           Face('Ravager of the Fells', '', 4, 'Creature — Werewolf', '', '4', '4')))
+
+@pytest.mark.parametrize(('card', 'expected'), [
+    (LIGHTNING_STRIKE, CardNumbers(Scalar(True, False, 2), ABSENT, ABSENT, ABSENT, frozenset('R'))),
+    (ORNITHOPTER, CardNumbers(Scalar(True, False, 0), Scalar(True, False, 0), Scalar(True, False, 2), ABSENT, frozenset())),
+    (FIREBALL, CardNumbers(Scalar(True, True, 1), ABSENT, ABSENT, ABSENT, frozenset('R'))),
+    (LHURGOYF, CardNumbers(Scalar(True, False, 4), Scalar(True, True, 0), Scalar(True, True, 1), ABSENT, frozenset('G'))),
+    (FOREST, CardNumbers(ABSENT, ABSENT, ABSENT, ABSENT, frozenset())),
+    (SHAPESHIFTER, CardNumbers(Scalar(True, False, 6), Scalar(True, True, 0), Scalar(True, True, 7, -1), ABSENT, frozenset())),
+    (SOULS_OF_THE_LOST, CardNumbers(Scalar(True, False, 2), Scalar(True, True, 0), Scalar(True, True, 1), ABSENT, frozenset('B'))),
+    (NISSA, CardNumbers(Scalar(True, True, 2), ABSENT, ABSENT, Scalar(True, True, 0), frozenset('GU'))),
+    (JACE, CardNumbers(Scalar(True, False, 4), ABSENT, ABSENT, Scalar(True, False, 4), frozenset('U'))),
+    (SPINAL_PARASITE, CardNumbers(Scalar(True, False, 5), Scalar(True, False, -1), Scalar(True, False, -1), ABSENT, frozenset())),
+])
+def test_a_cards_front_numbers(card: Card, expected: CardNumbers) -> None:
+    assert build_card_numbers(card) == expected
+
+def test_a_split_card_sums_both_halves_mana_values_and_takes_both_colours() -> None:
+    assert build_card_numbers(FIRE_ICE) == CardNumbers(Scalar(True, False, 4), ABSENT, ABSENT, ABSENT, frozenset('RU'))
+
+def test_a_double_faced_card_uses_its_front_face_only() -> None:
+    assert build_card_numbers(HUNTMASTER) == CardNumbers(Scalar(True, False, 4), Scalar(True, False, 2), Scalar(True, False, 2), ABSENT, frozenset('RG'))
+
+def test_hybrid_and_phyrexian_symbols_count_towards_each_of_their_colours() -> None:
+    assert build_card_numbers(DISCOVERY).colours == frozenset('UB')  # Discovery // Dispersal is split: {1}{U/B} and {3}{U}{B}.
+    assert build_card_numbers(DISCOVERY).mana_value == Scalar(True, False, 7)
+    assert build_card_numbers(single('Spined Thopter', '{2}{U/P}', 3, 'Artifact Creature — Phyrexian Thopter', '2', '1')).colours == frozenset('U')
+
+def test_front_numbers_stack_every_card_in_order_with_log_values() -> None:
+    numbers = build_front_numbers([LIGHTNING_STRIKE, KALONIAN_TUSKER, FOREST])
+    assert numbers.names == ('Lightning Strike', 'Kalonian Tusker', 'Forest')
+    assert numbers.present.tolist() == [[True, False, False, False], [True, True, True, False], [False, False, False, False]]
+    assert numbers.log_values()[1].tolist() == pytest.approx([math.log(3), math.log(4), math.log(4), 0])
+    assert numbers.colours.tolist() == [[0, 0, 0, 1, 0], [0, 0, 0, 0, 1], [0, 0, 0, 0, 0]]  # W U B R G.

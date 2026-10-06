@@ -79,6 +79,7 @@ The structured vector records power, toughness and loyalty each as three numbers
 Season 43 added 461 cards that are new to the pool, 148 of them from The Hobbit (HOB).
 
 - **Expect:** embed the cards legal in seasons 1–42, then embed the full pool including those 461. Every card in both runs gets the same vector, up to floating-point noise from batching (each element within 1e-5).
+- **The structured part too:** when the structured vector is combined with the text embedding, its columns are standardised with statistics fitted once and stored, so a new set's cards are standardised with the old statistics and no existing row moves. Refitting is a deliberate new version, not a side effect of adding a set.
 - **Why it matters:** a new set arrives about every two months. A frozen encoder reads each card on its own, so adding cards should need no other change: no re-embedding of old cards and no retraining of the encoder. If old vectors moved, every model built on them would have to be refitted at each set.
 - **Check:** compare the two runs' vectors for the shared cards. Also report how long the 461 new cards take to embed with each encoder.
 - **How it's checked:** a unit test with a fake encoder; a local test with each real encoder over a sample (1,000 cards from season 42 plus the scenario cards, then the same with the 461 added); and the stage 1 experiment, which embeds the 461 on their own and merges them in, as a new set would really be added, and re-embeds 461 older cards in a different batch to measure the noise.

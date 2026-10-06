@@ -1,9 +1,13 @@
+import math
+
 import numpy as np
 import pytest
 
-from archetype_classifier.card_embeddings.combined import build_combined, build_group_shares, build_standardisation
+from archetype_classifier.card_embeddings.combined import GroupedSimilarity, Standardisation, build_centring, build_combined, build_group_shares, build_standardisation
 from archetype_classifier.card_embeddings.embeddings import Embeddings
 from archetype_classifier.card_embeddings.neighbours import build_neighbours
+from archetype_classifier.card_embeddings.pool import Card, Face
+from archetype_classifier.card_embeddings.structured import build_front_numbers
 
 
 def unit(*rows: list[float]) -> np.ndarray:
@@ -71,3 +75,89 @@ def test_group_shares_average_each_groups_share_of_each_rows_squared_length() ->
     rows = np.array([[3, 4, 0], [0, 0, 2], [0, 0, 0]], dtype=np.float32)  # Shares: (9/25, 16/25, 0) and (0, 0, 1); an all-zero row is skipped.
     shares = build_group_shares(rows, ('front.mana_value', 'front.colour.R', 'back.mana_value'), lambda c: c.split('.')[1])
     assert shares == pytest.approx({'mana_value': (9 / 25 + 1) / 2, 'colour': (16 / 25) / 2})
+
+
+# Stage 2d: exact thirds (#7 spec, 2026-10-05). Mana value and stats compare log values when their (present, variable) pairs match and score 0 when not;
+# colour is the centred cosine rescaled to 0-1; the three are weighted a third each and mixed with the text cosine by alpha.
+
+def face_card(name: str, mana_cost: str, type_line: str, power: str | None = None, toughness: str | None = None, loyalty: str | None = None) -> Card:
+    return Card(name, 'normal', (Face(name, mana_cost, 0, type_line, '', power, toughness, loyalty),))
+
+CARDS = [
+    face_card('Adeline, Resplendent Cathar', '{1}{W}{W}', 'Legendary Creature — Human Knight', '*', '4'),
+    face_card('Chandra, Pyrogenius', '{4}{R}{R}', 'Legendary Planeswalker — Chandra', loyalty='5'),
+    face_card('Chandra, Pyromaster', '{2}{R}{R}', 'Legendary Planeswalker — Chandra', loyalty='4'),
+    face_card('Fireball', '{X}{R}', 'Sorcery'),
+    face_card('Forest', '', 'Basic Land — Forest'),
+    face_card('Island', '', 'Basic Land — Island'),
+    face_card('Jace, Wielder of Mysteries', '{1}{U}{U}{U}', 'Legendary Planeswalker — Jace', loyalty='4'),
+    face_card('Jibbirik Omnivore', '{1}{G}', 'Creature — Beast', '3', '2'),
+    face_card('Kalonian Tusker', '{G}{G}', 'Creature — Beast', '3', '3'),
+    face_card('Lhurgoyf', '{2}{G}{G}', 'Creature — Lhurgoyf', '*', '1+*'),
+    face_card('Lightning Strike', '{1}{R}', 'Instant'),
+    face_card('Ornithopter', '{0}', 'Artifact Creature — Thopter', '0', '2'),
+    face_card('Rolling Thunder', '{X}{R}{R}', 'Sorcery'),
+    face_card('Searing Spear', '{1}{R}', 'Instant'),
+    face_card('Shock', '{R}', 'Instant'),
+]
+NUMBERS = build_front_numbers(CARDS)
+POOL_COLOUR_MEANS = np.array([0.210, 0.204, 0.208, 0.209, 0.205])  # W U B R G across the real pool.
+CENTRING = Standardisation(POOL_COLOUR_MEANS, np.ones(5))
+CARD_TEXT = Embeddings(NUMBERS.names, unit(*[[1.0, i / 10] for i in range(len(CARDS))]), {})
+
+def groups(a: str, b: str, alpha: float = 0.5) -> dict[str, float]:
+    return GroupedSimilarity(CARD_TEXT, NUMBERS, CENTRING, alpha).group_similarities(a, b)
+
+@pytest.mark.parametrize(('a', 'b', 'expected'), [
+    ('Lightning Strike', 'Searing Spear', 1.0),
+    ('Lightning Strike', 'Jace, Wielder of Mysteries', math.exp(-math.log(5 / 3))),  # 2 against 4: about 0.60.
+    ('Fireball', 'Shock', 0.0),  # Variable against fixed.
+    ('Fireball', 'Rolling Thunder', math.exp(-math.log(3 / 2))),  # Fixed parts 1 and 2: about 0.67.
+    ('Forest', 'Island', 1.0),  # Neither has a mana cost.
+    ('Forest', 'Ornithopter', 0.0),  # No cost against {0}.
+])
+def test_mana_value_similarity(a: str, b: str, expected: float) -> None:
+    assert groups(a, b)['mana value'] == pytest.approx(expected)
+
+@pytest.mark.parametrize(('a', 'b', 'expected'), [
+    ('Lightning Strike', 'Shock', 1.0),
+    ('Ornithopter', 'Lightning Strike', 0.0),
+    ('Kalonian Tusker', 'Jibbirik Omnivore', 0.75),  # exp(-|log 4 - log 3|).
+    ('Kalonian Tusker', 'Lhurgoyf', 0.0),  # Fixed against variable.
+    ('Adeline, Resplendent Cathar', 'Jace, Wielder of Mysteries', 0.0),
+    ('Chandra, Pyromaster', 'Jace, Wielder of Mysteries', 1.0),
+    ('Chandra, Pyrogenius', 'Jace, Wielder of Mysteries', 5 / 6),  # exp(-|log 6 - log 5|).
+])
+def test_stats_similarity(a: str, b: str, expected: float) -> None:
+    assert groups(a, b)['stats'] == pytest.approx(expected)
+
+def test_colour_similarity_is_the_centred_cosine_rescaled_to_0_1() -> None:
+    assert groups('Lightning Strike', 'Shock')['colour'] == pytest.approx(1.0)
+    assert groups('Adeline, Resplendent Cathar', 'Jace, Wielder of Mysteries')['colour'] == pytest.approx(0.376, abs=1e-3)  # W against U.
+
+def test_the_structured_similarity_weighs_each_group_a_third_and_alpha_mixes_in_the_text() -> None:
+    g = groups('Chandra, Pyrogenius', 'Jace, Wielder of Mysteries', alpha=0.6)
+    assert g['structured'] == pytest.approx((g['mana value'] + g['colour'] + g['stats']) / 3)
+    assert g['similarity'] == pytest.approx(0.6 * g['text'] + 0.4 * g['structured'])
+    assert g['structured'] == pytest.approx((math.exp(-math.log(7 / 5)) + 0.376 + 5 / 6) / 3, abs=1e-3)  # The spec's 0.64.
+
+def test_alpha_1_is_the_text_cosine_and_alpha_0_the_structured_similarity() -> None:
+    text_only = GroupedSimilarity(CARD_TEXT, NUMBERS, CENTRING, 1.0)
+    assert np.allclose(text_only.similarities(0, len(CARDS)), CARD_TEXT.similarities(0, len(CARDS)))
+    numbers_only = GroupedSimilarity(CARD_TEXT, NUMBERS, CENTRING, 0.0)
+    i, j = NUMBERS.names.index('Kalonian Tusker'), NUMBERS.names.index('Jibbirik Omnivore')
+    assert numbers_only.similarities(i, i + 1)[0, j] == pytest.approx(groups('Kalonian Tusker', 'Jibbirik Omnivore')['structured'])
+
+def test_the_neighbour_functions_work_on_the_grouped_similarity() -> None:
+    similarity = GroupedSimilarity(CARD_TEXT, NUMBERS, CENTRING, 0.0)
+    assert build_neighbours(similarity, 'Lightning Strike', 1)[0].name == 'Searing Spear'  # Identical numbers; the text is ignored at alpha 0.
+
+def test_colour_centring_is_fitted_once_and_frozen() -> None:
+    old, new = NUMBERS.colours[:10], NUMBERS.colours[10:]
+    centring = build_centring(old)
+    assert np.allclose(centring.mean, old.mean(axis=0)) and np.array_equal(centring.scale, np.ones(5))
+    assert np.array_equal(centring.apply(np.concatenate([old, new]))[:10], centring.apply(old))
+
+def test_text_and_numbers_must_be_for_the_same_cards_in_the_same_order() -> None:
+    with pytest.raises(ValueError, match='The text and the numbers are for different cards'):
+        GroupedSimilarity(Embeddings(tuple(reversed(NUMBERS.names)), CARD_TEXT.matrix, {}), NUMBERS, CENTRING, 0.5)

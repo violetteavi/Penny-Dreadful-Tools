@@ -25,6 +25,10 @@ class Embeddings:
     matrix: np.ndarray  # One unit-length row per name.
     manifest: dict[str, JSON]
 
+    def similarities(self, start: int, stop: int) -> np.ndarray:
+        """The cosine similarity of cards start to stop with every card: rows are unit length, so it's a dot product."""
+        return self.matrix[start:stop] @ self.matrix.T
+
 
 def build_embeddings(cards: Sequence[Card], recipe: TextRecipe, encoder: Encoder) -> Embeddings:
     ordered = sorted(cards, key=lambda c: c.name)

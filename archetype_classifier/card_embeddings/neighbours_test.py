@@ -69,3 +69,23 @@ def test_every_cards_top_neighbours_at_once_match_its_own_list() -> None:
 
 def test_overlap_is_the_share_of_two_lists_in_common() -> None:
     assert build_overlap(np.array([[1, 2, 3], [4, 5, 6]]), np.array([[3, 2, 9], [7, 8, 9]])).tolist() == pytest.approx([2 / 3, 0])
+
+
+# Neighbours from any similarity, not only embeddings' cosines.
+
+class TableSimilarity:
+    """A fixed similarity table, which no set of embeddings could produce (not symmetric in its scale)."""
+    names = ('A', 'B', 'C', 'D')
+    table = np.array([[1, 0.2, 0.9, 0.2], [0.2, 1, 0.1, 0.5], [0.9, 0.1, 1, 0.3], [0.2, 0.5, 0.3, 1]], dtype=np.float32)
+
+    def similarities(self, start: int, stop: int) -> np.ndarray:
+        return self.table[start:stop].copy()
+
+def test_neighbours_rank_and_every_cards_top_work_from_any_similarity() -> None:
+    table = TableSimilarity()
+    assert [(n.name, round(n.similarity, 2)) for n in build_neighbours(table, 'A', 3)] == [('C', 0.9), ('B', 0.2), ('D', 0.2)]  # B and D tie: by name.
+    assert build_rank(table, 'B', 'D') == 1
+    assert build_all_neighbours(table, 2, chunk=3).tolist() == [[2, 1], [3, 0], [0, 3], [1, 2]]
+
+def test_embeddings_give_their_cosines_as_similarities() -> None:
+    assert np.allclose(EMBEDDINGS.similarities(1, 3), EMBEDDINGS.matrix[1:3] @ EMBEDDINGS.matrix.T)

@@ -1,7 +1,10 @@
+import math
+
+import numpy as np
 import pytest
 
 from archetype_classifier.card_embeddings.pool import Card, Face
-from archetype_classifier.card_embeddings.structured import STRUCTURED_COLUMNS, build_structured_vector
+from archetype_classifier.card_embeddings.structured import STRUCTURED_COLUMNS, Scheme, build_structured_vector, structured_columns
 
 
 def single(name: str, mana_cost: str, cmc: float, type_line: str, power: str | None = None, toughness: str | None = None, loyalty: str | None = None) -> Card:
@@ -101,3 +104,49 @@ def test_the_structured_vector_tells_the_five_vanilla_creatures_apart() -> None:
                 single("Garruk's Gorehorn", '{4}{G}', 5, 'Creature — Beast', '7', '3'), single('Coral Eel', '{1}{U}', 2, 'Creature — Fish', '2', '1'),
                 single('Spined Wurm', '{4}{G}', 5, 'Creature — Wurm', '5', '4')]
     assert len({build_structured_vector(c).tobytes() for c in vanillas}) == 5
+
+
+# The 2b schemes (agreed 2026-10-05, #7). log: mana value and stats as log(max(1, 1 + value)), colours as five booleans from the mana cost, types and
+# layout as before. numbers: the same without types and layout, which the text already carries.
+
+def values(card: Card, scheme: Scheme) -> dict[str, float]:
+    """Every non-zero column of the card's front block and layout, without the 'front.' prefix."""
+    vector = build_structured_vector(card, scheme)
+    return {c.removeprefix('front.'): v for c, v in zip(structured_columns(scheme), vector) if not c.startswith('back.') and v}
+
+KALONIAN_TUSKER = single('Kalonian Tusker', '{G}{G}', 2, 'Creature — Beast', '3', '3')
+SPINAL_PARASITE = single('Spinal Parasite', '{5}', 5, 'Artifact Creature — Insect', '-1', '-1')
+PROGENITUS = single('Progenitus', '{W}{W}{U}{U}{B}{B}{R}{R}{G}{G}', 10, 'Legendary Creature — Hydra Avatar', '10', '10')
+LHURGOYF = single('Lhurgoyf', '{2}{G}{G}', 4, 'Creature — Lhurgoyf', '*', '1+*')
+
+@pytest.mark.parametrize(('card', 'expected'), [
+    (KALONIAN_TUSKER, {'mana_value': math.log(3), 'colour.G': 1, 'type.Creature': 1, 'power.present': 1, 'power.value': math.log(4),
+                       'toughness.present': 1, 'toughness.value': math.log(4), 'layout.normal': 1}),
+    (SPINAL_PARASITE, {'mana_value': math.log(6), 'type.Artifact': 1, 'type.Creature': 1, 'power.present': 1, 'toughness.present': 1, 'layout.normal': 1}),
+    (PROGENITUS, {'mana_value': math.log(11), **{f'colour.{c}': 1 for c in 'WUBRG'}, 'supertype.Legendary': 1, 'type.Creature': 1,
+                  'power.present': 1, 'power.value': math.log(11), 'toughness.present': 1, 'toughness.value': math.log(11), 'layout.normal': 1}),
+    (LHURGOYF, {'mana_value': math.log(5), 'colour.G': 1, 'type.Creature': 1, 'power.present': 1, 'power.variable': 1,
+                'toughness.present': 1, 'toughness.value': math.log(2), 'toughness.variable': 1, 'layout.normal': 1}),
+    (DISTRESS, {'mana_value': math.log(3), 'colour.B': 1, 'type.Sorcery': 1, 'layout.normal': 1}),
+])
+def test_the_log_scheme_logs_mana_value_and_stats_and_keeps_only_which_colours(card: Card, expected: dict[str, float]) -> None:
+    assert values(card, 'log') == pytest.approx(expected)
+
+def test_the_log_scheme_counts_a_hybrid_symbol_towards_both_colours_and_x_as_nothing() -> None:
+    assert values(DISCOVERY, 'log') == pytest.approx({'mana_value': math.log(3), 'colour.U': 1, 'colour.B': 1, 'type.Sorcery': 1, 'layout.split': 1})
+    ikoria = single('Invasion of Ikoria', '{X}{G}{G}', 2, 'Battle — Siege')
+    assert values(ikoria, 'log') == pytest.approx({'mana_value': math.log(3), 'colour.G': 1, 'type.Battle': 1, 'layout.normal': 1})
+
+def test_the_log_scheme_gives_a_back_face_its_own_block() -> None:
+    back = {c: v for c, v in zip(structured_columns('log'), build_structured_vector(WESTVALE_ABBEY, 'log')) if c.startswith('back.') and v}
+    assert back == pytest.approx({'back.supertype.Legendary': 1, 'back.type.Creature': 1, 'back.power.present': 1,  # Mana value 0 logs to 0.
+                                  'back.power.value': math.log(10), 'back.toughness.present': 1, 'back.toughness.value': math.log(8)})
+
+def test_the_numbers_scheme_keeps_only_mana_value_colours_and_stats() -> None:
+    assert values(KALONIAN_TUSKER, 'numbers') == pytest.approx({'mana_value': math.log(3), 'colour.G': 1, 'power.present': 1, 'power.value': math.log(4),
+                                                                'toughness.present': 1, 'toughness.value': math.log(4)})
+    assert not [c for c in structured_columns('numbers') if '.type.' in c or '.supertype.' in c or c.startswith('layout.')]
+
+def test_the_current_scheme_is_the_default_and_unchanged() -> None:
+    assert structured_columns('current') == STRUCTURED_COLUMNS
+    assert np.array_equal(build_structured_vector(KALONIAN_TUSKER), build_structured_vector(KALONIAN_TUSKER, 'current'))

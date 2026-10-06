@@ -3,7 +3,7 @@ import math
 import numpy as np
 import pytest
 
-from archetype_classifier.card_embeddings.combined import GroupedSimilarity, Standardisation, build_centring, build_combined, build_group_shares, build_standardisation
+from archetype_classifier.card_embeddings.combined import AVERAGE_THIRDS_COLUMNS, GroupedSimilarity, Standardisation, average_thirds_group, build_average_thirds, build_centring, build_combined, build_group_shares, build_standardisation
 from archetype_classifier.card_embeddings.embeddings import Embeddings
 from archetype_classifier.card_embeddings.neighbours import build_neighbours
 from archetype_classifier.card_embeddings.pool import Card, Face
@@ -161,3 +161,44 @@ def test_colour_centring_is_fitted_once_and_frozen() -> None:
 def test_text_and_numbers_must_be_for_the_same_cards_in_the_same_order() -> None:
     with pytest.raises(ValueError, match='The text and the numbers are for different cards'):
         GroupedSimilarity(Embeddings(tuple(reversed(NUMBERS.names)), CARD_TEXT.matrix, {}), NUMBERS, CENTRING, 0.5)
+
+
+# The comparison approach, average thirds: one cosine over a vector whose mana value, colour and stats groups each make up a third of its squared
+# length on average. Yes/no columns are centred; values are logged and standardised; a missing value is filled with the mean (0 after standardising),
+# and a variable one is its fixed part plus the mean of the fixed values.
+
+FIT = build_average_thirds(NUMBERS)
+
+def column(name: str) -> int:
+    return AVERAGE_THIRDS_COLUMNS.index(name)
+
+def test_a_missing_value_standardises_to_0() -> None:
+    rows = FIT.standardised(NUMBERS)
+    assert rows[NUMBERS.names.index('Lightning Strike'), column('power.value')] == 0
+    assert rows[NUMBERS.names.index('Forest'), column('mana_value.value')] == 0
+
+def test_a_variable_value_is_its_fixed_part_plus_the_mean_of_the_fixed_values() -> None:
+    fixed_power = [3, 0, 3]  # Jibbirik Omnivore, Ornithopter, Kalonian Tusker: the fixed powers among the cards.
+    mean = sum(fixed_power) / len(fixed_power)
+    logs = [math.log(max(1, 1 + p)) for p in fixed_power]
+    log_mean, log_std = float(np.mean(logs)), float(np.std(logs))
+    lhurgoyf = FIT.standardised(NUMBERS)[NUMBERS.names.index('Lhurgoyf'), column('power.value')]
+    assert lhurgoyf == pytest.approx((math.log(1 + 0 + mean) - log_mean) / log_std)
+
+def test_a_subtracted_variable_part_takes_the_mean_away() -> None:
+    shapeshifter = face_card('Shapeshifter', '{6}', 'Artifact Creature — Shapeshifter', '*', '7-*')
+    numbers = build_front_numbers([*CARDS, shapeshifter])
+    fit = build_average_thirds(numbers)
+    fixed_toughness = [2, 3, 2]  # Jibbirik Omnivore, Kalonian Tusker, Ornithopter; Adeline's 4 is fixed too.
+    fixed_toughness.append(4)
+    assert fit.value_means[2] == pytest.approx(sum(fixed_toughness) / len(fixed_toughness))
+    raw = fit.raw_values(numbers)[-1, 2]
+    assert raw == pytest.approx(7 - fit.value_means[2])
+
+def test_each_group_makes_up_a_third_on_average() -> None:
+    shares = build_group_shares(FIT.apply(NUMBERS), AVERAGE_THIRDS_COLUMNS, average_thirds_group)
+    assert shares == pytest.approx({'mana value': 1 / 3, 'colour': 1 / 3, 'stats': 1 / 3}, abs=1e-3)
+
+def test_the_average_thirds_statistics_are_frozen() -> None:
+    fit = build_average_thirds(build_front_numbers(CARDS[:10]))
+    assert np.array_equal(fit.apply(NUMBERS)[:10], fit.apply(build_front_numbers(CARDS[:10])))

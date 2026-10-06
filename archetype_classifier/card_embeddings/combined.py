@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from archetype_classifier.card_embeddings.embeddings import Embeddings
-from archetype_classifier.card_embeddings.structured import FrontNumbers
+from archetype_classifier.card_embeddings.structured import SCALARS, WUBRG, FrontNumbers
 
 
 @dataclass(frozen=True)
@@ -116,3 +116,69 @@ class GroupedSimilarity:
         text = float(self.text.similarities(i, i + 1)[0, j])
         return {'text': text, 'mana value': mana_value, 'colour': colour, 'stats': stats, 'structured': structured,
                 'similarity': self.alpha * text + (1 - self.alpha) * structured}
+
+
+# The comparison approach, average thirds (#7 spec, 2026-10-05): one vector per card, compared by a single cosine. Yes/no columns (each scalar's present
+# and variable flags, the colours) are centred; each scalar's value is logged and standardised, with a missing value filled by the mean (0 after
+# standardising) and a variable one set to its fixed part plus the mean of the fixed values. One scale per group, fitted so that mana value, colour and
+# stats each make up a third of a card's squared length on average. Every statistic is fitted once and frozen.
+
+def scalar_columns(scalar: str) -> tuple[str, ...]:
+    return f'{scalar}.present', f'{scalar}.variable', f'{scalar}.value'
+
+AVERAGE_THIRDS_COLUMNS = (*scalar_columns('mana_value'), *(f'colour.{c}' for c in WUBRG), *(c for s in SCALARS[1:] for c in scalar_columns(s)))
+GROUPS = ('mana value', 'colour', 'stats')
+SCALE_FITTING_ROUNDS = 200
+
+
+def average_thirds_group(column: str) -> str:
+    return {'mana_value': 'mana value', 'colour': 'colour'}.get(column.split('.')[0], 'stats')
+
+
+@dataclass(frozen=True)
+class AverageThirds:
+    flag_means: np.ndarray  # Rows present, variable; one column per scalar.
+    colour_means: np.ndarray
+    value_means: np.ndarray  # Each scalar's mean over present, fixed values, in raw units.
+    log_means: np.ndarray
+    log_stds: np.ndarray
+    scales: np.ndarray  # One per group, in GROUPS order.
+
+    def raw_values(self, numbers: FrontNumbers) -> np.ndarray:
+        """Fixed values as written; a variable value is its fixed part plus (or, for 7-*, minus) the mean; a missing value is the mean."""
+        filled = np.where(numbers.variable, numbers.fixed + numbers.sign * self.value_means, numbers.fixed)
+        return np.where(numbers.present, filled, self.value_means)
+
+    def standardised(self, numbers: FrontNumbers) -> np.ndarray:
+        """The columns before group scaling, in AVERAGE_THIRDS_COLUMNS order."""
+        values = (np.log(np.maximum(1.0, 1.0 + self.raw_values(numbers))) - self.log_means) / self.log_stds
+        values = np.where(numbers.present, values, 0.0)
+        present = numbers.present - self.flag_means[0]
+        variable = numbers.variable - self.flag_means[1]
+        blocks = [np.stack([present[:, i], variable[:, i], values[:, i]], axis=1) for i in range(len(SCALARS))]
+        return np.hstack([blocks[0], numbers.colours - self.colour_means, *blocks[1:]])
+
+    def apply(self, numbers: FrontNumbers) -> np.ndarray:
+        column_scales = np.array([self.scales[GROUPS.index(average_thirds_group(c))] for c in AVERAGE_THIRDS_COLUMNS])
+        return (self.standardised(numbers) * column_scales).astype(np.float32)
+
+
+def build_average_thirds(numbers: FrontNumbers) -> AverageThirds:
+    fixed = numbers.present & ~numbers.variable
+    value_means = np.array([numbers.fixed[fixed[:, i], i].mean() if fixed[:, i].any() else 0.0 for i in range(len(SCALARS))])
+    logs = np.log(np.maximum(1.0, 1.0 + numbers.fixed))
+    log_means = np.array([logs[fixed[:, i], i].mean() if fixed[:, i].any() else 0.0 for i in range(len(SCALARS))])
+    log_stds = np.array([logs[fixed[:, i], i].std() if fixed[:, i].any() else 0.0 for i in range(len(SCALARS))])
+    fit = AverageThirds(np.stack([numbers.present.mean(axis=0), numbers.variable.mean(axis=0)]), numbers.colours.mean(axis=0), value_means,
+                        log_means, np.where(log_stds > 0, log_stds, 1.0), np.ones(len(GROUPS)))
+    return AverageThirds(fit.flag_means, fit.colour_means, fit.value_means, fit.log_means, fit.log_stds, build_group_scales(fit.standardised(numbers)))
+
+def build_group_scales(rows: np.ndarray) -> np.ndarray:
+    """One scale per group so that each group's share of a row's squared length averages a third, found by repeatedly correcting each scale."""
+    squares = np.stack([(rows[:, [i for i, c in enumerate(AVERAGE_THIRDS_COLUMNS) if average_thirds_group(c) == g]] ** 2).sum(axis=1) for g in GROUPS], axis=1)
+    scales = np.ones(len(GROUPS))
+    for _ in range(SCALE_FITTING_ROUNDS):
+        weighted = squares * scales ** 2
+        shares = (weighted / weighted.sum(axis=1, keepdims=True)).mean(axis=0)
+        scales *= np.sqrt((1 / len(GROUPS)) / shares)
+    return scales

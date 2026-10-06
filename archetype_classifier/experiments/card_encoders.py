@@ -15,6 +15,12 @@ builds neighbour lists for the chosen cards and for cards whose lists stage 1 sh
 shares with the base format, and lists the played cards whose neighbours each format changes most.
 
     uv run --group archetypes python -m archetype_classifier.experiments.card_encoders --stage 2 --date 20261005
+
+Stage 2b combines potion's base-format text embedding with a standardised structured vector, at alpha = 0, 0.2, ... 1 (alpha weighs the text), for
+each structured scheme (current, log, numbers). It runs the scenarios and the user's checks on every combination, lists the three focus cards in every
+combination and the other chosen cards for the log scheme at a few alphas, with the stats text format alongside for reference.
+
+    uv run --group archetypes python -m archetype_classifier.experiments.card_encoders --stage 2b --date 20261005
 """
 import argparse
 import json
@@ -27,11 +33,13 @@ from typing import Any
 
 import numpy as np
 
+from archetype_classifier.card_embeddings.combined import build_combined, build_standardisation
 from archetype_classifier.card_embeddings.embeddings import EMBEDDINGS_DIR, Embeddings, build_embeddings, embeddings_path, load_embeddings, merge_embeddings, save_embeddings
 from archetype_classifier.card_embeddings.encoders import ENCODERS, load_encoder
 from archetype_classifier.card_embeddings.neighbours import build_all_neighbours, build_neighbours, build_overlap, build_rank
 from archetype_classifier.card_embeddings.pool import Card, load_card_pool
-from archetype_classifier.card_embeddings.text import BASE, RECIPES, build_card_text
+from archetype_classifier.card_embeddings.structured import Scheme, build_structured_vector
+from archetype_classifier.card_embeddings.text import BASE, RECIPES, STATS, build_card_text
 from decksite.database import db
 
 OUT = Path(__file__).parents[1] / 'docs' / 'experiments'
@@ -54,6 +62,14 @@ NAME_CARDS = [  # Stage 1 showed names pulling these cards' neighbours: other ca
 NEAR_BURST = ['Shivan Fire', 'Roil Eruption']  # The cards the user judges closest in spirit to Burst Lightning.
 STAGE2_RECIPES = ('base', 'json', 'json+masked', 'stats', 'labels')
 CHANGED_SHOWN = 6  # Played cards per format whose top 10 it changes most against the base format.
+FOCUS_CHECKS = {  # The user's reading of stage 2 (2026-10-05): each focus card, and the cards that should (or shouldn't) be near it.
+    'Kalonian Tusker': ['Werewolf Pack Leader', 'Jibbirik Omnivore'],
+    'Lightning Strike': ['Explosive Welcome'],  # Should drop: the same text, five more mana.
+    'Eater of Virtue': ['Bonesplitter'],
+}
+ALPHAS = (0.0, 0.2, 0.4, 0.6, 0.8, 1.0)
+SCHEMES: tuple[Scheme, ...] = ('current', 'log', 'numbers')
+SHOWN_SCHEME, SHOWN_ALPHAS = 'log', (1.0, 0.8, 0.6, 0.4)  # For the chosen cards beyond the focus cards.
 NEW_CARDS_SHOWN = 12  # The most-played cards new in season 43.
 PLAYED = 20  # Decks in seasons 39-43 a card needs to count as played, for the disagreement list.
 DISAGREEMENT_SHOWN = 15
@@ -153,6 +169,47 @@ def run_stage2(pool: Sequence[Card], encoder_names: Sequence[str], recipe_labels
         results[name] = formats
     return results
 
+def main_stage2b(args: argparse.Namespace, pool: Sequence[Card], recent: dict[str, int]) -> None:
+    by_name = {c.name: c for c in pool}
+    played = {n for n, decks in recent.items() if decks >= PLAYED}
+    encoder = load_encoder('potion')
+    text = build_embeddings(pool, BASE, encoder)
+    stats_text = build_embeddings(pool, STATS, encoder)
+    cards = [by_name[n] for n in text.names]
+    candidates = [i for i, n in enumerate(text.names) if n in played]
+    base_top = build_all_neighbours(text, LIST_SIZE)
+    shown_cards = [c for c in [*LIST_CARDS, *NAME_CARDS] if c not in FOCUS_CHECKS]
+    combos: dict[str, Any] = {}
+    for scheme in SCHEMES:
+        standardised = build_standardisation(np.stack([build_structured_vector(c, scheme) for c in cards]))
+        rows = standardised.apply(np.stack([build_structured_vector(c, scheme) for c in cards]))
+        for alpha in ALPHAS:
+            e = build_combined(text, rows, alpha, scheme)
+            top = build_all_neighbours(e, LIST_SIZE)
+            overlap = build_overlap(top, base_top)
+            combo: dict[str, Any] = {'scheme': scheme, 'alpha': alpha, 'scenarios': build_scenarios(e),
+                     'focus': {card: {other: [build_rank(e, card, other), similarity(e, card, other)] for other in others} for card, others in FOCUS_CHECKS.items()},
+                     'overlap_with_text_played': float(overlap[candidates].mean()),
+                     'lists': {card: neighbour_list(e, card) for card in FOCUS_CHECKS}}
+            if scheme == SHOWN_SCHEME and alpha in SHOWN_ALPHAS:
+                combo['lists'] |= {card: neighbour_list(e, card) for card in shown_cards}
+            combos[f'{scheme}@{alpha}'] = combo
+            focus = '; '.join(f'{o} #{r[0]}' for checks in combo['focus'].values() for o, r in checks.items())
+            print(f'{scheme} alpha {alpha}: {focus}', flush=True)
+    reference: dict[str, Any] = {'scenarios': build_scenarios(stats_text), 'lists': {card: neighbour_list(stats_text, card) for card in [*FOCUS_CHECKS, *shown_cards]},
+                 'focus': {card: {o: [build_rank(stats_text, card, o), similarity(stats_text, card, o)] for o in others} for card, others in FOCUS_CHECKS.items()}}
+    results = {'stage': '2b', 'pool': len(pool), 'encoder': 'potion', 'text': BASE.label, 'alphas': ALPHAS, 'schemes': SCHEMES, 'focus_checks': FOCUS_CHECKS,
+               'shown_scheme': SHOWN_SCHEME, 'shown_alphas': SHOWN_ALPHAS, 'shown_cards': shown_cards, 'played_cards': len(candidates),
+               'combos': combos, 'stats_text': reference}
+    shown = {*FOCUS_CHECKS, *shown_cards, *(o for others in FOCUS_CHECKS.values() for o in others)}
+    for combo in [*combos.values(), reference]:
+        shown |= {n for ns in combo['lists'].values() for n, _ in ns}
+    results['card_text'] = {n: build_card_text(by_name[n], STATS) for n in sorted(shown)}
+    OUT.mkdir(parents=True, exist_ok=True)
+    path = OUT / f'{args.date}_card_encoders_stage2b.json'
+    path.write_text(json.dumps(results, indent=1, ensure_ascii=False))
+    print(f'Wrote {path}')
+
 def main_stage2(args: argparse.Namespace, pool: Sequence[Card], recent: dict[str, int]) -> None:
     by_name = {c.name: c for c in pool}
     encoder_names = args.encoders or ['potion']
@@ -180,7 +237,7 @@ def main_stage2(args: argparse.Namespace, pool: Sequence[Card], recent: dict[str
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--stage', type=int, choices=[1, 2], required=True)
+    parser.add_argument('--stage', choices=['1', '2', '2b'], required=True)
     parser.add_argument('--date', required=True, help='YYYYMMDD, for the results file name')
     parser.add_argument('--encoders', nargs='+', choices=ORDER, help='stage 1: run only these, the rest come from the existing results file; stage 2: default potion')
     parser.add_argument('--recipes', nargs='+', choices=sorted(RECIPES), help=f'stage 2 only; default {", ".join(STAGE2_RECIPES)}')
@@ -193,10 +250,14 @@ def main() -> None:
     new_shown = sorted((c.name for c in new if latest.get(c.name)), key=lambda n: (-latest[n], n))[:NEW_CARDS_SHOWN]
     print(f'{len(pool)} cards: {len(old)} before season {NEW_SEASON}, {len(new)} new in it', flush=True)
     names = {c.name for c in pool}
-    if missing := [n for n in [*LIST_CARDS, *NAME_CARDS, *NEAR_BURST, 'Leaf Gilder', *VANILLAS, *(n for g in REPRINT_GROUPS for n in g)] if n not in names]:
+    focus = [n for card, others in FOCUS_CHECKS.items() for n in (card, *others)]
+    if missing := [n for n in [*LIST_CARDS, *NAME_CARDS, *NEAR_BURST, 'Leaf Gilder', *focus, *VANILLAS, *(n for g in REPRINT_GROUPS for n in g)] if n not in names]:
         raise SystemExit(f'Not in the card pool: {", ".join(missing)}')
-    if args.stage == 2:
+    if args.stage == '2':
         main_stage2(args, pool, recent)
+        return
+    if args.stage == '2b':
+        main_stage2b(args, pool, recent)
         return
 
     path = OUT / f'{args.date}_card_encoders_stage{args.stage}.json'

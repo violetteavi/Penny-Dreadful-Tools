@@ -26,6 +26,12 @@ Stage 2c is stage 2b on the masked text format (each face's own name as ~), with
 standardised vectors, and text, structured and combined cosines for chosen pairs.
 
     uv run --group archetypes python -m archetype_classifier.experiments.card_encoders --stage 2c --date 20261005
+
+Stage 2d (#7 spec, 2026-10-05) mixes potion's masked-text cosine with exact thirds: mana value, colour and stats each a third of the structured
+similarity, compared on front faces (split cards summed). It also runs the average-thirds approach (one cosine over a vector whose groups average a
+third each) for the comparison section, with per-group diagnostics for chosen pairs.
+
+    uv run --group archetypes python -m archetype_classifier.experiments.card_encoders --stage 2d --date 20261005
 """
 import argparse
 import json
@@ -38,13 +44,13 @@ from typing import Any
 
 import numpy as np
 
-from archetype_classifier.card_embeddings.combined import build_combined, build_group_shares, build_standardisation
+from archetype_classifier.card_embeddings.combined import AVERAGE_THIRDS_COLUMNS, GroupedSimilarity, average_thirds_group, build_average_thirds, build_centring, build_combined, build_group_shares, build_standardisation
 from archetype_classifier.card_embeddings.embeddings import EMBEDDINGS_DIR, Embeddings, build_embeddings, embeddings_path, load_embeddings, merge_embeddings, save_embeddings
 from archetype_classifier.card_embeddings.encoders import ENCODERS, load_encoder
-from archetype_classifier.card_embeddings.neighbours import build_all_neighbours, build_neighbours, build_overlap, build_rank
+from archetype_classifier.card_embeddings.neighbours import Similarities, build_all_neighbours, build_neighbours, build_overlap, build_rank
 from archetype_classifier.card_embeddings.pool import Card, load_card_pool
-from archetype_classifier.card_embeddings.structured import Scheme, build_structured_vector, structured_columns
-from archetype_classifier.card_embeddings.text import BASE, RECIPES, STATS, build_card_text
+from archetype_classifier.card_embeddings.structured import Scheme, build_front_numbers, build_structured_vector, structured_columns
+from archetype_classifier.card_embeddings.text import BASE, MASKED, RECIPES, STATS, build_card_text
 from decksite.database import db
 
 OUT = Path(__file__).parents[1] / 'docs' / 'experiments'
@@ -78,6 +84,8 @@ SHOWN_SCHEME, SHOWN_ALPHAS = 'log', (1.0, 0.8, 0.6, 0.4)  # For the chosen cards
 DIAGNOSTIC_PAIRS = [('Lightning Strike', o) for o in ('Searing Spear', 'Open Fire', 'Lightning Blast', 'Explosive Welcome')] + \
     [('Kalonian Tusker', 'Werewolf Pack Leader'), ('Kalonian Tusker', 'Jibbirik Omnivore'), ('Eater of Virtue', 'Bonesplitter')]
 DIAGNOSTIC_ALPHAS = (0.2, 0.6)
+STAGE2D_PAIRS = [*DIAGNOSTIC_PAIRS, *(('Jace, Wielder of Mysteries', c) for c in ('Adeline, Resplendent Cathar', 'Chandra, Pyromaster', 'Chandra, Pyrogenius'))]
+COMPARISON_ALPHA = 0.6  # The alpha at which the comparison section shows lists.
 COLUMN_GROUPS = {'mana_value': 'mana value', 'generic': 'cost breakdown', 'x': 'cost breakdown', 'hybrid': 'cost breakdown', 'phyrexian': 'cost breakdown',
                  'pips': 'colour', 'colour': 'colour', 'power': 'stats', 'toughness': 'stats', 'loyalty': 'stats', 'type': 'types', 'supertype': 'types'}
 
@@ -105,13 +113,14 @@ def timed(f: Any, *args: Any) -> tuple[Any, float]:
     result = f(*args)
     return result, time.perf_counter() - start
 
-def similarity(e: Embeddings, a: str, b: str) -> float:
-    return float(e.matrix[e.names.index(a)] @ e.matrix[e.names.index(b)])
+def similarity(e: Similarities, a: str, b: str) -> float:
+    i = e.names.index(a)
+    return float(e.similarities(i, i + 1)[0, e.names.index(b)])
 
-def neighbour_list(e: Embeddings, card: str, among: set[str] | None = None) -> list[list[Any]]:
+def neighbour_list(e: Similarities, card: str, among: set[str] | None = None) -> list[list[Any]]:
     return [[n.name, round(n.similarity, 4)] for n in build_neighbours(e, card, LIST_SIZE, among)]
 
-def build_scenarios(e: Embeddings) -> dict[str, Any]:
+def build_scenarios(e: Similarities) -> dict[str, Any]:
     """The card-representation scenarios, plus the user's Burst Lightning neighbours and Leaf Gilder's tie with Llanowar Elves."""
     return {
         'reprints_lowest_similarity': [min(similarity(e, g[0], other) for other in g[1:]) for g in REPRINT_GROUPS],
@@ -237,6 +246,63 @@ def main_stage2b(args: argparse.Namespace, pool: Sequence[Card], recent: dict[st
     path.write_text(json.dumps(results, indent=1, ensure_ascii=False))
     print(f'Wrote {path}')
 
+def stage2d_combo(e: Similarities, base_top: np.ndarray, candidates: Sequence[int], cards: Sequence[str]) -> dict[str, Any]:
+    overlap = build_overlap(build_all_neighbours(e, LIST_SIZE), base_top)
+    return {'scenarios': build_scenarios(e), 'overlap_with_text_played': float(overlap[candidates].mean()),
+            'focus': {card: {other: [build_rank(e, card, other), similarity(e, card, other)] for other in others} for card, others in FOCUS_CHECKS.items()},
+            'lists': {card: neighbour_list(e, card) for card in cards}}
+
+def main_stage2d(args: argparse.Namespace, pool: Sequence[Card], recent: dict[str, int]) -> None:
+    by_name = {c.name: c for c in pool}
+    played = {n for n, decks in recent.items() if decks >= PLAYED}
+    encoder = load_encoder('potion')
+    text = build_embeddings(pool, MASKED, encoder)
+    stats_text = build_embeddings(pool, STATS, encoder)
+    numbers = build_front_numbers([by_name[n] for n in text.names])
+    centring = build_centring(numbers.colours)
+    average_fit = build_average_thirds(numbers)
+    average_rows = average_fit.apply(numbers)
+    candidates = [i for i, n in enumerate(text.names) if n in played]
+    base_top = build_all_neighbours(text, LIST_SIZE)
+    shown_cards = [c for c in [*LIST_CARDS, *NAME_CARDS] if c not in FOCUS_CHECKS]
+    combos: dict[str, Any] = {}
+    for alpha in ALPHAS:
+        exact = GroupedSimilarity(text, numbers, centring, alpha)
+        exact_cards = [*FOCUS_CHECKS, *(shown_cards if alpha in SHOWN_ALPHAS else [])]
+        combos[f'exact@{alpha}'] = {'approach': 'exact', 'alpha': alpha, **stage2d_combo(exact, base_top, candidates, exact_cards)}
+        average = build_combined(text, average_rows, alpha, 'average thirds')
+        combos[f'average@{alpha}'] = {'approach': 'average', 'alpha': alpha, **stage2d_combo(average, base_top, candidates, list(FOCUS_CHECKS))}
+        for approach in ('exact', 'average'):
+            focus = '; '.join(f'{o} #{r[0]}' for checks in combos[f'{approach}@{alpha}']['focus'].values() for o, r in checks.items())
+            print(f'{approach} alpha {alpha}: {focus}', flush=True)
+    structured_only = build_combined(text, average_rows, 0.0)
+    pairs: dict[str, Any] = {}
+    for a, b in STAGE2D_PAIRS:
+        groups = GroupedSimilarity(text, numbers, centring, 1.0).group_similarities(a, b)
+        pairs[f'{a} / {b}'] = {
+            'text': groups['text'], 'mana value': groups['mana value'], 'colour': groups['colour'], 'stats': groups['stats'],
+            'exact': {'structured': groups['structured'], **{str(al): al * groups['text'] + (1 - al) * groups['structured'] for al in DIAGNOSTIC_ALPHAS}},
+            'average': {'structured': similarity(structured_only, a, b),
+                        **{str(al): similarity(build_combined(text, average_rows, al), a, b) for al in DIAGNOSTIC_ALPHAS}},
+        }
+    reference: dict[str, Any] = {'scenarios': build_scenarios(stats_text), 'lists': {card: neighbour_list(stats_text, card) for card in [*FOCUS_CHECKS, *shown_cards]},
+                                 'focus': {card: {o: [build_rank(stats_text, card, o), similarity(stats_text, card, o)] for o in others}
+                                           for card, others in FOCUS_CHECKS.items()}}
+    results = {'stage': '2d', 'pool': len(pool), 'encoder': 'potion', 'text': MASKED.label, 'alphas': ALPHAS, 'focus_checks': FOCUS_CHECKS,
+               'shown_alphas': SHOWN_ALPHAS, 'shown_cards': shown_cards, 'comparison_alpha': COMPARISON_ALPHA, 'played_cards': len(candidates),
+               'colour_means': centring.mean.tolist(), 'average_value_means': average_fit.value_means.tolist(),
+               'average_group_scales': average_fit.scales.tolist(),
+               'average_group_shares': build_group_shares(average_rows, AVERAGE_THIRDS_COLUMNS, average_thirds_group),
+               'pairs': pairs, 'combos': combos, 'stats_text': reference}
+    shown = {*FOCUS_CHECKS, *shown_cards, *(o for others in FOCUS_CHECKS.values() for o in others), *(n for pair in STAGE2D_PAIRS for n in pair)}
+    for combo in [*combos.values(), reference]:
+        shown |= {n for ns in combo['lists'].values() for n, _ in ns}
+    results['card_text'] = {n: build_card_text(by_name[n], STATS) for n in sorted(shown)}
+    OUT.mkdir(parents=True, exist_ok=True)
+    path = OUT / f'{args.date}_card_encoders_stage2d.json'
+    path.write_text(json.dumps(results, indent=1, ensure_ascii=False))
+    print(f'Wrote {path}')
+
 def main_stage2(args: argparse.Namespace, pool: Sequence[Card], recent: dict[str, int]) -> None:
     by_name = {c.name: c for c in pool}
     encoder_names = args.encoders or ['potion']
@@ -264,7 +330,7 @@ def main_stage2(args: argparse.Namespace, pool: Sequence[Card], recent: dict[str
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--stage', choices=['1', '2', '2b', '2c'], required=True)
+    parser.add_argument('--stage', choices=['1', '2', '2b', '2c', '2d'], required=True)
     parser.add_argument('--date', required=True, help='YYYYMMDD, for the results file name')
     parser.add_argument('--encoders', nargs='+', choices=ORDER, help='stage 1: run only these, the rest come from the existing results file; stage 2: default potion')
     parser.add_argument('--text', choices=sorted(RECIPES), help='stages 2b and 2c: the text format combined with the structured vector (default base for 2b, masked for 2c)')
@@ -278,11 +344,14 @@ def main() -> None:
     new_shown = sorted((c.name for c in new if latest.get(c.name)), key=lambda n: (-latest[n], n))[:NEW_CARDS_SHOWN]
     print(f'{len(pool)} cards: {len(old)} before season {NEW_SEASON}, {len(new)} new in it', flush=True)
     names = {c.name for c in pool}
-    focus = [n for card, others in FOCUS_CHECKS.items() for n in (card, *others)]
+    focus = [n for card, others in FOCUS_CHECKS.items() for n in (card, *others)] + [n for pair in STAGE2D_PAIRS for n in pair]
     if missing := [n for n in [*LIST_CARDS, *NAME_CARDS, *NEAR_BURST, 'Leaf Gilder', *focus, *VANILLAS, *(n for g in REPRINT_GROUPS for n in g)] if n not in names]:
         raise SystemExit(f'Not in the card pool: {", ".join(missing)}')
     if args.stage == '2':
         main_stage2(args, pool, recent)
+        return
+    if args.stage == '2d':
+        main_stage2d(args, pool, recent)
         return
     if args.stage in ('2b', '2c'):
         main_stage2b(args, pool, recent)

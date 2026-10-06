@@ -279,7 +279,7 @@ def main_stage2d(args: argparse.Namespace, pool: Sequence[Card], recent: dict[st
     diagnostic_alphas = STAGE2E_DIAGNOSTIC_ALPHAS if args.stage == '2e' else DIAGNOSTIC_ALPHAS
     combos: dict[str, Any] = {}
     for alpha in alphas:
-        approaches = {'exact': GroupedSimilarity(text, numbers, centring, alpha), 'average': build_combined(text, average_rows, alpha, 'average thirds')}
+        approaches: dict[str, Similarities] = {'exact': GroupedSimilarity(text, numbers, centring, alpha), 'average': build_combined(text, average_rows, alpha, 'average thirds')}
         for approach, similarities in approaches.items():
             cards = [*FOCUS_CHECKS, *(shown_cards if approach == main and alpha in shown_alphas else [])]
             combos[f'{approach}@{alpha}'] = {'approach': approach, 'alpha': alpha, **stage2d_combo(similarities, base_top, candidates, cards)}

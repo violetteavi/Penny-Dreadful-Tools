@@ -177,7 +177,7 @@ def build_average_thirds(numbers: FrontNumbers, shares: tuple[float, float, floa
 def build_group_scales(rows: np.ndarray, shares: tuple[float, float, float]) -> np.ndarray:
     """One scale per group so that each group's share of a row's squared length averages its target share (in GROUPS order), found by repeatedly
     correcting each scale. A group with share 0 is scaled to 0 and left out, so the others share the rest; that is also the limit as its share
-    shrinks, where fitting it would divide 0 by 0."""
+    shrinks, where fitting it would divide 0 by 0. Rows with no length are skipped; with none left, the kept groups keep scale 1."""
     squares = np.stack([(rows[:, [i for i, c in enumerate(AVERAGE_THIRDS_COLUMNS) if average_thirds_group(c) == g]] ** 2).sum(axis=1) for g in GROUPS], axis=1)
     targets = np.array(shares, dtype=np.float64)
     kept = targets > 0
@@ -185,8 +185,9 @@ def build_group_scales(rows: np.ndarray, shares: tuple[float, float, float]) -> 
     if not kept.any():
         return scales
     targets = targets[kept] / targets[kept].sum()
-    for _ in range(SCALE_FITTING_ROUNDS):
-        weighted = squares[:, kept] * scales[kept] ** 2
+    squares = squares[:, kept][squares[:, kept].sum(axis=1) > 0]  # A row with no length in these groups has no shares; skip it, as build_group_shares does.
+    for _ in range(SCALE_FITTING_ROUNDS if len(squares) else 0):
+        weighted = squares * scales[kept] ** 2
         achieved = (weighted / weighted.sum(axis=1, keepdims=True)).mean(axis=0)
         scales[kept] *= np.sqrt(targets / achieved)
     return scales

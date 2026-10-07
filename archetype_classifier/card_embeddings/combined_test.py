@@ -204,3 +204,8 @@ def test_a_group_with_a_zero_share_is_scaled_to_0_and_the_others_share_the_rest(
 
 def test_all_zero_shares_scale_every_group_to_0() -> None:
     assert list(build_group_scales(FIT.standardised(NUMBERS), (0.0, 0.0, 0.0))) == [0, 0, 0]
+
+def test_an_all_zero_row_is_skipped_rather_than_making_every_scale_nan() -> None:
+    rows = FIT.standardised(NUMBERS)
+    with_zero_row = np.vstack([rows, np.zeros((1, rows.shape[1]))])
+    assert np.allclose(build_group_scales(with_zero_row, (0.6, 0.2, 0.2)), build_group_scales(rows, (0.6, 0.2, 0.2)))

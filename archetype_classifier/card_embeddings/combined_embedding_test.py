@@ -146,3 +146,9 @@ def test_the_statistics_are_fitted_on_the_fit_season_cards_only_but_applied_to_e
     assert with_pigeon.combiner.to_json() == without_pigeon.combiner.to_json()
     pigeon = with_pigeon.names.index('City Pigeon')
     assert with_pigeon.similarities(pigeon, pigeon + 1)[0, pigeon] == pytest.approx(1)
+
+
+def test_gapped_seasons_pick_cards_legal_in_any_of_them() -> None:
+    embedding = build('2', '2,40')  # Shock was legal in 2 and 40, City Pigeon in 40; Kalonian Tusker in neither.
+    assert embedding.names == ('City Pigeon', 'Shock')
+    assert not np.isnan(embedding.similarities(0, 2)).any()

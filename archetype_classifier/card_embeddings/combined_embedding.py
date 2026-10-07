@@ -3,17 +3,19 @@ that later work loads it rather than rebuilding it. The maths of each approach l
 """
 import math
 import re
-from collections.abc import Callable
-from dataclasses import asdict, dataclass, fields
+from collections.abc import Callable, Sequence
+from dataclasses import asdict, dataclass, field, fields
 from typing import Any, ClassVar, Literal, Protocol
 
 import numpy as np
 
 from archetype_classifier.card_embeddings.combined import AverageThirds, build_average_thirds, build_combined
+from archetype_classifier.card_embeddings.encoders import Encoder
 from archetype_classifier.card_embeddings.neighbours import Similarities
-from archetype_classifier.card_embeddings.structured import FrontNumbers
+from archetype_classifier.card_embeddings.pool import Card
+from archetype_classifier.card_embeddings.structured import FrontNumbers, build_front_numbers
 from archetype_classifier.card_embeddings.text import TextRecipe
-from archetype_classifier.card_embeddings.text_embedding import TextEmbeddings
+from archetype_classifier.card_embeddings.text_embedding import TextEmbeddings, build_text_embeddings
 from archetype_classifier.evaluation.model import JSON
 
 CombiningApproach = Literal['average']  # 'exact' (exact thirds, combined.GroupedSimilarity) can join later.
@@ -109,6 +111,39 @@ class CombinedEmbeddingSettings:
         if outside := self.fit_seasons - self.embedded_seasons:
             raise ValueError(f'The fit seasons {build_season_label(frozenset(outside))} are not embedded')
 
+
+
+@dataclass(frozen=True)
+class CombinedEmbedding:
+    """Every card's text embedding and numbers, in name order, and the fitted combiner that turns them into one similarity. It is a Similarities,
+    so the checks and the neighbour lists take it unchanged."""
+    settings: CombinedEmbeddingSettings
+    text: TextEmbeddings
+    numbers: FrontNumbers
+    combiner: TextAndNumbersCombiner
+    combined: Similarities = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, 'combined', self.combiner.combine(self.text, self.numbers))
+
+    @property
+    def names(self) -> tuple[str, ...]:
+        return self.text.names
+
+    def similarities(self, start: int, stop: int) -> np.ndarray:
+        return self.combined.similarities(start, stop)
+
+
+def build_combined_embedding(pool: Sequence[Card], settings: CombinedEmbeddingSettings, approach: CombiningApproach,
+                             weights: CombinedEmbeddingWeights, encoder: Encoder) -> CombinedEmbedding:
+    """Embeds every card legal in an embedded season and builds their numbers, then fits the combiner on the numbers of the cards legal in a fit
+    season only. Every card is combined with those frozen statistics."""
+    cards = [c for c in pool if c.seasons & settings.embedded_seasons]
+    text = build_text_embeddings(cards, settings.recipe, encoder)
+    by_name = {c.name: c for c in cards}
+    numbers = build_front_numbers([by_name[n] for n in text.names])
+    fitted = build_front_numbers(sorted((c for c in cards if c.seasons & settings.fit_seasons), key=lambda c: c.name))
+    return CombinedEmbedding(settings, text, numbers, FIT_COMBINER[approach](fitted, weights))
 
 def build_season_set(text: str) -> frozenset[int]:
     """Seasons written as ranges and single seasons separated by commas: '1-3,6-8,10' is {1, 2, 3, 6, 7, 8, 10}."""

@@ -4,10 +4,12 @@ import numpy as np
 import pytest
 
 from archetype_classifier.card_embeddings.combined import THIRDS, build_average_thirds, build_combined
-from archetype_classifier.card_embeddings.combined_embedding import FIT_COMBINER, LOAD_COMBINER, CombinedEmbeddingSettings, CombinedEmbeddingWeights, build_average_thirds_combiner, build_season_label, build_season_set
+from archetype_classifier.card_embeddings.combined_embedding import FIT_COMBINER, LOAD_COMBINER, CombinedEmbedding, CombinedEmbeddingSettings, CombinedEmbeddingWeights, build_average_thirds_combiner, build_combined_embedding, build_season_label, build_season_set
 from archetype_classifier.card_embeddings.combined_test import CARD_TEXT, NUMBERS
 from archetype_classifier.card_embeddings.neighbours import Similarities
+from archetype_classifier.card_embeddings.pool import Card, Face
 from archetype_classifier.card_embeddings.text import MASKED
+from archetype_classifier.card_embeddings.text_embedding_test import FakeEncoder
 
 
 def values(weights: CombinedEmbeddingWeights) -> tuple[float, float, float, float]:
@@ -112,3 +114,27 @@ def test_a_combiner_saved_as_json_and_loaded_back_gives_identical_similarities(w
     loaded = LOAD_COMBINER[saved['approach']](saved)
     assert loaded.weights == combiner.weights
     assert np.array_equal(similarities(loaded.combine(CARD_TEXT, NUMBERS)), similarities(combiner.combine(CARD_TEXT, NUMBERS)))
+
+
+# Real cards with their real faces and the seasons they were legal in (decksite _legal_cards).
+SHOCK = Card('Shock', 'normal', (Face('Shock', '{R}', 1, 'Instant', 'Shock deals 2 damage to any target.'),),
+             build_season_set('1-3,5-7,9,13-33,35-43'))
+KALONIAN_TUSKER = Card('Kalonian Tusker', 'normal', (Face('Kalonian Tusker', '{G}{G}', 2, 'Creature — Beast', '', '3', '3'),),
+                       build_season_set('1,12-30,32-34,38-39,42'))
+CITY_PIGEON = Card('City Pigeon', 'normal', (Face('City Pigeon', '{W}', 1, 'Creature — Bird', 'Flying\nWhen this creature leaves the battlefield, create a Food '
+                                                  'token. (It\'s an artifact with "{2}, {T}, Sacrifice this token: You gain 3 life.")', '1', '1'),),
+                   build_season_set('39-40'))
+AJANIS_RESPONSE = Card("Ajani's Response", 'normal', (Face("Ajani's Response", '{4}{W}', 5, 'Instant', 'This spell costs {3} less to cast if it targets a '
+                                                           'tapped creature.\nDestroy target creature.'),), build_season_set('42'))
+POOL = [SHOCK, KALONIAN_TUSKER, CITY_PIGEON, AJANIS_RESPONSE]
+
+
+def build(fit: str, embedded: str, weights: tuple[float, float, float, float] = (3, 1, 1, 1)) -> CombinedEmbedding:
+    settings = CombinedEmbeddingSettings('fake', MASKED, build_season_set(fit), build_season_set(embedded))
+    return build_combined_embedding(POOL, settings, 'average', CombinedEmbeddingWeights(*weights), FakeEncoder())
+
+
+def test_the_embedding_holds_exactly_the_cards_legal_in_an_embedded_season() -> None:
+    embedding = build('1-38', '1-39')
+    assert embedding.names == ('City Pigeon', 'Kalonian Tusker', 'Shock')
+    assert embedding.text.names == embedding.numbers.names == embedding.names

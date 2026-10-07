@@ -28,3 +28,12 @@ def test_near_passes_at_rank_10_and_fails_at_rank_11() -> None:
     assert (at_10.passed, at_10.rank, at_10.similarity) == (True, 10, pytest.approx(0.990))
     assert (at_11.passed, at_11.rank) == (False, 11)
     assert at_11.message == "Burst Lightning is #11 in Shock's list; expected in the top 10"
+
+
+def test_far_fails_at_rank_100_and_passes_at_rank_101() -> None:
+    far = Check('Shock', 'Explosive Welcome', 'far')
+    [at_100] = build_check_results(Ranked('Shock', [*fillers(99), 'Explosive Welcome']), [far])
+    [at_101] = build_check_results(Ranked('Shock', [*fillers(100), 'Explosive Welcome']), [far])
+    assert (at_100.passed, at_100.rank) == (False, 100)
+    assert at_100.message == "Explosive Welcome is #100 in Shock's list; expected beyond 100"
+    assert (at_101.passed, at_101.rank) == (True, 101)

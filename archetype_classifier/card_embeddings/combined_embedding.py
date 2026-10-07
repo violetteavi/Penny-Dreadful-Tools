@@ -38,3 +38,13 @@ def build_season_set(text: str) -> frozenset[int]:
         first, _, last = part.partition('-')
         seasons.update(range(int(first), int(last or first) + 1))
     return frozenset(seasons)
+
+def build_season_label(seasons: frozenset[int]) -> str:
+    """The seasons as ranges for a file name: {1, 2, 3, 6, 7, 8, 10} is '1-3_6-8_10'."""
+    runs: list[list[int]] = []
+    for season in sorted(seasons):
+        if runs and season == runs[-1][-1] + 1:
+            runs[-1].append(season)
+        else:
+            runs.append([season])
+    return '_'.join(str(r[0]) if len(r) == 1 else f'{r[0]}-{r[-1]}' for r in runs)

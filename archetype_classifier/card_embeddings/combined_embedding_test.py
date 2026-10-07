@@ -1,6 +1,6 @@
 import pytest
 
-from archetype_classifier.card_embeddings.combined_embedding import CombinedEmbeddingWeights, build_season_set
+from archetype_classifier.card_embeddings.combined_embedding import CombinedEmbeddingWeights, build_season_label, build_season_set
 
 
 def values(weights: CombinedEmbeddingWeights) -> tuple[float, float, float, float]:
@@ -31,3 +31,13 @@ def test_zeros_are_allowed_so_text_alone_and_numbers_alone_are_valid_weights() -
 def test_a_season_set_is_written_as_ranges_and_single_seasons() -> None:
     assert build_season_set('1-3,6-8,10,12,14') == frozenset({1, 2, 3, 6, 7, 8, 10, 12, 14})
     assert build_season_set('1-38') == frozenset(range(1, 39))
+
+
+@pytest.mark.parametrize(('seasons', 'label'), [
+    ({1, 2, 3, 6, 7, 8, 10, 12, 14}, '1-3_6-8_10_12_14'),
+    (set(range(1, 40)), '1-39'),
+    ({39}, '39'),
+    ({6, 7}, '6-7'),
+])
+def test_a_season_set_is_labelled_for_file_names_as_ranges(seasons: set[int], label: str) -> None:
+    assert build_season_label(frozenset(seasons)) == label

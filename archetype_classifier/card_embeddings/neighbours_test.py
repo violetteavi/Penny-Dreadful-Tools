@@ -55,8 +55,8 @@ def test_season_limits_the_tool_to_cards_legal_that_season(saved: Path, capsys: 
                                        '  2  0.000  Counterspell\n')
 
 def test_the_tool_says_how_to_build_missing_embeddings(tmp_path: Path) -> None:
-    with pytest.raises(SystemExit, match='No embeddings at .*bge-small__stats.npy: build them with python -m archetype_classifier.experiments.card_encoders'):
-        main(['Shock', '--recipe', 'stats', '--dir', str(tmp_path)])
+    with pytest.raises(SystemExit, match=r'No embeddings at .*potion__masked.npy: build them with build_embeddings and save_embeddings'):
+        main(['Shock', '--recipe', 'masked', '--dir', str(tmp_path)])
 
 
 def test_a_cards_rank_in_another_cards_list() -> None:

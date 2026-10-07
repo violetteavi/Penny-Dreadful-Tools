@@ -1,6 +1,6 @@
 """A card's nearest neighbours by any similarity over a set of cards: card embeddings' cosine, or a combined similarity (combined.py).
 
-    uv run python -m archetype_classifier.card_embeddings.neighbours "Shock" --encoder bge-small -n 10 [--recipe stats] [--season 43]
+    uv run python -m archetype_classifier.card_embeddings.neighbours "Shock" -n 10 [--encoder potion] [--recipe masked] [--season 43]
 """
 import argparse
 from collections.abc import Collection, Sequence
@@ -64,7 +64,7 @@ def build_overlap(a: np.ndarray, b: np.ndarray) -> np.ndarray:
 def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description='Print a card\'s nearest neighbours from saved card embeddings.')
     parser.add_argument('card', help='the card\'s name as the site writes it, e.g. "Discovery // Dispersal"')
-    parser.add_argument('--encoder', default='bge-small')
+    parser.add_argument('--encoder', default='potion')
     parser.add_argument('--recipe', default='base', choices=sorted(RECIPES))
     parser.add_argument('-n', type=int, default=10, help='how many neighbours')
     parser.add_argument('--season', type=int, help='only cards legal in this season')
@@ -72,7 +72,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = parser.parse_args(argv)
     path = embeddings_path(args.dir, args.encoder, RECIPES[args.recipe])
     if not path.exists():
-        raise SystemExit(f'No embeddings at {path}: build them with python -m archetype_classifier.experiments.card_encoders')
+        raise SystemExit(f'No embeddings at {path}: build them with build_embeddings and save_embeddings (card_embeddings.embeddings); #41 adds a command')
     embeddings = load_embeddings(path)
     among = loader.load_legal_cards([args.season])[args.season] if args.season else None
     heading = f'{args.card}: {args.encoder}, {args.recipe}, {len(embeddings.names)} cards'

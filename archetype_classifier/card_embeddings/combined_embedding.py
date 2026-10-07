@@ -47,7 +47,9 @@ class CombinedEmbeddingWeights:
 class TextAndNumbersCombiner(Protocol):
     """A fitted way of combining cards' text embeddings with their numbers: it carries its weights and its frozen statistics."""
     approach: ClassVar[CombiningApproach]
-    weights: CombinedEmbeddingWeights
+
+    @property
+    def weights(self) -> CombinedEmbeddingWeights: ...
 
     def combine(self, text: TextEmbeddings, numbers: FrontNumbers) -> Similarities: ...
 

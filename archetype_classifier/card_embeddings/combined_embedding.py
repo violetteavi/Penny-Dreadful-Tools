@@ -4,14 +4,17 @@ that later work loads it rather than rebuilding it. The maths of each approach l
 import math
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
-from typing import ClassVar, Literal, Protocol
+from dataclasses import asdict, dataclass, fields
+from typing import Any, ClassVar, Literal, Protocol
+
+import numpy as np
 
 from archetype_classifier.card_embeddings.combined import AverageThirds, build_average_thirds, build_combined
 from archetype_classifier.card_embeddings.neighbours import Similarities
 from archetype_classifier.card_embeddings.structured import FrontNumbers
 from archetype_classifier.card_embeddings.text import TextRecipe
 from archetype_classifier.card_embeddings.text_embedding import TextEmbeddings
+from archetype_classifier.evaluation.model import JSON
 
 CombiningApproach = Literal['average']  # 'exact' (exact thirds, combined.GroupedSimilarity) can join later.
 
@@ -53,6 +56,10 @@ class TextAndNumbersCombiner(Protocol):
 
     def combine(self, text: TextEmbeddings, numbers: FrontNumbers) -> Similarities: ...
 
+    def to_json(self) -> dict[str, JSON]:
+        """The approach, the weights and the statistics: all that LOAD_COMBINER needs to rebuild it."""
+        ...
+
 
 @dataclass(frozen=True)
 class AverageThirdsCombiner:
@@ -67,16 +74,25 @@ class AverageThirdsCombiner:
     def combine(self, text: TextEmbeddings, numbers: FrontNumbers) -> Similarities:
         return build_combined(text, self.statistics.apply(numbers), self.weights.text)
 
+    def to_json(self) -> dict[str, JSON]:
+        statistics: dict[str, JSON] = {f.name: getattr(self.statistics, f.name).tolist() for f in fields(AverageThirds)}
+        return {'approach': self.approach, 'weights': asdict(self.weights), 'statistics': statistics}
+
 def build_group_shares(weights: CombinedEmbeddingWeights) -> tuple[float, float, float]:
     """Each number group's weight over the three groups' total (mana value, colour, stats): the shares average thirds aims each group at.
     All 0 when the group weights are all 0, so the numbers drop out."""
     total = weights.mana_value + weights.colour + weights.stats
     return (weights.mana_value / total, weights.colour / total, weights.stats / total) if total else (0.0, 0.0, 0.0)
 
-def fit_average_thirds(numbers: FrontNumbers, weights: CombinedEmbeddingWeights) -> AverageThirdsCombiner:
+def build_average_thirds_combiner(numbers: FrontNumbers, weights: CombinedEmbeddingWeights) -> AverageThirdsCombiner:
     return AverageThirdsCombiner(weights, build_average_thirds(numbers, build_group_shares(weights)))
 
-FIT_COMBINER: dict[CombiningApproach, Callable[[FrontNumbers, CombinedEmbeddingWeights], TextAndNumbersCombiner]] = {'average': fit_average_thirds}
+def build_average_thirds_combiner_from_json(saved: dict[str, Any]) -> AverageThirdsCombiner:
+    statistics = AverageThirds(**{name: np.array(values) for name, values in saved['statistics'].items()})
+    return AverageThirdsCombiner(CombinedEmbeddingWeights(**saved['weights']), statistics)
+
+FIT_COMBINER: dict[CombiningApproach, Callable[[FrontNumbers, CombinedEmbeddingWeights], TextAndNumbersCombiner]] = {'average': build_average_thirds_combiner}
+LOAD_COMBINER: dict[CombiningApproach, Callable[[dict[str, Any]], TextAndNumbersCombiner]] = {'average': build_average_thirds_combiner_from_json}
 
 @dataclass(frozen=True)
 class CombinedEmbeddingSettings:

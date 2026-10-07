@@ -1,8 +1,10 @@
+import json
+
 import numpy as np
 import pytest
 
 from archetype_classifier.card_embeddings.combined import THIRDS, build_average_thirds, build_combined
-from archetype_classifier.card_embeddings.combined_embedding import FIT_COMBINER, CombinedEmbeddingSettings, CombinedEmbeddingWeights, build_season_label, build_season_set, fit_average_thirds
+from archetype_classifier.card_embeddings.combined_embedding import FIT_COMBINER, LOAD_COMBINER, CombinedEmbeddingSettings, CombinedEmbeddingWeights, build_average_thirds_combiner, build_season_label, build_season_set
 from archetype_classifier.card_embeddings.combined_test import CARD_TEXT, NUMBERS
 from archetype_classifier.card_embeddings.neighbours import Similarities
 from archetype_classifier.card_embeddings.text import MASKED
@@ -100,4 +102,13 @@ def test_text_alone_is_exactly_the_text_cosine_and_nothing_is_ever_nan() -> None
     ((1, 0, 0, 0), (0, 0, 0)),
 ])
 def test_group_shares_are_each_groups_part_of_the_numbers_weight(weights: tuple[float, float, float, float], shares: tuple[float, float, float]) -> None:
-    assert fit_average_thirds(NUMBERS, CombinedEmbeddingWeights(*weights)).group_shares() == pytest.approx(shares)
+    assert build_average_thirds_combiner(NUMBERS, CombinedEmbeddingWeights(*weights)).group_shares() == pytest.approx(shares)
+
+
+@pytest.mark.parametrize('weights', [(3, 1, 1, 1), (2, 1, 1, 0), (1, 0, 0, 0)])
+def test_a_combiner_saved_as_json_and_loaded_back_gives_identical_similarities(weights: tuple[float, float, float, float]) -> None:
+    combiner = FIT_COMBINER['average'](NUMBERS, CombinedEmbeddingWeights(*weights))
+    saved = json.loads(json.dumps(combiner.to_json()))  # Through real JSON text, as the saved file will be.
+    loaded = LOAD_COMBINER[saved['approach']](saved)
+    assert loaded.weights == combiner.weights
+    assert np.array_equal(similarities(loaded.combine(CARD_TEXT, NUMBERS)), similarities(combiner.combine(CARD_TEXT, NUMBERS)))

@@ -1,7 +1,11 @@
-"""Text embeddings combined with structured vectors, so similarity weighs what a card does against its numbers.
+"""A card's text embedding combined with its numbers (structured.py), so similarity weighs what a card does against its cost, colours and stats.
 
-Structured columns are standardised with statistics fitted once and then frozen, so standardising a new set's cards never moves an existing card's row.
-The combined vector for a card is [sqrt(alpha) * text, sqrt(1 - alpha) * structured / |structured|], so the dot product of two combined vectors is
+Two approaches, both weighting mana value, colour and stats a third each and mixing in the text cosine by alpha:
+- exact thirds (GroupedSimilarity): each group compared on its own terms, combined as a similarity rather than a vector;
+- average thirds (AverageThirds with build_combined): one vector per card, scaled so each group makes up a third on average, compared by a cosine.
+
+Every statistic (centring means, standardisation, fill values, group scales) is fitted once and frozen, so a new set's cards never move an existing card.
+build_combined joins [sqrt(alpha) * text, sqrt(1 - alpha) * structured / |structured|], so the dot product of two combined vectors is
 alpha * text cosine + (1 - alpha) * structured cosine, and the result is an ordinary Embeddings that the neighbour functions work on unchanged.
 """
 from collections.abc import Callable, Sequence
@@ -16,15 +20,11 @@ from archetype_classifier.card_embeddings.structured import SCALARS, WUBRG, Fron
 @dataclass(frozen=True)
 class Standardisation:
     mean: np.ndarray
-    scale: np.ndarray  # The column's standard deviation, or 1 for a column that never varies.
+    scale: np.ndarray  # Each column's divisor: 1 when the column is only centred.
 
     def apply(self, rows: np.ndarray) -> np.ndarray:
         return ((rows - self.mean) / self.scale).astype(np.float32)
 
-
-def build_standardisation(matrix: np.ndarray) -> Standardisation:
-    std = matrix.std(axis=0)
-    return Standardisation(matrix.mean(axis=0), np.where(std > 0, std, 1.0))
 
 def build_combined(text: Embeddings, structured: np.ndarray, alpha: float, scheme: str | None = None) -> Embeddings:
     """Rows of structured must follow text.names. A card whose structured row is all zeros keeps only its text part."""

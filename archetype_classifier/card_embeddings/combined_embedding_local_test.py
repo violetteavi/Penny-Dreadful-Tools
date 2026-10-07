@@ -10,8 +10,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from archetype_classifier.card_embeddings.combined_embedding import (CombinedEmbedding, CombinedEmbeddingSettings, CombinedEmbeddingWeights, build_combined_embedding,
-                                                                     build_season_set, load_combined_embedding, save_combined_embedding)
+from archetype_classifier.card_embeddings.combined_embedding import CombinedEmbedding, CombinedEmbeddingSettings, CombinedEmbeddingWeights, build_combined_embedding, build_season_set, load_combined_embedding, save_combined_embedding
 from archetype_classifier.card_embeddings.embedding_checks import CHECKS, build_check_results
 from archetype_classifier.card_embeddings.encoders import load_encoder
 from archetype_classifier.card_embeddings.pool import Card, load_card_pool

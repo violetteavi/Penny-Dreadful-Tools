@@ -6,7 +6,11 @@ Terms follow [CONTEXT.md](../../CONTEXT.md). Scenarios marked **Tentative** are 
 
 ## Card representation
 
-A card's text, as the encoder reads it, is its type line and its rules text with both faces joined. The rules text is Scryfall's oracle text as it stands, reminder text included. Other formats compare against this base text ([agreed 2026-10-05](https://github.com/violetteavi/Penny-Dreadful-Tools/issues/7#issuecomment-6005656796)): a JSON object with labelled fields (`manaCost`, `type`, `text`, `power`, `toughness`, `loyalty`; a double-faced card as `layout` plus a `faces` list), with and without each face's own name written as `~`; cost, type line and stats on one line (`{R}{R} Creature — Human Assassin 2/2`); and the same with inline labels (`Cost: {R}{R} Type: Creature — Human Assassin Power: 2 Toughness: 2`). A cost or stat a face lacks is always left out. The structured vector beside the text embedding is described under "Missing stats are absent, not zero". Settled in the [#7 grilling](https://github.com/violetteavi/Penny-Dreadful-Tools/issues/7#issuecomment-6001591778).
+A card is represented by its **text** and its **numbers** ([the #7 spec](https://github.com/violetteavi/Penny-Dreadful-Tools/issues/7#issuecomment-6010768554)):
+- **Text:** each face's type line and rules text, faces joined, embedded by potion-base-8M. The rules text is Scryfall's oracle text with reminder text kept, in one of two formats: **base** (as it stands) and **masked** (each face's own name written as `~`).
+- **Numbers:** the front face's mana value, power, toughness and loyalty, each as (present, variable, fixed), and its colours. A split card sums both halves' mana values and takes both halves' colours. They're compared by **exact thirds** or **average thirds**, so that mana value, colour and stats each count for a third.
+
+Other text formats tried in #7 (cost and stats in the text, inline labels, JSON) are on the tag `card-encoder-exploration`, with the experiments that compared them.
 
 ### Functional reprints get the same representation
 
@@ -17,7 +21,7 @@ Two groups of cards are each one card under several names:
 
 - **Expect:** the card representation treats each group as one card. Their vectors are identical, and each is closer to the rest of its group than to any card with different text.
 - **Why it matters:** new sets often reprint an effect under a new name. Here, Ajani's Response and Grounded for Life first appear in season 42, so they are unseen cards in the test split, while Seized from Slumber (from season 35) and Luminous Rebuke (from season 36) are in the training data. A classifier can only use the new names if the representation maps them onto the old ones. The elves show the same thing for a creature, where the stats, cost and type line must match too.
-- **Note:** within each group, Scryfall's oracle text, type line, cost and stats are already identical and none of them contains the card's name. So every encoder and every arm passes this scenario. It checks the card-text builder (no name, no printing details leaking in), not the choice of encoder.
+- **Note:** within each group, Scryfall's oracle text, type line, cost and stats are already identical and none of them contains the card's name. So every encoder passes this scenario in both formats. It checks the card-text builder (no name, no printing details leaking in), not the choice of encoder.
 - **Check:** pairwise similarity within each group (exactly 1), and each card's nearest neighbours in the whole card pool.
 
 ### Near-equivalent cards are close
@@ -33,13 +37,14 @@ Shock ({R} instant, "Shock deals 2 damage to any target.") and Burst Lightning (
 
 Scryfall's oracle text still names the card wherever a spell deals damage. Of the 1,603 legal faces whose text names the card, 816 are damage sources like these.
 
-- **Expect:** Burst Lightning is among Shock's nearest neighbours, and Shock among Burst Lightning's, in every arm. They are not identical: the kicker is a real difference. In the `~` arm, where both names become `~`, they are at least as close as in the base arm.
+- **Expect:** Burst Lightning is among Shock's nearest neighbours, and Shock among Burst Lightning's, in both formats. They are not identical: the kicker is a real difference. In the masked format, where both names become `~`, they are at least as close as in the base format.
 - **Why it matters:** burn spells are the core of Red Deck Wins and its children. If a name in the text pulls apart two cards that do the same thing, an unseen burn spell won't land next to the burn spells a classifier knows.
-- **Check:** each card's rank and similarity in the other's nearest-neighbour list, in the base arm and the `~` arm. The difference between the two arms shows how much the names cost. The cut-off is to be set once card embeddings are measured.
+- **Check:** each card's rank and similarity in the other's nearest-neighbour list, in the base and masked formats. The cut-off is to be set once card embeddings are measured.
+- **Measured in #7:** with potion, text alone puts them at #47 / #77 in the base format, but #204 / #159 masked, because the names had been doing some of the work. Adding the numbers brings them back to about #20–50.
 
 ### Vanilla creatures differ only in cost, stats and type line
 
-Vanilla creatures have no rules text, so the base arm sees only their type line:
+Vanilla creatures have no rules text, so their text is only their type line:
 
 | Card | Cost | Type line | Stats |
 |---|---|---|---|
@@ -52,37 +57,56 @@ Vanilla creatures have no rules text, so the base arm sees only their type line:
 All five are vanilla in the cards database, and all were legal in at least one season. The three Beasts have only the subtype Beast, so nothing but their cost and stats tells them apart. They were legal together in seasons 17–26.
 
 - **Expect:**
-  - **Base arm:** the three Beasts have the same text, `Creature — Beast`, so their vectors are identical (similarity 1) under every encoder. Coral Eel and Spined Wurm differ from them only by subtype.
-  - **Stats-in-the-text arm:** the Beasts move apart. A {U}{U} 1/4 blocker, a {G}{G} 3/3 and a {4}{G} 7/3 are no longer identical. How far they move apart, compared with how far Spined Wurm ({4}{G} 5/4) sits from Garruk's Gorehorn ({4}{G} 7/3), shows whether the encoder reads costs and stats or only notices that the text changed.
-  - **Structured vector:** it tells all five apart exactly, by mana value, pips, power and toughness, whatever the encoder does.
-- **Why it matters:** cost and stats decide what a vanilla creature does in a deck. This scenario shows whether an encoder reads "{4}{G}" and "7/3" at all, which decides whether the stats-in-the-text arm is worth keeping.
-- **Check:** pairwise similarities among the five in the base arm and the stats-in-the-text arm. The change between the arms is the measure; thresholds are to be set once measured.
+  - **Text:** the three Beasts have the same text, `Creature — Beast`, in both formats, so their text vectors are identical (similarity 1). Coral Eel and Spined Wurm differ from them only by subtype.
+  - **Numbers:** they tell all five apart, by mana value, colour, power and toughness.
+- **Why it matters:** cost and stats decide what a vanilla creature does in a deck, and the text can't tell these cards apart. The numbers have to.
+- **Check:** the Beasts' text similarities are 1, and the five cards' front-face numbers all differ.
 
 ### Missing stats are absent, not zero
 
-The structured vector records power, toughness and loyalty each as three numbers: **present** (0 or 1), **value** (0 when absent, clipped at 15) and **variable** (1 for `*` or `X`). Alongside them are mana value; pips per colour (W, U, B, R, G, C, and S for snow), where a hybrid or Phyrexian symbol counts towards every colour that can pay for it ({U/B} adds one U and one B); generic, X, and counts of hybrid and Phyrexian symbols; card types and supertypes as yes/no columns; and layout columns. Each face gets its own block; a single-faced card's back block is all zeros.
+A card's numbers record mana value, power, toughness and loyalty each as three values: **present** (the face prints it; for mana value, the face has a mana cost), **variable** (it holds `*` or `X`) and **fixed** (the number written in it, with `*` and `X` counting 0). The colours are five yes/no values from the mana cost, where a hybrid or Phyrexian symbol counts towards each of its colours.
 
-| Card | Power (present, value, variable) | Toughness | Loyalty | Mana value, pips |
-|---|---|---|---|---|
-| Distress ({B}{B} sorcery) | 0, 0, 0 | 0, 0, 0 | 0, 0, 0 | 2; B 2 |
-| Ornithopter ({0} artifact creature, 0/2) | **1, 0, 0** | 1, 2, 0 | 0, 0, 0 | 0; none |
-| Wayfaring Temple ({1}{G}{W} creature, \*/\*) | 1, 0, **1** | 1, 0, **1** | 0, 0, 0 | 3; generic 1, G 1, W 1 |
-| Jaya Ballard ({2}{R}{R}{R} planeswalker, loyalty 5) | 0, 0, 0 | 0, 0, 0 | 1, 5, 0 | 5; generic 2, R 3 |
+| Card | Mana value | Power | Toughness | Loyalty | Colours |
+|---|---|---|---|---|---|
+| Distress ({B}{B} sorcery) | (yes, no, 2) | absent | absent | absent | B |
+| Ornithopter ({0} artifact creature, 0/2) | (yes, no, 0) | **(yes, no, 0)** | (yes, no, 2) | absent | none |
+| Lhurgoyf ({2}{G}{G} creature, \*/1+\*) | (yes, no, 4) | (yes, **yes**, 0) | (yes, **yes**, 1) | absent | G |
+| Jace, Wielder of Mysteries ({1}{U}{U}{U} planeswalker, loyalty 4) | (yes, no, 4) | absent | absent | (yes, no, 4) | U |
+| Fireball ({X}{R} sorcery) | (yes, **yes**, 1) | absent | absent | absent | R |
+| Forest (land) | **absent** | absent | absent | absent | none |
+| Fire // Ice (split, {1}{R} and {1}{U}) | (yes, no, **4**) | absent | absent | absent | R, U |
 
-- **Expect:** each card gets exactly the numbers in the table. Distress's power reads "absent", and Ornithopter's reads "present, and 0". The two are never equal.
-- **Why it matters:** a sorcery has no power. A value of 0 alone would make it look like a 0-power creature, which Ornithopter really is.
-- **Check:** build the structured vector for each card and compare it with the table.
-- **Defense is left out for now.** The cards database stores no defense for the 36 legal battles. Scryfall does report it, on the battle face: Invasion of Ikoria has `"defense": "6"`, and its back face, Zilortha, Apex of Ikoria, is 8/8. Our cards import drops it, for two reasons: the `face` table has no `defense` column, and `single_face_value` in `magic/multiverse.py` copies `power`, `toughness` and `loyalty` but not `defense`. Upstream issue [PennyDreadfulMTG#11170](https://github.com/PennyDreadfulMTG/Penny-Dreadful-Tools/issues/11170) (2023) covers adding it. Decided 2026-10-05: defense stays out of the structured vector until the import is fixed ([#38](https://github.com/violetteavi/Penny-Dreadful-Tools/issues/38), a standalone upstream PR); #36 can add it afterwards.
+- **Expect:** each card gets exactly the values in the table. Distress's power reads "absent", and Ornithopter's reads "present, and 0". The two are never equal.
+- **Why it matters:** a sorcery has no power. A value of 0 alone would make it look like a 0-power creature, which Ornithopter really is. Likewise, a land has no mana cost, which differs from Ornithopter's real {0}.
+- **Check:** build each card's front-face numbers and compare them with the table.
+- **Defense is left out for now.** The cards database stores no defense for the 36 legal battles. Scryfall does report it, on the battle face: Invasion of Ikoria has `"defense": "6"`, and its back face, Zilortha, Apex of Ikoria, is 8/8. Our cards import drops it, for two reasons: the `face` table has no `defense` column, and `single_face_value` in `magic/multiverse.py` copies `power`, `toughness` and `loyalty` but not `defense`. Upstream issue [PennyDreadfulMTG#11170](https://github.com/PennyDreadfulMTG/Penny-Dreadful-Tools/issues/11170) (2023) covers adding it. Decided 2026-10-05: defense stays out of a card's numbers until the import is fixed ([#38](https://github.com/violetteavi/Penny-Dreadful-Tools/issues/38), a standalone upstream PR); #36 can add it afterwards.
+
+### Reprints whose text names the card are identical when masked
+
+Lightning Strike and Searing Spear are both {1}{R} instants reading "[this card] deals 3 damage to any target." Scryfall's text names each card ("Lightning Strike deals 3 damage…", "Searing Spear deals 3 damage…"), so their base text differs only in the name.
+
+- **Expect:** in the masked format their text is identical ("~ deals 3 damage to any target."), so their text vectors are identical (similarity 1). In the base format they are not.
+- **Why it matters:** the first reprint scenario's cards don't name themselves, so it can't catch this. Reprints that do are common among burn spells; potion put Searing Spear only #22 for Lightning Strike in the base format.
+- **Check:** the masked texts are equal, and the masked text similarity is 1.
+
+### A modal double-faced card is close to cards like each of its faces
+
+Hagra Mauling // Hagra Broodpit is removal on its front ({2}{B}{B} instant, "This spell costs {1} less to cast if an opponent controls no basic lands. Destroy target creature.") and a land on its back ("This land enters tapped. {T}: Add {B}."). Murder ({1}{B}{B} instant, "Destroy target creature.") does the front's job; Barren Moor (land, "This land enters tapped. {T}: Add {B}. Cycling {B}") does the back's.
+
+- **Expect:** both Murder and Barren Moor are among Hagra Mauling's nearest neighbours.
+- **Why it matters:** a modal double-faced card is played as either face, so a deck playing it resembles decks playing either kind of card.
+- **Not yet met** ([#40](https://github.com/violetteavi/Penny-Dreadful-Tools/issues/40)): with potion on masked text, Hagra Mauling's neighbours are tapped lands and other modal double-faced cards (text alone), or generic 4-mana black cards (with average thirds at α 0.5), and neither list has Murder or cheap removal. No test until #40.
+- **Check:** Murder's and Barren Moor's ranks in Hagra Mauling's list.
 
 ### Adding a set changes no other card's vector
 
 Season 43 added 461 cards that are new to the pool, 148 of them from The Hobbit (HOB).
 
 - **Expect:** embed the cards legal in seasons 1–42, then embed the full pool including those 461. Every card in both runs gets the same vector, up to floating-point noise from batching (each element within 1e-5).
-- **The structured part too:** when the structured vector is combined with the text embedding, its columns are standardised with statistics fitted once and stored, so a new set's cards are standardised with the old statistics and no existing row moves. Refitting is a deliberate new version, not a side effect of adding a set.
+- **The numbers too:** a card's numbers depend only on the card. The statistics that combine them with the text (colour centring, and for average thirds the fill values, standardisation and group scales) are fitted once and frozen. So a new set's cards are scaled with the old statistics, and no existing card moves. Refitting is a deliberate new version, not a side effect of adding a set.
 - **Why it matters:** a new set arrives about every two months. A frozen encoder reads each card on its own, so adding cards should need no other change: no re-embedding of old cards and no retraining of the encoder. If old vectors moved, every model built on them would have to be refitted at each set.
 - **Check:** compare the two runs' vectors for the shared cards. Also report how long the 461 new cards take to embed with each encoder.
-- **How it's checked:** a unit test with a fake encoder; a local test with each real encoder over a sample (1,000 cards from season 42 plus the scenario cards, then the same with the 461 added); and the stage 1 experiment, which embeds the 461 on their own and merges them in, as a new set would really be added, and re-embeds 461 older cards in a different batch to measure the noise.
+- **How it's checked:** a unit test with a fake encoder; a local test with each real encoder over a sample (1,000 cards from season 42 plus the scenario cards, then the same with the 461 added); and the #7 stage 1 experiment (on the tag `card-encoder-exploration`), which embedded the 461 on their own and merged them in, as a new set would really be added, and re-embedded 461 older cards in a different batch to measure the noise (at most 1.3e-7).
 
 ## Scoring against the archetype tree
 

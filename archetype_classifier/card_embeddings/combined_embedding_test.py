@@ -1,6 +1,10 @@
+import numpy as np
 import pytest
 
-from archetype_classifier.card_embeddings.combined_embedding import CombinedEmbeddingSettings, CombinedEmbeddingWeights, build_season_label, build_season_set
+from archetype_classifier.card_embeddings.combined import THIRDS, build_average_thirds, build_combined
+from archetype_classifier.card_embeddings.combined_embedding import FIT_COMBINER, CombinedEmbeddingSettings, CombinedEmbeddingWeights, build_season_label, build_season_set
+from archetype_classifier.card_embeddings.combined_test import CARD_TEXT, NUMBERS
+from archetype_classifier.card_embeddings.neighbours import Similarities
 from archetype_classifier.card_embeddings.text import MASKED
 
 
@@ -63,3 +67,13 @@ def test_settings_with_gapped_seasons_inside_the_embedded_seasons_are_accepted()
 def test_settings_refuse_no_fit_seasons_or_fit_seasons_that_are_not_embedded(fit: str, embedded: str, problem: str) -> None:
     with pytest.raises(ValueError, match=problem):
         CombinedEmbeddingSettings('potion', MASKED, build_season_set(fit) if fit else frozenset(), build_season_set(embedded))
+
+
+def similarities(cards: Similarities) -> np.ndarray:
+    return np.asarray(cards.similarities(0, len(cards.names)))
+
+
+def test_average_thirds_at_3_1_1_1_is_the_7_combination_at_alpha_one_half() -> None:
+    combiner = FIT_COMBINER['average'](NUMBERS, CombinedEmbeddingWeights(3, 1, 1, 1))
+    seven = build_combined(CARD_TEXT, build_average_thirds(NUMBERS, THIRDS).apply(NUMBERS), 0.5)
+    assert np.allclose(similarities(combiner.combine(CARD_TEXT, NUMBERS)), similarities(seven), atol=1e-6)

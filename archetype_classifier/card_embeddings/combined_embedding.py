@@ -3,9 +3,17 @@ that later work loads it rather than rebuilding it. The maths of each approach l
 """
 import math
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
+from typing import ClassVar, Literal, Protocol
 
+from archetype_classifier.card_embeddings.combined import AverageThirds, build_average_thirds, build_combined
+from archetype_classifier.card_embeddings.neighbours import Similarities
+from archetype_classifier.card_embeddings.structured import FrontNumbers
 from archetype_classifier.card_embeddings.text import TextRecipe
+from archetype_classifier.card_embeddings.text_embedding import TextEmbeddings
+
+CombiningApproach = Literal['average']  # 'exact' (exact thirds, combined.GroupedSimilarity) can join later.
 
 WEIGHT_NAMES = ('text', 'mana_value', 'colour', 'stats')
 SEASON_PART = re.compile(r'(\d+)(?:-(\d+))?')
@@ -34,6 +42,39 @@ class CombinedEmbeddingWeights:
         for name, w in given.items():
             object.__setattr__(self, name, w / total)
 
+
+
+class TextAndNumbersCombiner(Protocol):
+    """A fitted way of combining cards' text embeddings with their numbers: it carries its weights and its frozen statistics."""
+    approach: ClassVar[CombiningApproach]
+    weights: CombinedEmbeddingWeights
+
+    def combine(self, text: TextEmbeddings, numbers: FrontNumbers) -> Similarities: ...
+
+
+@dataclass(frozen=True)
+class AverageThirdsCombiner:
+    """Average thirds: one vector per card, each number group scaled to its share of the numbers part on average, mixed with the text by its weight."""
+    weights: CombinedEmbeddingWeights
+    statistics: AverageThirds  # Fitted once, then frozen.
+    approach: ClassVar[CombiningApproach] = 'average'
+
+    def group_shares(self) -> tuple[float, float, float]:
+        return build_group_shares(self.weights)
+
+    def combine(self, text: TextEmbeddings, numbers: FrontNumbers) -> Similarities:
+        return build_combined(text, self.statistics.apply(numbers), self.weights.text)
+
+def build_group_shares(weights: CombinedEmbeddingWeights) -> tuple[float, float, float]:
+    """Each number group's weight over the three groups' total (mana value, colour, stats): the shares average thirds aims each group at.
+    All 0 when the group weights are all 0, so the numbers drop out."""
+    total = weights.mana_value + weights.colour + weights.stats
+    return (weights.mana_value / total, weights.colour / total, weights.stats / total) if total else (0.0, 0.0, 0.0)
+
+def fit_average_thirds(numbers: FrontNumbers, weights: CombinedEmbeddingWeights) -> AverageThirdsCombiner:
+    return AverageThirdsCombiner(weights, build_average_thirds(numbers, build_group_shares(weights)))
+
+FIT_COMBINER: dict[CombiningApproach, Callable[[FrontNumbers, CombinedEmbeddingWeights], TextAndNumbersCombiner]] = {'average': fit_average_thirds}
 
 @dataclass(frozen=True)
 class CombinedEmbeddingSettings:

@@ -8,7 +8,7 @@ import pytest
 
 from archetype_classifier.card_embeddings.embeddings import TOLERANCE, build_embeddings, load_embeddings, merge_embeddings, save_embeddings
 from archetype_classifier.card_embeddings.pool import Card, Face
-from archetype_classifier.card_embeddings.text import BASE, MASKED, STATS, TEXT_VERSION
+from archetype_classifier.card_embeddings.text import BASE, MASKED, TEXT_VERSION
 
 
 class FakeEncoder:
@@ -43,8 +43,8 @@ def test_rows_follow_the_cards_names_in_order_and_are_unit_length() -> None:
 
 def test_the_encoder_reads_the_recipes_text() -> None:
     encoder = FakeEncoder()
-    build_embeddings([SHOCK], STATS, encoder)
-    assert encoder.seen == ['{R} Instant\nShock deals 2 damage to any target.']
+    build_embeddings([SHOCK], MASKED, encoder)
+    assert encoder.seen == ['Instant\n~ deals 2 damage to any target.']
 
 def test_the_manifest_says_how_the_embeddings_were_made_and_how_many_cards_ran_past_the_token_limit() -> None:
     embeddings = build_embeddings([SHOCK, OPT, CANCEL], BASE, FakeEncoder())
@@ -96,7 +96,7 @@ def test_merging_puts_both_sets_of_rows_in_name_order_and_sums_the_manifests() -
 
 def test_merging_embeddings_from_different_encoders_or_recipes_fails() -> None:
     with pytest.raises(ValueError, match='Only embeddings from the same encoder, revision, recipe and text version can be merged'):
-        merge_embeddings(build_embeddings([SHOCK], BASE, FakeEncoder()), build_embeddings([OPT], STATS, FakeEncoder()))
+        merge_embeddings(build_embeddings([SHOCK], BASE, FakeEncoder()), build_embeddings([OPT], MASKED, FakeEncoder()))
 
 def test_merging_a_card_already_there_fails() -> None:
     with pytest.raises(ValueError, match='Already embedded: Shock'):

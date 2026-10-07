@@ -13,7 +13,7 @@ from archetype_classifier.card_embeddings.embeddings import TOLERANCE, Embedding
 from archetype_classifier.card_embeddings.encoders import ENCODERS, Encoder, load_encoder
 from archetype_classifier.card_embeddings.neighbours import build_neighbours
 from archetype_classifier.card_embeddings.pool import Card, load_card_pool
-from archetype_classifier.card_embeddings.text import BASE, MASKED, STATS, TextRecipe
+from archetype_classifier.card_embeddings.text import BASE, MASKED, TextRecipe
 
 pytestmark = pytest.mark.skipif(os.environ.get('PD_LOCAL_DATA') != '1', reason='needs the full local setup: set PD_LOCAL_DATA=1')
 pytest.importorskip('sentence_transformers')
@@ -21,7 +21,7 @@ pytest.importorskip('sentence_transformers')
 REPRINT_GROUPS = [["Ajani's Response", 'Grounded for Life', 'Seized from Slumber', 'Luminous Rebuke'], ['Llanowar Elves', 'Elvish Mystic', 'Fyndhorn Elves']]
 BEASTS = ['Plated Seastrider', 'Kalonian Tusker', "Garruk's Gorehorn"]
 VANILLAS = [*BEASTS, 'Coral Eel', 'Spined Wurm']
-SCENARIO_CARDS = [*(n for g in REPRINT_GROUPS for n in g), 'Swift Response', 'Shock', 'Burst Lightning', *VANILLAS]
+SCENARIO_CARDS = [*(n for g in REPRINT_GROUPS for n in g), 'Swift Response', 'Shock', 'Burst Lightning', 'Lightning Strike', 'Searing Spear', *VANILLAS]
 SAMPLE = 1000  # Cards from season 42 that every embedding is built over, besides the scenario cards.
 
 
@@ -42,7 +42,7 @@ def encoder(request: pytest.FixtureRequest) -> Encoder:
 @pytest.fixture(scope='module')
 def embedded(encoder: Encoder, sample: list[Card]) -> dict[str, Embeddings]:
     """The sample embedded once per text format for each encoder, shared by every test in the file."""
-    return {recipe.label: build_embeddings(sample, recipe, encoder) for recipe in (BASE, STATS, MASKED)}
+    return {recipe.label: build_embeddings(sample, recipe, encoder) for recipe in (BASE, MASKED)}
 
 def similarity(embeddings: Embeddings, a: str, b: str) -> float:
     return float(embeddings.matrix[embeddings.names.index(a)] @ embeddings.matrix[embeddings.names.index(b)])
@@ -53,7 +53,7 @@ def rank(embeddings: Embeddings, card: str, other: str) -> int:
 
 # Scenario: functional reprints get the same representation (Scenarios.md, "Card representation").
 
-@pytest.mark.parametrize('recipe', [BASE, STATS, MASKED], ids=lambda r: r.label)
+@pytest.mark.parametrize('recipe', [BASE, MASKED], ids=lambda r: r.label)
 def test_functional_reprints_get_the_same_vector(embedded: dict[str, Embeddings], recipe: TextRecipe) -> None:
     embeddings = embedded[recipe.label]
     for group in REPRINT_GROUPS:
@@ -71,12 +71,17 @@ def test_near_equivalents_and_names_in_text_are_reported(encoder: Encoder, embed
 
 # Scenario: vanilla creatures differ only in cost, stats and type line (Scenarios.md, "Card representation").
 
-def test_the_vanilla_beasts_are_identical_in_the_base_arm_and_the_stats_arm_is_reported(encoder: Encoder, embedded: dict[str, Embeddings]) -> None:
-    base = embedded[BASE.label]
-    assert all(similarity(base, BEASTS[0], b) == pytest.approx(1, abs=TOLERANCE) for b in BEASTS[1:])
-    stats = embedded[STATS.label]
-    pairs = [(a, b) for i, a in enumerate(VANILLAS) for b in VANILLAS[i + 1:]]
-    print(f'\n{encoder.name}: ' + '; '.join(f'{a} / {b} base {similarity(base, a, b):.3f} stats {similarity(stats, a, b):.3f}' for a, b in pairs), end='')
+@pytest.mark.parametrize('recipe', [BASE, MASKED], ids=lambda r: r.label)
+def test_the_vanilla_beasts_are_identical_in_the_text(embedded: dict[str, Embeddings], recipe: TextRecipe) -> None:
+    embeddings = embedded[recipe.label]
+    assert all(similarity(embeddings, BEASTS[0], b) == pytest.approx(1, abs=TOLERANCE) for b in BEASTS[1:])
+
+
+# Scenario: reprints whose text names the card are identical when masked (Scenarios.md, "Card representation").
+
+def test_lightning_strike_and_searing_spear_are_identical_when_masked(embedded: dict[str, Embeddings]) -> None:
+    assert similarity(embedded[MASKED.label], 'Lightning Strike', 'Searing Spear') == pytest.approx(1, abs=TOLERANCE)
+    assert similarity(embedded[BASE.label], 'Lightning Strike', 'Searing Spear') < 1 - TOLERANCE
 
 # Scenario: adding a set changes no other card's vector (Scenarios.md, "Card representation").
 

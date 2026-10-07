@@ -8,10 +8,12 @@ from dataclasses import dataclass
 from typing import Literal
 
 from archetype_classifier.card_embeddings.neighbours import Similarities, build_rank
+from archetype_classifier.card_embeddings.text_embedding import TOLERANCE
 
 Expectation = Literal['identical', 'near', 'far']
 NEAR_RANK = 10  # near: the other card is in the top 10 of the card's list.
 FAR_RANK = 100  # far: it ranks beyond 100.
+# identical: the two cards' similarity is within TOLERANCE of 1.
 
 
 @dataclass(frozen=True)
@@ -36,9 +38,13 @@ def build_check_result(cards: Similarities, check: Check) -> CheckResult:
     i, j = cards.names.index(check.card), cards.names.index(check.other)
     similarity = float(cards.similarities(i, i + 1)[0, j])
     rank = build_rank(cards, check.card, check.other)
-    if check.expectation == 'far':
-        passed, expected = rank > FAR_RANK, f'beyond {FAR_RANK}'
+    if check.expectation == 'identical':
+        passed = similarity >= 1 - TOLERANCE
+        message = f"{check.other}'s similarity to {check.card} is {similarity:.5f}; expected identical (at least {1 - TOLERANCE:.5f})"
     else:
-        passed, expected = rank <= NEAR_RANK, f'in the top {NEAR_RANK}'
-    message = f"{check.other} is #{rank} in {check.card}'s list; expected {expected}"
+        if check.expectation == 'far':
+            passed, expected = rank > FAR_RANK, f'beyond {FAR_RANK}'
+        else:
+            passed, expected = rank <= NEAR_RANK, f'in the top {NEAR_RANK}'
+        message = f"{check.other} is #{rank} in {check.card}'s list; expected {expected}"
     return CheckResult(check, rank, similarity, passed, message)

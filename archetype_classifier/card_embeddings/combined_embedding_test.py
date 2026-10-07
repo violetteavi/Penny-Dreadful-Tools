@@ -152,3 +152,9 @@ def test_gapped_seasons_pick_cards_legal_in_any_of_them() -> None:
     embedding = build('2', '2,40')  # Shock was legal in 2 and 40, City Pigeon in 40; Kalonian Tusker in neither.
     assert embedding.names == ('City Pigeon', 'Shock')
     assert not np.isnan(embedding.similarities(0, 2)).any()
+
+
+def test_an_encoder_other_than_the_one_the_settings_name_is_refused() -> None:
+    settings = CombinedEmbeddingSettings('potion', MASKED, build_season_set('1-38'), build_season_set('1-39'))
+    with pytest.raises(ValueError, match="settings name the encoder 'potion' but were given 'fake'"):
+        build_combined_embedding(POOL, settings, 'average', CombinedEmbeddingWeights(3, 1, 1, 1), FakeEncoder())

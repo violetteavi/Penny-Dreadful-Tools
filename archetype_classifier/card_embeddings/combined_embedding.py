@@ -138,6 +138,8 @@ def build_combined_embedding(pool: Sequence[Card], settings: CombinedEmbeddingSe
                              weights: CombinedEmbeddingWeights, encoder: Encoder) -> CombinedEmbedding:
     """Embeds every card legal in an embedded season and builds their numbers, then fits the combiner on the numbers of the cards legal in a fit
     season only. Every card is combined with those frozen statistics."""
+    if encoder.name != settings.encoder:
+        raise ValueError(f'The settings name the encoder {settings.encoder!r} but were given {encoder.name!r}')
     cards = [c for c in pool if c.seasons & settings.embedded_seasons]
     text = build_text_embeddings(cards, settings.recipe, encoder)
     by_name = {c.name: c for c in cards}

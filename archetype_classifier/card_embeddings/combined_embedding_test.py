@@ -1,6 +1,7 @@
 import pytest
 
-from archetype_classifier.card_embeddings.combined_embedding import CombinedEmbeddingWeights, build_season_label, build_season_set
+from archetype_classifier.card_embeddings.combined_embedding import CombinedEmbeddingSettings, CombinedEmbeddingWeights, build_season_label, build_season_set
+from archetype_classifier.card_embeddings.text import MASKED
 
 
 def values(weights: CombinedEmbeddingWeights) -> tuple[float, float, float, float]:
@@ -47,3 +48,18 @@ def test_a_season_set_is_labelled_for_file_names_as_ranges(seasons: set[int], la
 def test_malformed_season_text_is_refused_naming_the_text(text: str) -> None:
     with pytest.raises(ValueError, match='Seasons must be written like 1-38 or 1-3,6,8'):
         build_season_set(text)
+
+
+def test_settings_with_gapped_seasons_inside_the_embedded_seasons_are_accepted() -> None:
+    settings = CombinedEmbeddingSettings('potion', MASKED, build_season_set('1-3,6-8,10'), build_season_set('1-12'))
+    assert settings.fit_seasons == frozenset({1, 2, 3, 6, 7, 8, 10})
+
+
+@pytest.mark.parametrize(('fit', 'embedded', 'problem'), [
+    ('', '1-39', 'at least one fit season'),
+    ('1-38', '2-39', 'fit seasons 1 are not embedded'),
+    ('1-40', '1-39', 'fit seasons 40 are not embedded'),
+])
+def test_settings_refuse_no_fit_seasons_or_fit_seasons_that_are_not_embedded(fit: str, embedded: str, problem: str) -> None:
+    with pytest.raises(ValueError, match=problem):
+        CombinedEmbeddingSettings('potion', MASKED, build_season_set(fit) if fit else frozenset(), build_season_set(embedded))

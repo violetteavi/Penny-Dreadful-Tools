@@ -5,6 +5,8 @@ import math
 import re
 from dataclasses import dataclass
 
+from archetype_classifier.card_embeddings.text import TextRecipe
+
 WEIGHT_NAMES = ('text', 'mana_value', 'colour', 'stats')
 SEASON_PART = re.compile(r'(\d+)(?:-(\d+))?')
 
@@ -31,6 +33,22 @@ class CombinedEmbeddingWeights:
             raise ValueError('The weights are all four 0: nothing would be compared')
         for name, w in given.items():
             object.__setattr__(self, name, w / total)
+
+
+@dataclass(frozen=True)
+class CombinedEmbeddingSettings:
+    """Which text and which cards: every card legal in an embedded season is embedded, and the combiner's statistics are fitted on the cards
+    legal in a fit season. Seasons are sets, so gaps are fine. No defaults: every caller says what it wants."""
+    encoder: str  # A key of encoders.ENCODERS.
+    recipe: TextRecipe
+    fit_seasons: frozenset[int]
+    embedded_seasons: frozenset[int]
+
+    def __post_init__(self) -> None:
+        if not self.fit_seasons:
+            raise ValueError('There must be at least one fit season')
+        if outside := self.fit_seasons - self.embedded_seasons:
+            raise ValueError(f'The fit seasons {build_season_label(frozenset(outside))} are not embedded')
 
 
 def build_season_set(text: str) -> frozenset[int]:

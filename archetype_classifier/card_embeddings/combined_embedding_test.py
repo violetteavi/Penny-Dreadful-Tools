@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from archetype_classifier.card_embeddings.combined import THIRDS, build_average_thirds, build_combined
-from archetype_classifier.card_embeddings.combined_embedding import FIT_COMBINER, LOAD_COMBINER, CombinedEmbedding, CombinedEmbeddingSettings, CombinedEmbeddingWeights, build_average_thirds_combiner, build_combined_embedding, combined_embedding_path, build_season_label, build_season_set
+from archetype_classifier.card_embeddings.combined_embedding import FIT_COMBINER, LOAD_COMBINER, CombinedEmbedding, CombinedEmbeddingSettings, CombinedEmbeddingWeights, build_average_thirds_combiner, build_combined_embedding, combined_embedding_path, load_combined_embedding, save_combined_embedding, build_season_label, build_season_set
 from archetype_classifier.card_embeddings.combined_test import CARD_TEXT, NUMBERS
 from archetype_classifier.card_embeddings.neighbours import Similarities
 from archetype_classifier.card_embeddings.pool import Card, Face
@@ -165,3 +165,17 @@ def test_the_file_name_follows_the_settings_the_approach_and_the_weights() -> No
     settings = CombinedEmbeddingSettings('potion', MASKED, build_season_set('1-38'), build_season_set('1-39'))
     path = combined_embedding_path(Path('embeddings'), settings, 'average', CombinedEmbeddingWeights(3, 1, 1, 1))
     assert path == Path('embeddings/potion__masked__average__w0.5-0.1667-0.1667-0.1667__fit1-38__emb1-39.npz')
+
+
+@pytest.mark.parametrize('weights', [(3, 1, 1, 1), (1, 0, 0, 0)])
+def test_a_saved_embedding_loads_back_with_the_same_settings_combiner_and_similarities(tmp_path: Path, weights: tuple[float, float, float, float]) -> None:
+    embedding = build('1-38', '1-39', weights)
+    path = save_combined_embedding(embedding, tmp_path)
+    assert path == combined_embedding_path(tmp_path, embedding.settings, 'average', embedding.combiner.weights)
+    assert sorted(p.name for p in tmp_path.iterdir()) == [path.with_suffix('.json').name, path.name]
+    loaded = load_combined_embedding(path)
+    assert loaded.settings == embedding.settings
+    assert loaded.combiner.to_json() == embedding.combiner.to_json()
+    assert loaded.names == embedding.names
+    assert loaded.text.manifest == embedding.text.manifest
+    assert np.array_equal(similarities(loaded), similarities(embedding))

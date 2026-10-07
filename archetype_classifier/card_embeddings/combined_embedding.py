@@ -1,6 +1,7 @@
 """The combined embedding: each card's masked-text embedding together with its card numbers, combined by an approach with weights, and stored so
 that later work loads it rather than rebuilding it. The maths of each approach lives in combined.py.
 """
+import json
 import math
 import re
 from collections.abc import Callable, Sequence
@@ -175,3 +176,30 @@ def combined_embedding_path(directory: Path, settings: CombinedEmbeddingSettings
     w = '-'.join(f'{getattr(weights, name):.4g}' for name in WEIGHT_NAMES)
     fit, embedded = build_season_label(settings.fit_seasons), build_season_label(settings.embedded_seasons)
     return directory / f'{settings.encoder}__{settings.recipe.label}__{approach}__w{w}__fit{fit}__emb{embedded}.npz'
+
+
+NUMBER_ARRAYS = ('present', 'variable', 'fixed', 'sign', 'colours')  # FrontNumbers' arrays, saved beside the text in the .npz.
+
+
+def save_combined_embedding(e: CombinedEmbedding, directory: Path) -> Path:
+    """Writes the text and the numbers to a .npz and everything else to a .json beside it, and returns the .npz's path."""
+    path = combined_embedding_path(directory, e.settings, e.combiner.approach, e.combiner.weights)
+    directory.mkdir(parents=True, exist_ok=True)
+    np.savez(path, text=e.text.matrix, **{name: getattr(e.numbers, name) for name in NUMBER_ARRAYS})
+    settings = {'encoder': e.settings.encoder, 'recipe': asdict(e.settings.recipe),
+                'fit_seasons': sorted(e.settings.fit_seasons), 'embedded_seasons': sorted(e.settings.embedded_seasons)}
+    saved = {'settings': settings, 'combiner': e.combiner.to_json(), 'text_manifest': e.text.manifest, 'names': e.names}
+    path.with_suffix('.json').write_text(json.dumps(saved, indent=1))
+    return path
+
+def load_combined_embedding(path: Path) -> CombinedEmbedding:
+    """Everything from the two files, with no database and no refitting."""
+    saved = json.loads(path.with_suffix('.json').read_text())
+    names = tuple(saved['names'])
+    s = saved['settings']
+    settings = CombinedEmbeddingSettings(s['encoder'], TextRecipe(**s['recipe']), frozenset(s['fit_seasons']), frozenset(s['embedded_seasons']))
+    with np.load(path) as arrays:
+        text = TextEmbeddings(names, arrays['text'], saved['text_manifest'])
+        numbers = FrontNumbers(names, *(arrays[name] for name in NUMBER_ARRAYS))
+    combiner = LOAD_COMBINER[saved['combiner']['approach']](saved['combiner'])
+    return CombinedEmbedding(settings, text, numbers, combiner)

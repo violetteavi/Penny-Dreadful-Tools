@@ -74,7 +74,17 @@ A card's power, toughness and loyalty; not its mana value or colours.
 Comparing two cards' numbers group by group, with mana value, colour and stats each a third of the score; a value whose present or variable flag differs between the cards scores 0.
 
 **Average thirds**:
-Comparing two cards' numbers with one cosine over a vector scaled so that mana value, colour and stats each make up a third of it on average.
+Comparing two cards' numbers with one cosine over a vector scaled so that mana value, colour and stats each make up their share of it on average: a third each at equal weights, and nothing for a group weighted 0.
+
+**Combined embedding**:
+Every card's **Card embedding** together with its **Card numbers**, combined by an approach (so far **Average thirds**) with four weights: text, mana value, colour and stats. Only the weights' ratios matter. Its statistics are fitted on the cards of the **Fit seasons**, then frozen and applied to every card of the **Embedded seasons**.
+_Avoid_: Card representation (the broader idea), combined vector
+
+**Fit seasons** and **Embedded seasons**:
+The seasons whose cards a **Combined embedding**'s statistics are fitted on, and the seasons whose cards it holds; sets, not ranges, with the fit seasons among the embedded ones.
+
+**Embedding check**:
+A pair of cards and where one should rank in the other's **Neighbour list**: identical, near (top 10) or far (beyond 100). Checks report on any card similarity; a failed check is a finding, not an error.
 
 **Neighbour list**:
 A card's most similar cards among the ever-legal cards, best first.
@@ -195,6 +205,7 @@ _Avoid_: Dataset, test set (the test seasons are only one possible part of it)
 - Every **Deck** is in exactly one **Split**. Held-out, validation and test decks can never be in the **Train set**; by default a deck that repeats a held-out maindeck is held out with it. Training decks may also be in an **Eval set**, where their scores measure fit rather than generalisation.
 - An **Excluded deck** leaves every other deck's **Split** and scores unchanged: an experiment is the same whether or not it exists.
 - A card's representation is its **Card embedding** (of its **Masked text**) together with its **Card numbers**, compared by **Exact thirds** or **Average thirds**; an **Unseen card** gets one the same way as any other card.
+- A **Combined embedding** stores that representation for the cards of its **Embedded seasons**; a card outside its **Fit seasons** is combined with the frozen statistics but never moves them.
 
 ## Flagged ambiguities
 

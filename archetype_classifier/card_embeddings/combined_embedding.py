@@ -4,6 +4,7 @@ that later work loads it rather than rebuilding it. The maths of each approach l
 import math
 import re
 from collections.abc import Callable, Sequence
+from pathlib import Path
 from dataclasses import asdict, dataclass, field, fields
 from typing import Any, ClassVar, Literal, Protocol
 
@@ -167,3 +168,10 @@ def build_season_label(seasons: frozenset[int]) -> str:
         else:
             runs.append([season])
     return '_'.join(str(r[0]) if len(r) == 1 else f'{r[0]}-{r[-1]}' for r in runs)
+
+
+def combined_embedding_path(directory: Path, settings: CombinedEmbeddingSettings, approach: CombiningApproach, weights: CombinedEmbeddingWeights) -> Path:
+    """Where a combined embedding with these settings, approach and weights is saved; the .json sits beside it."""
+    w = '-'.join(f'{getattr(weights, name):.4g}' for name in WEIGHT_NAMES)
+    fit, embedded = build_season_label(settings.fit_seasons), build_season_label(settings.embedded_seasons)
+    return directory / f'{settings.encoder}__{settings.recipe.label}__{approach}__w{w}__fit{fit}__emb{embedded}.npz'

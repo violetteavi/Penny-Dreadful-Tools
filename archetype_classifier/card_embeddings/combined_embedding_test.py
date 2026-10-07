@@ -1,10 +1,11 @@
 import json
+from pathlib import Path
 
 import numpy as np
 import pytest
 
 from archetype_classifier.card_embeddings.combined import THIRDS, build_average_thirds, build_combined
-from archetype_classifier.card_embeddings.combined_embedding import FIT_COMBINER, LOAD_COMBINER, CombinedEmbedding, CombinedEmbeddingSettings, CombinedEmbeddingWeights, build_average_thirds_combiner, build_combined_embedding, build_season_label, build_season_set
+from archetype_classifier.card_embeddings.combined_embedding import FIT_COMBINER, LOAD_COMBINER, CombinedEmbedding, CombinedEmbeddingSettings, CombinedEmbeddingWeights, build_average_thirds_combiner, build_combined_embedding, combined_embedding_path, build_season_label, build_season_set
 from archetype_classifier.card_embeddings.combined_test import CARD_TEXT, NUMBERS
 from archetype_classifier.card_embeddings.neighbours import Similarities
 from archetype_classifier.card_embeddings.pool import Card, Face
@@ -158,3 +159,9 @@ def test_an_encoder_other_than_the_one_the_settings_name_is_refused() -> None:
     settings = CombinedEmbeddingSettings('potion', MASKED, build_season_set('1-38'), build_season_set('1-39'))
     with pytest.raises(ValueError, match="settings name the encoder 'potion' but were given 'fake'"):
         build_combined_embedding(POOL, settings, 'average', CombinedEmbeddingWeights(3, 1, 1, 1), FakeEncoder())
+
+
+def test_the_file_name_follows_the_settings_the_approach_and_the_weights() -> None:
+    settings = CombinedEmbeddingSettings('potion', MASKED, build_season_set('1-38'), build_season_set('1-39'))
+    path = combined_embedding_path(Path('embeddings'), settings, 'average', CombinedEmbeddingWeights(3, 1, 1, 1))
+    assert path == Path('embeddings/potion__masked__average__w0.5-0.1667-0.1667-0.1667__fit1-38__emb1-39.npz')

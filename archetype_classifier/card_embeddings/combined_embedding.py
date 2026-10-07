@@ -29,3 +29,12 @@ class CombinedEmbeddingWeights:
             raise ValueError('The weights are all four 0: nothing would be compared')
         for name, w in given.items():
             object.__setattr__(self, name, w / total)
+
+
+def build_season_set(text: str) -> frozenset[int]:
+    """Seasons written as ranges and single seasons separated by commas: '1-3,6-8,10' is {1, 2, 3, 6, 7, 8, 10}."""
+    seasons: set[int] = set()
+    for part in text.split(','):
+        first, _, last = part.partition('-')
+        seasons.update(range(int(first), int(last or first) + 1))
+    return frozenset(seasons)

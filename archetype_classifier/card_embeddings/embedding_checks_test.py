@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from archetype_classifier.card_embeddings.embedding_checks import Check, build_check_results
+from archetype_classifier.card_embeddings.embedding_checks import Check, build_check_lists, build_check_results
 from archetype_classifier.card_embeddings.text_embedding import TOLERANCE
 
 
@@ -35,7 +35,8 @@ def test_near_passes_at_rank_10_and_fails_at_rank_11() -> None:
     near = Check('Shock', 'Burst Lightning', 'near')
     [at_10] = build_check_results(Ranked('Shock', [*fillers(9), 'Burst Lightning']), [near])
     [at_11] = build_check_results(Ranked('Shock', [*fillers(10), 'Burst Lightning']), [near])
-    assert (at_10.passed, at_10.rank, at_10.similarity) == (True, 10, pytest.approx(0.990))
+    assert (at_10.passed, at_10.rank) == (True, 10)
+    assert at_10.similarity == pytest.approx(0.990)
     assert (at_11.passed, at_11.rank) == (False, 11)
     assert at_11.message == "Burst Lightning is #11 in Shock's list; expected in the top 10"
 
@@ -66,3 +67,12 @@ def test_a_check_whose_card_is_missing_fails_with_a_message_and_never_raises(che
     [result] = build_check_results(Paired('Shock', 'Seized from Slumber', 0.5), [check])
     assert (result.passed, result.rank, result.similarity) == (False, None, None)
     assert result.message == f'{missing} is not in these cards'
+
+
+def test_check_lists_give_each_checked_cards_top_n_once_and_skip_missing_cards() -> None:
+    cards = Ranked('Shock', ['Burst Lightning', 'filler 001', 'Explosive Welcome'])
+    checks = [Check('Shock', 'Burst Lightning', 'near'), Check('Shock', 'Explosive Welcome', 'far'), Check("Ajani's Response", 'Shock', 'near')]
+    lists = build_check_lists(cards, checks, 2)
+    assert list(lists) == ['Shock']
+    assert [n.name for n in lists['Shock']] == ['Burst Lightning', 'filler 001']
+    assert [n.similarity for n in lists['Shock']] == pytest.approx([0.999, 0.998])

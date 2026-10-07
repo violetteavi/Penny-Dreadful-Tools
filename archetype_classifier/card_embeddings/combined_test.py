@@ -195,3 +195,12 @@ def shares_after_scaling(rows: np.ndarray, scales: np.ndarray) -> list[float]:
 def test_the_group_scales_aim_each_group_at_its_target_share() -> None:
     rows = FIT.standardised(NUMBERS)
     assert shares_after_scaling(rows, build_group_scales(rows, (0.6, 0.2, 0.2))) == pytest.approx([0.6, 0.2, 0.2], abs=1e-3)
+
+def test_a_group_with_a_zero_share_is_scaled_to_0_and_the_others_share_the_rest() -> None:
+    rows = FIT.standardised(NUMBERS)
+    scales = build_group_scales(rows, (0.5, 0.5, 0.0))
+    assert scales[2] == 0
+    assert shares_after_scaling(rows, scales) == pytest.approx([0.5, 0.5, 0.0], abs=1e-3)
+
+def test_all_zero_shares_scale_every_group_to_0() -> None:
+    assert list(build_group_scales(FIT.standardised(NUMBERS), (0.0, 0.0, 0.0))) == [0, 0, 0]

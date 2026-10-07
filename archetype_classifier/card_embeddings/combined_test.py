@@ -3,7 +3,7 @@ import math
 import numpy as np
 import pytest
 
-from archetype_classifier.card_embeddings.combined import AVERAGE_THIRDS_COLUMNS, GroupedSimilarity, Standardisation, average_thirds_group, build_average_thirds, build_centring, build_combined, build_group_shares
+from archetype_classifier.card_embeddings.combined import AVERAGE_THIRDS_COLUMNS, GROUPS, THIRDS, GroupedSimilarity, Standardisation, average_thirds_group, build_average_thirds, build_centring, build_combined, build_group_scales, build_group_shares
 from archetype_classifier.card_embeddings.neighbours import build_neighbours
 from archetype_classifier.card_embeddings.pool import Card, Face
 from archetype_classifier.card_embeddings.structured import build_front_numbers
@@ -150,7 +150,7 @@ def test_text_and_numbers_must_be_for_the_same_cards_in_the_same_order() -> None
 # length on average. Yes/no columns are centred; values are logged and standardised; a missing value is filled with the mean (0 after standardising),
 # and a variable one is its fixed part plus the mean of the fixed values.
 
-FIT = build_average_thirds(NUMBERS)
+FIT = build_average_thirds(NUMBERS, THIRDS)
 
 def column(name: str) -> int:
     return AVERAGE_THIRDS_COLUMNS.index(name)
@@ -171,7 +171,7 @@ def test_a_variable_value_is_its_fixed_part_plus_the_mean_of_the_fixed_values() 
 def test_a_subtracted_variable_part_takes_the_mean_away() -> None:
     shapeshifter = face_card('Shapeshifter', '{6}', 'Artifact Creature — Shapeshifter', '*', '7-*')
     numbers = build_front_numbers([*CARDS, shapeshifter])
-    fit = build_average_thirds(numbers)
+    fit = build_average_thirds(numbers, THIRDS)
     fixed_toughness = [2, 3, 2]  # Jibbirik Omnivore, Kalonian Tusker, Ornithopter; Adeline's 4 is fixed too.
     fixed_toughness.append(4)
     assert fit.value_means[2] == pytest.approx(sum(fixed_toughness) / len(fixed_toughness))
@@ -183,5 +183,15 @@ def test_each_group_makes_up_a_third_on_average() -> None:
     assert shares == pytest.approx({'mana value': 1 / 3, 'colour': 1 / 3, 'stats': 1 / 3}, abs=1e-3)
 
 def test_the_average_thirds_statistics_are_frozen() -> None:
-    fit = build_average_thirds(build_front_numbers(CARDS[:10]))
+    fit = build_average_thirds(build_front_numbers(CARDS[:10]), THIRDS)
     assert np.array_equal(fit.apply(NUMBERS)[:10], fit.apply(build_front_numbers(CARDS[:10])))
+
+def shares_after_scaling(rows: np.ndarray, scales: np.ndarray) -> list[float]:
+    """Each group's average share of a row's squared length once the group scales are applied."""
+    column_scales = np.array([scales[GROUPS.index(average_thirds_group(c))] for c in AVERAGE_THIRDS_COLUMNS])
+    shares = build_group_shares(rows * column_scales, AVERAGE_THIRDS_COLUMNS, average_thirds_group)
+    return [shares[g] for g in GROUPS]
+
+def test_the_group_scales_aim_each_group_at_its_target_share() -> None:
+    rows = FIT.standardised(NUMBERS)
+    assert shares_after_scaling(rows, build_group_scales(rows, (0.6, 0.2, 0.2))) == pytest.approx([0.6, 0.2, 0.2], abs=1e-3)

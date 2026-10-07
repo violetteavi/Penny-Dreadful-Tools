@@ -163,7 +163,8 @@ class AverageThirds:
         return (self.standardised(numbers) * column_scales).astype(np.float32)
 
 
-def build_average_thirds(numbers: FrontNumbers) -> AverageThirds:
+def build_average_thirds(numbers: FrontNumbers, shares: tuple[float, float, float]) -> AverageThirds:
+    """Fits the statistics on these cards; shares is each group's target share of a card's squared length (THIRDS for average thirds)."""
     fixed = numbers.present & ~numbers.variable
     value_means = np.array([numbers.fixed[fixed[:, i], i].mean() if fixed[:, i].any() else 0.0 for i in range(len(SCALARS))])
     logs = np.log(np.maximum(1.0, 1.0 + numbers.fixed))
@@ -171,14 +172,15 @@ def build_average_thirds(numbers: FrontNumbers) -> AverageThirds:
     log_stds = np.array([logs[fixed[:, i], i].std() if fixed[:, i].any() else 0.0 for i in range(len(SCALARS))])
     fit = AverageThirds(np.stack([numbers.present.mean(axis=0), numbers.variable.mean(axis=0)]), numbers.colours.mean(axis=0), value_means,
                         log_means, np.where(log_stds > 0, log_stds, 1.0), np.ones(len(GROUPS)))
-    return AverageThirds(fit.flag_means, fit.colour_means, fit.value_means, fit.log_means, fit.log_stds, build_group_scales(fit.standardised(numbers)))
+    return AverageThirds(fit.flag_means, fit.colour_means, fit.value_means, fit.log_means, fit.log_stds, build_group_scales(fit.standardised(numbers), shares))
 
-def build_group_scales(rows: np.ndarray) -> np.ndarray:
-    """One scale per group so that each group's share of a row's squared length averages a third, found by repeatedly correcting each scale."""
+def build_group_scales(rows: np.ndarray, shares: tuple[float, float, float]) -> np.ndarray:
+    """One scale per group so that each group's share of a row's squared length averages its target share (in GROUPS order), found by repeatedly
+    correcting each scale."""
     squares = np.stack([(rows[:, [i for i, c in enumerate(AVERAGE_THIRDS_COLUMNS) if average_thirds_group(c) == g]] ** 2).sum(axis=1) for g in GROUPS], axis=1)
     scales = np.ones(len(GROUPS))
     for _ in range(SCALE_FITTING_ROUNDS):
         weighted = squares * scales ** 2
-        shares = (weighted / weighted.sum(axis=1, keepdims=True)).mean(axis=0)
-        scales *= np.sqrt((1 / len(GROUPS)) / shares)
+        achieved = (weighted / weighted.sum(axis=1, keepdims=True)).mean(axis=0)
+        scales *= np.sqrt(np.array(shares) / achieved)
     return scales

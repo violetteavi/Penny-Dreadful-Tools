@@ -91,6 +91,11 @@ dev = [
     "mypy-extensions",
     "playwright==1.63.0",
 ]
+# The archetype classifier's card encoders (archetype_classifier/card_embeddings). Optional: uv sync --group archetypes
+archetypes = [
+    "sentence-transformers",
+    "torch",
+]
 
 [tool.ruff]
 line-length = 320
@@ -104,6 +109,14 @@ package = false
 [[tool.uv.index]]
 name = "pypi"
 url = "https://pypi.org/simple"
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
 
 [tool.ruff.format]
 quote-style = "single"

@@ -1,0 +1,60 @@
+"""Frozen text encoders that turn card text into vectors.
+
+Each is a sentence-transformers model pinned to a Hugging Face revision. They need the optional archetypes dependency group (uv sync --group archetypes),
+imported only when an encoder is loaded, so the rest of the package works without torch.
+"""
+import math
+from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Any, Protocol
+
+import numpy as np
+
+BATCH_SIZE = 64
+
+
+class Encoder(Protocol):
+    name: str
+    revision: str  # The pinned model revision, so embeddings can be rebuilt exactly.
+    max_tokens: int | None  # Text past this many tokens is cut off; None for no limit.
+
+    def encode(self, texts: Sequence[str]) -> np.ndarray: ...
+
+    def token_counts(self, texts: Sequence[str]) -> list[int]: ...
+
+@dataclass(frozen=True)
+class EncoderSpec:
+    model_id: str
+    revision: str
+    dimensions: int
+
+ENCODERS = {  # Others tried in #7 (bge-small, bge-base, all-MiniLM-L6-v2, gte-modernbert-base) are on the tag card-encoder-exploration; add one back with
+    # its model id, pinned revision and dimensions.
+    'potion': EncoderSpec('minishlab/potion-base-8M', 'bf8b056651a2c21b8d2565580b8569da283cab23', 256),
+}
+
+
+class SentenceTransformerEncoder:
+    def __init__(self, name: str, spec: EncoderSpec, model: Any) -> None:
+        self.name = name
+        self.revision = spec.revision
+        self.model = model
+        self.max_tokens = None if model.max_seq_length == math.inf else int(model.max_seq_length)  # A static model has no limit.
+
+    def encode(self, texts: Sequence[str]) -> np.ndarray:
+        return np.asarray(self.model.encode(list(texts), batch_size=BATCH_SIZE, convert_to_numpy=True, show_progress_bar=False))
+
+    def token_counts(self, texts: Sequence[str]) -> list[int]:
+        """How many tokens each text has before any cut-off."""
+        tokenizer = self.model.tokenizer
+        if hasattr(tokenizer, 'encode_batch'):  # A static model's tokenizers.Tokenizer.
+            return [len(e.ids) for e in tokenizer.encode_batch(list(texts))]
+        return [len(ids) for ids in tokenizer(list(texts), truncation=False)['input_ids']]
+
+
+def load_encoder(name: str) -> Encoder:
+    if name not in ENCODERS:
+        raise ValueError(f'No encoder called {name}; known: {", ".join(sorted(ENCODERS))}')
+    from sentence_transformers import SentenceTransformer  # noqa: PLC0415  # Optional dependency, imported only when needed.
+    spec = ENCODERS[name]
+    return SentenceTransformerEncoder(name, spec, SentenceTransformer(spec.model_id, revision=spec.revision, device='cpu'))

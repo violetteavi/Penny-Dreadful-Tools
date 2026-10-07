@@ -46,6 +46,39 @@ _Avoid_: Popularity
 A card that appears in a deck but occurs in none of the decks a classifier learned from, typically because it arrived in a new set. A card that left the legal card pool and later returned is not unseen if older decks contain it.
 _Avoid_: New card (ambiguous with newly printed)
 
+### Card representation
+
+**Ever-legal cards**:
+Every card legal in at least one season, keyed by canonical name; the cards that get a card representation, including ones no deck has played yet.
+_Avoid_: Card pool (a pool is a season's **Legal card pool**)
+
+**Card text**:
+What an encoder reads for a card: each face's type line and rules text, with Scryfall's oracle wording and reminder text kept, faces joined in order.
+_Avoid_: Oracle text (that's the rules text alone)
+
+**Masked text**:
+Card text with each face's own name written as `~`, so functional reprints that name themselves (Lightning Strike, Searing Spear) read the same.
+
+**Card embedding**:
+The vector a frozen text encoder gives a card's text; cards that do similar things get similar vectors, whether or not any deck has played them.
+_Avoid_: Card vector (ambiguous with a card's numbers)
+
+**Card numbers**:
+A card's mana value, power, toughness and loyalty, each recorded as present, variable (`*` or `X`) and fixed (the number written), and its colours, taken from its front face (a split card sums both halves' mana values and takes both halves' colours).
+_Avoid_: Structured vector (an earlier, retired form), stats (see below)
+
+**Stats**:
+A card's power, toughness and loyalty; not its mana value or colours.
+
+**Exact thirds**:
+Comparing two cards' numbers group by group, with mana value, colour and stats each a third of the score; a value whose present or variable flag differs between the cards scores 0.
+
+**Average thirds**:
+Comparing two cards' numbers with one cosine over a vector scaled so that mana value, colour and stats each make up a third of it on average.
+
+**Neighbour list**:
+A card's most similar cards among the ever-legal cards, best first.
+
 ### Decks and competitions
 
 **Deck**:
@@ -161,10 +194,12 @@ _Avoid_: Dataset, test set (the test seasons are only one possible part of it)
 - Each **Rotation** can introduce **Unseen cards** into **Decks** relative to any classifier trained on earlier **Seasons**.
 - Every **Deck** is in exactly one **Split**. Held-out, validation and test decks can never be in the **Train set**; by default a deck that repeats a held-out maindeck is held out with it. Training decks may also be in an **Eval set**, where their scores measure fit rather than generalisation.
 - An **Excluded deck** leaves every other deck's **Split** and scores unchanged: an experiment is the same whether or not it exists.
+- A card's representation is its **Card embedding** (of its **Masked text**) together with its **Card numbers**, compared by **Exact thirds** or **Average thirds**; an **Unseen card** gets one the same way as any other card.
 
 ## Flagged ambiguities
 
 - "Reviewed" in the data is not reliable evidence that a person confirmed a label; use **Label history** instead.
 - "New card" can mean newly printed or newly legal; use **Unseen card** when the point is that a classifier hasn't seen it.
 - "Test" means only the test seasons, never the whole **Eval set**.
-- "Pool" means the **Legal card pool**, never the decks a classifier learns from.
+- "Pool" means the **Legal card pool**, never the decks a classifier learns from, and never the **Ever-legal cards**.
+- "Stats" means power, toughness and loyalty only; mana value and colours are separate parts of a card's **Card numbers**.

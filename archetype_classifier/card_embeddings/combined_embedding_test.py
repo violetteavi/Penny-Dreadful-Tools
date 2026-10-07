@@ -5,7 +5,20 @@ import numpy as np
 import pytest
 
 from archetype_classifier.card_embeddings.combined import THIRDS, build_average_thirds, build_combined
-from archetype_classifier.card_embeddings.combined_embedding import FIT_COMBINER, LOAD_COMBINER, CombinedEmbedding, CombinedEmbeddingSettings, CombinedEmbeddingWeights, build_average_thirds_combiner, build_combined_embedding, combined_embedding_path, load_combined_embedding, save_combined_embedding, build_season_label, build_season_set
+from archetype_classifier.card_embeddings.combined_embedding import (
+    FIT_COMBINER,
+    LOAD_COMBINER,
+    CombinedEmbedding,
+    CombinedEmbeddingSettings,
+    CombinedEmbeddingWeights,
+    build_average_thirds_combiner,
+    build_combined_embedding,
+    build_season_label,
+    build_season_set,
+    combined_embedding_path,
+    load_combined_embedding,
+    save_combined_embedding,
+)
 from archetype_classifier.card_embeddings.combined_test import CARD_TEXT, NUMBERS
 from archetype_classifier.card_embeddings.neighbours import Similarities
 from archetype_classifier.card_embeddings.pool import Card, Face
@@ -179,3 +192,12 @@ def test_a_saved_embedding_loads_back_with_the_same_settings_combiner_and_simila
     assert loaded.names == embedding.names
     assert loaded.text.manifest == embedding.text.manifest
     assert np.array_equal(similarities(loaded), similarities(embedding))
+
+
+def test_a_saved_file_whose_rows_dont_match_its_names_is_refused(tmp_path: Path) -> None:
+    path = save_combined_embedding(build('1-38', '1-39'), tmp_path)
+    saved = json.loads(path.with_suffix('.json').read_text())
+    saved['names'] = saved['names'][:-1]
+    path.with_suffix('.json').write_text(json.dumps(saved))
+    with pytest.raises(ValueError, match=f'{path.name} has 3 rows but its .json lists 2 cards'):
+        load_combined_embedding(path)

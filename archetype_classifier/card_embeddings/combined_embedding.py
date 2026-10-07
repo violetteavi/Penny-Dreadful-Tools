@@ -5,8 +5,8 @@ import json
 import math
 import re
 from collections.abc import Callable, Sequence
-from pathlib import Path
 from dataclasses import asdict, dataclass, field, fields
+from pathlib import Path
 from typing import Any, ClassVar, Literal, Protocol
 
 import numpy as np
@@ -199,6 +199,8 @@ def load_combined_embedding(path: Path) -> CombinedEmbedding:
     s = saved['settings']
     settings = CombinedEmbeddingSettings(s['encoder'], TextRecipe(**s['recipe']), frozenset(s['fit_seasons']), frozenset(s['embedded_seasons']))
     with np.load(path) as arrays:
+        if rows := {len(arrays[name]) for name in ('text', *NUMBER_ARRAYS)} - {len(names)}:
+            raise ValueError(f'{path.name} has {", ".join(map(str, sorted(rows)))} rows but its .json lists {len(names)} cards')
         text = TextEmbeddings(names, arrays['text'], saved['text_manifest'])
         numbers = FrontNumbers(names, *(arrays[name] for name in NUMBER_ARRAYS))
     combiner = LOAD_COMBINER[saved['combiner']['approach']](saved['combiner'])

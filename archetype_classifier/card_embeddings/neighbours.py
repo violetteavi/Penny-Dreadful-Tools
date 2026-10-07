@@ -10,8 +10,8 @@ from typing import Protocol
 
 import numpy as np
 
-from archetype_classifier.card_embeddings.embeddings import EMBEDDINGS_DIR, embeddings_path, load_embeddings
 from archetype_classifier.card_embeddings.text import RECIPES
+from archetype_classifier.card_embeddings.text_embedding import EMBEDDINGS_DIR, load_text_embeddings, text_embeddings_path
 from archetype_classifier.data_loading import loader
 
 
@@ -70,10 +70,10 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument('--season', type=int, help='only cards legal in this season')
     parser.add_argument('--dir', type=Path, default=EMBEDDINGS_DIR)
     args = parser.parse_args(argv)
-    path = embeddings_path(args.dir, args.encoder, RECIPES[args.recipe])
+    path = text_embeddings_path(args.dir, args.encoder, RECIPES[args.recipe])
     if not path.exists():
-        raise SystemExit(f'No embeddings at {path}: build them with build_embeddings and save_embeddings (card_embeddings.embeddings); #41 adds a command')
-    embeddings = load_embeddings(path)
+        raise SystemExit(f'No embeddings at {path}: build them with build_text_embeddings and save_text_embeddings (card_embeddings.text_embedding); #41 adds a command')
+    embeddings = load_text_embeddings(path)
     among = loader.load_legal_cards([args.season])[args.season] if args.season else None
     heading = f'{args.card}: {args.encoder}, {args.recipe}, {len(embeddings.names)} cards'
     print(heading + (f', among the {len(among)} legal in season {args.season}' if among is not None else ''))

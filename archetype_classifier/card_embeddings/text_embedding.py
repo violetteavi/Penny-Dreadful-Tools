@@ -20,7 +20,7 @@ TOLERANCE = 1e-5  # How far a card's vector may move between runs (batching nois
 
 
 @dataclass(frozen=True)
-class Embeddings:
+class TextEmbeddings:
     names: tuple[str, ...]
     matrix: np.ndarray  # One unit-length row per name.
     manifest: dict[str, JSON]
@@ -30,7 +30,7 @@ class Embeddings:
         return self.matrix[start:stop] @ self.matrix.T
 
 
-def build_embeddings(cards: Sequence[Card], recipe: TextRecipe, encoder: Encoder) -> Embeddings:
+def build_text_embeddings(cards: Sequence[Card], recipe: TextRecipe, encoder: Encoder) -> TextEmbeddings:
     ordered = sorted(cards, key=lambda c: c.name)
     texts = [build_card_text(c, recipe) for c in ordered]
     matrix = encoder.encode(texts).astype(np.float32)
@@ -38,12 +38,12 @@ def build_embeddings(cards: Sequence[Card], recipe: TextRecipe, encoder: Encoder
     manifest: dict[str, JSON] = {'encoder': encoder.name, 'revision': encoder.revision, 'recipe': asdict(recipe), 'text_version': TEXT_VERSION,
                                  'cards': len(ordered), 'max_tokens': encoder.max_tokens,
                                  'over_token_limit': 0 if encoder.max_tokens is None else sum(n > encoder.max_tokens for n in encoder.token_counts(texts))}
-    return Embeddings(tuple(c.name for c in ordered), matrix, manifest)
+    return TextEmbeddings(tuple(c.name for c in ordered), matrix, manifest)
 
 IDENTITY = ('encoder', 'revision', 'recipe', 'text_version', 'max_tokens')  # Manifest fields that must match for embeddings to be merged.
 
 
-def merge_embeddings(a: Embeddings, b: Embeddings) -> Embeddings:
+def merge_text_embeddings(a: TextEmbeddings, b: TextEmbeddings) -> TextEmbeddings:
     """Both sets of rows in one, in name order: how a new set's cards are added without re-embedding the old ones."""
     if any(a.manifest[k] != b.manifest[k] for k in IDENTITY):
         raise ValueError('Only embeddings from the same encoder, revision, recipe and text version can be merged')
@@ -52,22 +52,22 @@ def merge_embeddings(a: Embeddings, b: Embeddings) -> Embeddings:
     names = a.names + b.names
     order = sorted(range(len(names)), key=lambda i: names[i])
     manifest = {**a.manifest, 'cards': len(names), 'over_token_limit': cast(int, a.manifest['over_token_limit']) + cast(int, b.manifest['over_token_limit'])}
-    return Embeddings(tuple(names[i] for i in order), np.concatenate([a.matrix, b.matrix])[order], manifest)
+    return TextEmbeddings(tuple(names[i] for i in order), np.concatenate([a.matrix, b.matrix])[order], manifest)
 
-def embeddings_path(directory: Path, encoder: str, recipe: TextRecipe) -> Path:
+def text_embeddings_path(directory: Path, encoder: str, recipe: TextRecipe) -> Path:
     return directory / f'{encoder}__{recipe.label}.npy'
 
-def save_embeddings(embeddings: Embeddings, directory: Path = EMBEDDINGS_DIR) -> Path:
+def save_text_embeddings(embeddings: TextEmbeddings, directory: Path = EMBEDDINGS_DIR) -> Path:
     """Writes the .npy and its .json, and returns the .npy's path."""
-    path = embeddings_path(directory, str(embeddings.manifest['encoder']), TextRecipe(**cast(dict[str, Any], embeddings.manifest['recipe'])))
+    path = text_embeddings_path(directory, str(embeddings.manifest['encoder']), TextRecipe(**cast(dict[str, Any], embeddings.manifest['recipe'])))
     directory.mkdir(parents=True, exist_ok=True)
     np.save(path, embeddings.matrix)
     path.with_suffix('.json').write_text(json.dumps({'manifest': embeddings.manifest, 'names': embeddings.names}, indent=1))
     return path
 
-def load_embeddings(path: Path) -> Embeddings:
+def load_text_embeddings(path: Path) -> TextEmbeddings:
     matrix = np.load(path)
     saved = json.loads(path.with_suffix('.json').read_text())
     if len(saved['names']) != matrix.shape[0]:
         raise ValueError(f"{path.name} has {matrix.shape[0]} rows but its manifest lists {len(saved['names'])} cards")
-    return Embeddings(tuple(saved['names']), matrix, saved['manifest'])
+    return TextEmbeddings(tuple(saved['names']), matrix, saved['manifest'])

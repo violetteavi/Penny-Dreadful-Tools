@@ -6,15 +6,15 @@ Two approaches, both weighting mana value, colour and stats a third each and mix
 
 Every statistic (centring means, standardisation, fill values, group scales) is fitted once and frozen, so a new set's cards never move an existing card.
 build_combined joins [sqrt(alpha) * text, sqrt(1 - alpha) * structured / |structured|], so the dot product of two combined vectors is
-alpha * text cosine + (1 - alpha) * structured cosine, and the result is an ordinary Embeddings that the neighbour functions work on unchanged.
+alpha * text cosine + (1 - alpha) * structured cosine, and the result is an ordinary TextEmbeddings that the neighbour functions work on unchanged.
 """
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
 import numpy as np
 
-from archetype_classifier.card_embeddings.embeddings import Embeddings
 from archetype_classifier.card_embeddings.structured import SCALARS, WUBRG, FrontNumbers
+from archetype_classifier.card_embeddings.text_embedding import TextEmbeddings
 
 
 @dataclass(frozen=True)
@@ -26,7 +26,7 @@ class Standardisation:
         return ((rows - self.mean) / self.scale).astype(np.float32)
 
 
-def build_combined(text: Embeddings, structured: np.ndarray, alpha: float, scheme: str | None = None) -> Embeddings:
+def build_combined(text: TextEmbeddings, structured: np.ndarray, alpha: float, scheme: str | None = None) -> TextEmbeddings:
     """Rows of structured must follow text.names. A card whose structured row is all zeros keeps only its text part."""
     if structured.shape[0] != len(text.names):
         raise ValueError(f'{len(text.names)} cards of text but {structured.shape[0]} structured rows')
@@ -34,7 +34,7 @@ def build_combined(text: Embeddings, structured: np.ndarray, alpha: float, schem
     unit = np.divide(structured, norms, out=np.zeros_like(structured, dtype=np.float32), where=norms > 0)
     matrix = np.hstack([np.sqrt(alpha) * text.matrix, np.sqrt(1 - alpha) * unit]).astype(np.float32)
     manifest = {**text.manifest, 'alpha': alpha, **({'structured': scheme} if scheme else {})}
-    return Embeddings(text.names, matrix, manifest)
+    return TextEmbeddings(text.names, matrix, manifest)
 
 def build_group_shares(rows: np.ndarray, columns: Sequence[str], group_of: Callable[[str], str]) -> dict[str, float]:
     """Each column group's share of a row's squared length, averaged over the rows that aren't all zero: how much each group can move a cosine."""
@@ -62,7 +62,7 @@ THIRDS = (1 / 3, 1 / 3, 1 / 3)
 
 @dataclass(frozen=True)
 class GroupedSimilarity:
-    text: Embeddings
+    text: TextEmbeddings
     numbers: FrontNumbers
     centring: Standardisation
     alpha: float

@@ -4,10 +4,10 @@ import numpy as np
 import pytest
 
 from archetype_classifier.card_embeddings.combined import AVERAGE_THIRDS_COLUMNS, GroupedSimilarity, Standardisation, average_thirds_group, build_average_thirds, build_centring, build_combined, build_group_shares
-from archetype_classifier.card_embeddings.embeddings import Embeddings
 from archetype_classifier.card_embeddings.neighbours import build_neighbours
 from archetype_classifier.card_embeddings.pool import Card, Face
 from archetype_classifier.card_embeddings.structured import build_front_numbers
+from archetype_classifier.card_embeddings.text_embedding import TextEmbeddings
 
 
 def unit(*rows: list[float]) -> np.ndarray:
@@ -15,13 +15,13 @@ def unit(*rows: list[float]) -> np.ndarray:
     return matrix / np.linalg.norm(matrix, axis=1, keepdims=True)
 
 NAMES = ('Burst Lightning', 'Explosive Welcome', 'Lightning Strike', 'Shock')
-TEXT = Embeddings(NAMES, unit([1, 0.1], [1, 0.3], [1, 0.2], [1, 0]), {'encoder': 'fake'})  # By text, all four are burn.
+TEXT = TextEmbeddings(NAMES, unit([1, 0.1], [1, 0.3], [1, 0.2], [1, 0]), {'encoder': 'fake'})  # By text, all four are burn.
 STRUCTURED = np.array([[1, 0], [8, 0], [2, 0], [1, 1]], dtype=np.float32)  # Mana value, and one more column.
 
 
 # Combining: alpha times the text cosine plus (1 - alpha) times the structured cosine.
 
-def cosine(e: Embeddings, a: str, b: str) -> float:
+def cosine(e: TextEmbeddings, a: str, b: str) -> float:
     return float(e.matrix[e.names.index(a)] @ e.matrix[e.names.index(b)])
 
 def test_alpha_1_is_the_text_embedding_alone() -> None:
@@ -30,12 +30,12 @@ def test_alpha_1_is_the_text_embedding_alone() -> None:
 
 def test_alpha_0_is_the_structured_vector_alone() -> None:
     combined = build_combined(TEXT, STRUCTURED, 0.0)
-    structured = Embeddings(NAMES, STRUCTURED / np.linalg.norm(STRUCTURED, axis=1, keepdims=True), {})
+    structured = TextEmbeddings(NAMES, STRUCTURED / np.linalg.norm(STRUCTURED, axis=1, keepdims=True), {})
     assert all([x.name for x in build_neighbours(combined, n, 3)] == [x.name for x in build_neighbours(structured, n, 3)] for n in NAMES)
 
 def test_the_combined_cosine_is_the_weighted_sum_of_the_two_cosines_and_rows_stay_unit_length() -> None:
     combined = build_combined(TEXT, STRUCTURED, 0.6)
-    structured = Embeddings(NAMES, STRUCTURED / np.linalg.norm(STRUCTURED, axis=1, keepdims=True), {})
+    structured = TextEmbeddings(NAMES, STRUCTURED / np.linalg.norm(STRUCTURED, axis=1, keepdims=True), {})
     for a, b in (('Shock', 'Lightning Strike'), ('Shock', 'Explosive Welcome')):
         assert cosine(combined, a, b) == pytest.approx(0.6 * cosine(TEXT, a, b) + 0.4 * cosine(structured, a, b), abs=1e-6)
     assert np.linalg.norm(combined.matrix, axis=1) == pytest.approx(np.ones(4), abs=1e-6)
@@ -86,7 +86,7 @@ CARDS = [
 NUMBERS = build_front_numbers(CARDS)
 POOL_COLOUR_MEANS = np.array([0.210, 0.204, 0.208, 0.209, 0.205])  # W U B R G across the real pool.
 CENTRING = Standardisation(POOL_COLOUR_MEANS, np.ones(5))
-CARD_TEXT = Embeddings(NUMBERS.names, unit(*[[1.0, i / 10] for i in range(len(CARDS))]), {})
+CARD_TEXT = TextEmbeddings(NUMBERS.names, unit(*[[1.0, i / 10] for i in range(len(CARDS))]), {})
 
 def groups(a: str, b: str, alpha: float = 0.5) -> dict[str, float]:
     return GroupedSimilarity(CARD_TEXT, NUMBERS, CENTRING, alpha).group_similarities(a, b)
@@ -143,7 +143,7 @@ def test_colour_centring_is_fitted_once_and_frozen() -> None:
 
 def test_text_and_numbers_must_be_for_the_same_cards_in_the_same_order() -> None:
     with pytest.raises(ValueError, match='The text and the numbers are for different cards'):
-        GroupedSimilarity(Embeddings(tuple(reversed(NUMBERS.names)), CARD_TEXT.matrix, {}), NUMBERS, CENTRING, 0.5)
+        GroupedSimilarity(TextEmbeddings(tuple(reversed(NUMBERS.names)), CARD_TEXT.matrix, {}), NUMBERS, CENTRING, 0.5)
 
 
 # The comparison approach, average thirds: one cosine over a vector whose mana value, colour and stats groups each make up a third of its squared

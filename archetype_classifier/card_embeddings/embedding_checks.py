@@ -35,6 +35,8 @@ def build_check_results(cards: Similarities, checks: Sequence[Check]) -> list[Ch
     return [build_check_result(cards, check) for check in checks]
 
 def build_check_result(cards: Similarities, check: Check) -> CheckResult:
+    if missing := next((name for name in (check.card, check.other) if name not in cards.names), None):
+        return CheckResult(check, None, None, False, f'{missing} is not in these cards')
     i, j = cards.names.index(check.card), cards.names.index(check.other)
     similarity = float(cards.similarities(i, i + 1)[0, j])
     rank = build_rank(cards, check.card, check.other)

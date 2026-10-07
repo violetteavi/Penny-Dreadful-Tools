@@ -56,3 +56,13 @@ def test_identical_passes_within_the_tolerance_of_1_and_fails_beyond_it() -> Non
     assert within.passed
     assert not beyond.passed
     assert beyond.message == "Luminous Rebuke's similarity to Seized from Slumber is 0.99998; expected identical (at least 0.99999)"
+
+
+@pytest.mark.parametrize(('check', 'missing'), [
+    (Check("Ajani's Response", 'Seized from Slumber', 'identical'), "Ajani's Response"),
+    (Check('Shock', "Ajani's Response", 'near'), "Ajani's Response"),
+])
+def test_a_check_whose_card_is_missing_fails_with_a_message_and_never_raises(check: Check, missing: str) -> None:
+    [result] = build_check_results(Paired('Shock', 'Seized from Slumber', 0.5), [check])
+    assert (result.passed, result.rank, result.similarity) == (False, None, None)
+    assert result.message == f'{missing} is not in these cards'

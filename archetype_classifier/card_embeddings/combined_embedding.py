@@ -2,9 +2,11 @@
 that later work loads it rather than rebuilding it. The maths of each approach lives in combined.py.
 """
 import math
+import re
 from dataclasses import dataclass
 
 WEIGHT_NAMES = ('text', 'mana_value', 'colour', 'stats')
+SEASON_PART = re.compile(r'(\d+)(?:-(\d+))?')
 
 
 @dataclass(frozen=True)
@@ -35,8 +37,11 @@ def build_season_set(text: str) -> frozenset[int]:
     """Seasons written as ranges and single seasons separated by commas: '1-3,6-8,10' is {1, 2, 3, 6, 7, 8, 10}."""
     seasons: set[int] = set()
     for part in text.split(','):
-        first, _, last = part.partition('-')
-        seasons.update(range(int(first), int(last or first) + 1))
+        match = SEASON_PART.fullmatch(part)
+        first, last = (int(match[1]), int(match[2] or match[1])) if match else (0, 0)
+        if not match or first < 1 or last < first:
+            raise ValueError(f'Seasons must be written like 1-38 or 1-3,6,8, not {text!r}')
+        seasons.update(range(first, last + 1))
     return frozenset(seasons)
 
 def build_season_label(seasons: frozenset[int]) -> str:

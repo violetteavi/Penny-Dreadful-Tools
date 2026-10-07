@@ -41,3 +41,9 @@ def test_a_season_set_is_written_as_ranges_and_single_seasons() -> None:
 ])
 def test_a_season_set_is_labelled_for_file_names_as_ranges(seasons: set[int], label: str) -> None:
     assert build_season_label(frozenset(seasons)) == label
+
+
+@pytest.mark.parametrize('text', ['', '3-1', '1-', 'a', '1,,2', '0-3', '1-3-5'])
+def test_malformed_season_text_is_refused_naming_the_text(text: str) -> None:
+    with pytest.raises(ValueError, match='Seasons must be written like 1-38 or 1-3,6,8'):
+        build_season_set(text)

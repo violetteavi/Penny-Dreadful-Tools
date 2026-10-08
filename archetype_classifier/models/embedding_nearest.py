@@ -14,6 +14,18 @@ import numpy as np
 from archetype_classifier.data_loading.dataset import CardCount
 from archetype_classifier.evaluation.model import TrainingDeck
 
+TIE_TOLERANCE = 1e-9  # Rows this close to the best similarity are tied. Identical maindecks give exactly equal vectors, so they always tie.
+
+
+@dataclass(frozen=True)
+class Pick:
+    label_id: int
+    deck_id: int  # The newest deck behind the winning label among the tied rows.
+    similarity: float  # The best row's cosine similarity.
+    decks: int  # The winning label's decks among the tied rows.
+    tied_rows: int
+    runner_up_id: int | None  # The best other label, or None when every row has the guessed label.
+    runner_up_similarity: float | None
 
 @dataclass(frozen=True)
 class TrainingRows:
@@ -34,3 +46,19 @@ def build_training_rows(training: Sequence[TrainingDeck]) -> TrainingRows:
         row[1] = max(row[1], d.deck.deck_id)
     return TrainingRows(tuple(maindeck for maindeck, _ in rows), np.array([label for _, label in rows], dtype=np.int64),
                         np.array([n for n, _ in rows.values()], dtype=np.int64), np.array([newest for _, newest in rows.values()], dtype=np.int64))
+
+def build_pick(similarities: np.ndarray, rows: TrainingRows) -> Pick:
+    """The label to copy, from one deck's similarity to every training row (rows must not be empty)."""
+    best = float(similarities.max())
+    tied = np.flatnonzero(similarities >= best - TIE_TOLERANCE)
+    decks: dict[int, int] = {}
+    newest: dict[int, int] = {}
+    for row in tied:
+        label = int(rows.labels[row])
+        decks[label] = decks.get(label, 0) + int(rows.deck_counts[row])
+        newest[label] = max(newest.get(label, 0), int(rows.newest_deck_ids[row]))
+    label = max(decks, key=lambda a: (decks[a], newest[a]))
+    others = np.flatnonzero(rows.labels != label)
+    runner_up = int(others[np.argmax(similarities[others])]) if len(others) else None
+    return Pick(label, newest[label], best, decks[label], len(tied), None if runner_up is None else int(rows.labels[runner_up]),
+                None if runner_up is None else float(similarities[runner_up]))

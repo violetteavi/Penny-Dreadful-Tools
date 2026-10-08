@@ -100,13 +100,13 @@ Hagra Mauling // Hagra Broodpit is removal on its front ({2}{B}{B} instant, "Thi
 
 ### Adding a set changes no other card's vector
 
-Season 43 added 461 cards that are new to the pool, 148 of them from The Hobbit (HOB).
+Season 43 added 301 cards that are new to the pool, 148 of them from The Hobbit (HOB). Until 2026-10-08 this said 461, because legality came from decksite's `_legal_cards` table, which misses cards that supplemental rotations added (#46). 160 of those 461 were already legal in an earlier season.
 
-- **Expect:** embed the cards legal in seasons 1–42, then embed the full pool including those 461. Every card in both runs gets the same vector, up to floating-point noise from batching (each element within 1e-5).
+- **Expect:** embed the cards legal in seasons 1–42, then embed the full pool including those 301. Every card in both runs gets the same vector, up to floating-point noise from batching (each element within 1e-5).
 - **The numbers too:** a card's numbers depend only on the card. The statistics that combine them with the text (colour centring, and for average thirds the fill values, standardisation and group scales) are fitted once and frozen. So a new set's cards are scaled with the old statistics, and no existing card moves. Refitting is a deliberate new version, not a side effect of adding a set.
 - **Why it matters:** a new set arrives about every two months. A frozen encoder reads each card on its own, so adding cards should need no other change: no re-embedding of old cards and no retraining of the encoder. If old vectors moved, every model built on them would have to be refitted at each set.
-- **Check:** compare the two runs' vectors for the shared cards. Also report how long the 461 new cards take to embed with each encoder.
-- **How it's checked:** a unit test with a fake encoder; a local test with each real encoder over a sample (1,000 cards from season 42 plus the scenario cards, then the same with the 461 added); and the #7 stage 1 experiment (on the tag `card-encoder-exploration`), which embedded the 461 on their own and merged them in, as a new set would really be added, and re-embedded 461 older cards in a different batch to measure the noise (at most 1.3e-7).
+- **Check:** compare the two runs' vectors for the shared cards. Also report how long the 301 new cards take to embed with each encoder.
+- **How it's checked:** a unit test with a fake encoder; a local test with each real encoder over a sample (1,000 cards from season 42 plus the scenario cards, then the same with the 301 added); and the #7 stage 1 experiment (on the tag `card-encoder-exploration`), which embedded the 461 cards it then counted as new on their own and merged them in, as a new set would really be added, and re-embedded 461 older cards in a different batch to measure the noise (at most 1.3e-7).
 
 ## Scoring against the archetype tree
 
@@ -972,6 +972,8 @@ These scenarios belong to the similarity baseline (#6). It's today's guesser, re
 
 All scenarios here were proposed 2026-10-02 and revised the same day to use real decks.
 
+**Legality** (revised 2026-10-08, #46): the training seasons in which each card was legal come from the cards database's `card_legality`, not from the site's `_legal_cards` table. The site's table misses cards added by supplemental rotations from season 37 on, so here the baseline deliberately differs from the site until that table is repaired. Two numbers changed: the count of legal cards (23,416 to 23,618) and deck 269503's score (49 to 61).
+
 ### Weights come from the training decks, by the site's formula
 
 - **Expect:**
@@ -984,7 +986,7 @@ All scenarios here were proposed 2026-10-02 and revised the same day to use real
     | Burst Lightning | 0.13110 | 7.6 |
     | Make Disappear | 0.00173 | 578.0 |
 
-  - **The floor:** 79% of the 23,416 cards legal in the training seasons have playability below 0.001, so they weigh the floor, **1,000**. That's also the weight of a card no training deck plays, such as Archmage's Charm in season 39.
+  - **The floor:** 79% of the 23,618 cards legal in the training seasons have playability below 0.001, so they weigh the floor, **1,000**. That's also the weight of a card no training deck plays, such as Archmage's Charm in season 39.
   - **Only training decks** and the training seasons count. A card played only in a sideboard counts 0.2 of a deck, and playability is rounded to 5 decimals, as on the site.
 - **Why it matters:** the weights must not see the decks being scored. Most of the card pool sits at the floor, so an unseen card weighs no more than a rarely played one.
 - **Check:** fit on scheme 2's TRAIN decks and read the weights of these cards.
@@ -1047,15 +1049,15 @@ Real season 39 League decks with 0 unseen copies whose maindeck repeats no train
   | Deck | Label | Off by | Closest training deck | Score to it | Best-scoring match | Guess at 20 |
   |---|---|---|---|---|---|---|
   | 269539 | Mono Green Stompy | **4** | 269464 (season 38, Mono Green Stompy) | 73 | the same deck, at 73 | Mono Green Stompy, exact |
-  | 269503 | Selesnya Heroic | **12** | 269180 (season 38, Selesnya Heroic) | 49 | the same deck, at 49 | Selesnya Heroic, exact |
+  | 269503 | Selesnya Heroic | **12** | 269180 (season 38, Selesnya Heroic) | 61 | the same deck, at 61 | Selesnya Heroic, exact |
   | 270398 | Orzhov Midrange | **20** | 264080 (season 37, Orzhov Blink) | 11 | 246062 (season 33, Mono White Humans), at **29** | **Mono White Humans: wrong branch** |
 
 - **The differences:**
   - **269539:** 4 Swarm Shambler in place of 269464's 4 Pawpatch Recruit.
-  - **269503:** against 269180, it has 4 Cartouche of Solidarity, 4 Ethereal Armor and 2 Oppressive Rays in place of 4 Meltstrider's Resolve, 4 Spider Umbra and 2 Solid Footing. It also has 2 Forest and 8 Plains, where 269180 has 4 and 6.
+  - **269503:** against 269180, it has 4 Cartouche of Solidarity, 4 Ethereal Armor and 2 Oppressive Rays in place of 4 Meltstrider's Resolve, 4 Spider Umbra and 2 Solid Footing. It also has 2 Forest and 8 Plains, where 269180 has 4 and 6. Meltstrider's Resolve came in season 38's supplemental rotation. The site's `_legal_cards` lacks it, so it used to weigh the floor, 1,000, which inflated 269180's total and gave a score of 49. With its real legality, its playability is 0.00602 (weight 166) and the score is 61.
   - **270398:** it shares most of its basics with Mono White Humans deck 246062, but its rare cards (Grand Abolisher, Shambling Vent, Vindicate and others) don't line up with any one training deck.
 - **Expect, deck 270398:** the training deck closest by cards isn't the best-scoring one. The weighted score rewards whichever deck shares the rarest lines, here a Mono White Humans deck. So it guesses Mono White Humans (Aggro › White Weenie) for an Orzhov Midrange deck (Midrange), which scores hF 0.
-- **Why it matters:** even with no new cards, the score falls fast as a deck drifts from its nearest list: 73 at 4 cards off, 49 at 12, 11 at 20. Beyond that, the best match can be a different strategy that happens to share rare cards.
+- **Why it matters:** even with no new cards, the score falls fast as a deck drifts from its nearest list: 73 at 4 cards off, 61 at 12, 11 at 20. Beyond that, the best match can be a different strategy that happens to share rare cards.
 - **Check:** predict these three decks at threshold 20, and score each against its closest training deck.
 
 ### League decks skip unreviewed matches, and Gatherling decks don't (a rule-level check)

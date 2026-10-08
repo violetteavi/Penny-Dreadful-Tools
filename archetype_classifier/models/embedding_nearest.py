@@ -6,14 +6,21 @@ copies the label of the training row with the highest cosine similarity. Rows wi
 most decks wins, then the label whose newest deck is most recent. There's no archetype tree and no threshold: the model always guesses, unless none of
 the deck's cards is in the embedding.
 """
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import ClassVar, cast
 
 import numpy as np
 
+from archetype_classifier.card_embeddings.combined_embedding import load_combined_embedding, load_embedding_hash
+from archetype_classifier.card_embeddings.deck_vectors import build_deck_vectors
+from archetype_classifier.card_embeddings.text_embedding import EMBEDDINGS_DIR
 from archetype_classifier.data_loading.dataset import CardCount
-from archetype_classifier.evaluation.model import TrainingDeck
+from archetype_classifier.evaluation.model import JSON, FitContext, LabelledDeck, PredictDeck, Prediction, TrainingDeck, register
 
+CHUNK = 1000  # Decks compared with every training row at once: a 1,000 x 84,000 float64 block is 670 MB.
+SKIPPED_CARDS_KEPT = 20  # The most-skipped cards the state names.
 TIE_TOLERANCE = 1e-9  # Rows this close to the best similarity are tied. Identical maindecks give exactly equal vectors, so they always tie.
 
 
@@ -62,3 +69,73 @@ def build_pick(similarities: np.ndarray, rows: TrainingRows) -> Pick:
     runner_up = int(others[np.argmax(similarities[others])]) if len(others) else None
     return Pick(label, newest[label], best, decks[label], len(tied), None if runner_up is None else int(rows.labels[runner_up]),
                 None if runner_up is None else float(similarities[runner_up]))
+
+
+@register
+class EmbeddingNearestDeck:
+    name: ClassVar[str] = 'embedding nearest deck'
+    version: ClassVar[int] = 1
+
+    def __init__(self, params: dict[str, JSON]) -> None:
+        self.params = params
+
+    def fit(self, training: Sequence[TrainingDeck], validation: Sequence[LabelledDeck], context: FitContext) -> None:
+        """Nothing is tuned, so the validation decks aren't used."""
+        self.load_embedding(context)
+        self.build_index(training)
+        skipped = [(line.card, line.n * int(n)) for maindeck, n in zip(self.rows.maindecks, self.rows.deck_counts) for line in maindeck if line.card not in self.known]
+        self.training_decks = len(training)
+        self.skipped_copies = sum(copies for _, copies in skipped)
+        self.decks_with_skipped_cards = int(self.rows.deck_counts[self.row_skipped > 0].sum())
+        totals: Counter[str] = Counter()
+        for card, copies in skipped:
+            totals[card] += copies
+        self.skipped_cards = dict(sorted(totals.items(), key=lambda item: (-item[1], item[0]))[:SKIPPED_CARDS_KEPT])
+
+    def load_embedding(self, context: FitContext) -> None:
+        path = (context.embeddings_dir or EMBEDDINGS_DIR) / f'{self.params["embedding"]}.npz'
+        self.embedding = load_combined_embedding(path)
+        self.embedding_hash = load_embedding_hash(path)
+        self.known = frozenset(self.embedding.names)
+
+    def build_index(self, training: Sequence[TrainingDeck]) -> None:
+        self.rows = build_training_rows(training)
+        vectors = build_deck_vectors(self.rows.maindecks, self.embedding)
+        self.row_vectors, self.row_skipped = vectors.matrix, vectors.skipped
+
+    def predict(self, decks: Sequence[PredictDeck]) -> list[Prediction]:
+        predictions = []
+        for start in range(0, len(decks), CHUNK):
+            chunk = decks[start:start + CHUNK]
+            vectors = build_deck_vectors([d.maindeck for d in chunk], self.embedding)
+            similarities = vectors.matrix @ self.row_vectors.T
+            for i, deck in enumerate(chunk):
+                counts: dict[str, JSON] = {'embedded_copies': int(vectors.embedded[i]), 'skipped_copies': int(vectors.skipped[i])}
+                if not vectors.embedded[i] or not len(self.rows.labels):
+                    predictions.append(Prediction(deck.deck_id, None, counts))
+                    continue
+                pick = build_pick(similarities[i], self.rows)
+                evidence: dict[str, JSON] = {'match_deck_id': pick.deck_id, 'similarity': round(pick.similarity, 6), 'match_decks': pick.decks, 'tied_rows': pick.tied_rows,
+                                             'runner_up_id': pick.runner_up_id,
+                                             'runner_up_similarity': None if pick.runner_up_similarity is None else round(pick.runner_up_similarity, 6), **counts}
+                predictions.append(Prediction(deck.deck_id, pick.label_id, evidence))
+        return predictions
+
+    def state(self) -> dict[str, JSON]:
+        """Which embedding, exactly, and what fitting found about its inputs; never the vectors, which the embedding and the training decks rebuild."""
+        return {'embedding': self.params['embedding'], 'embedding_hash': self.embedding_hash, 'training_decks': self.training_decks, 'training_rows': len(self.rows.labels),
+                'skipped_copies': self.skipped_copies, 'decks_with_skipped_cards': self.decks_with_skipped_cards, 'skipped_cards': dict(self.skipped_cards)}
+
+    @classmethod
+    def from_state(cls, params: dict[str, JSON], state: dict[str, JSON], training: Sequence[TrainingDeck], context: FitContext) -> 'EmbeddingNearestDeck':
+        """Reloads the embedding, refusing one that changed since fitting, and rebuilds the rows from the training decks."""
+        model = cls(params)
+        model.load_embedding(context)
+        if model.embedding_hash != state['embedding_hash']:
+            raise ValueError(f'The embedding {params["embedding"]} has changed since the model was fitted: it was {state["embedding_hash"]}, it is now {model.embedding_hash}')
+        model.build_index(training)
+        model.training_decks = cast(int, state['training_decks'])
+        model.skipped_copies = cast(int, state['skipped_copies'])
+        model.decks_with_skipped_cards = cast(int, state['decks_with_skipped_cards'])
+        model.skipped_cards = cast(dict[str, int], state['skipped_cards'])
+        return model

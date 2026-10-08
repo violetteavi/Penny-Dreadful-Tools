@@ -2,6 +2,7 @@
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import ClassVar, Protocol
 
 from archetype_classifier.data_loading.dataset import CardCount, DeckContents
@@ -42,6 +43,7 @@ class FitContext:
     tree: ArchetypeTree
     legal_cards: Mapping[int, frozenset[str]]  # Season id -> the cards legal that season.
     seed: int
+    embeddings_dir: Path | None = None  # Where a model finds its card embeddings; None is the standard embeddings/ folder. Not part of a model's identity.
 
 @dataclass(frozen=True)
 class Prediction:

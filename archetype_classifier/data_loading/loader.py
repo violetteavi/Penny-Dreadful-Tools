@@ -3,6 +3,7 @@
 It holds no decisions of its own; those live in dataset.py, labels.py, splits.py and slices.py.
 """
 import json
+import logging
 from collections import Counter
 from collections.abc import Iterable, Iterator, Sequence
 from datetime import UTC, datetime
@@ -13,7 +14,11 @@ from archetype_classifier.data_loading.labels import LabelChange, LabelFacts, La
 from archetype_classifier.data_loading.slices import Snapshot, SnapshotDeck
 from archetype_classifier.data_loading.splits import ExclusionReason, Split, SplitScheme
 from decksite.database import db
+from magic.database import db as cards_db
+from magic.seasons import SEASONS
 from shared.database import Database, get_database
+
+logger = logging.getLogger(__name__)
 
 EXPERIMENTS_DB = 'archetype_experiments'
 DECK_CARD_CHUNK = 5000  # Deck ids per query when streaming deck_card (about 125,000 rows).
@@ -117,11 +122,26 @@ def load_contents(deck_ids: Iterable[int]) -> dict[int, DeckContents]:
     return {i: DeckContents(tuple(side[False]), tuple(side[True])) for i, side in lines.items()}
 
 def load_legal_cards(season_ids: Iterable[int]) -> dict[int, frozenset[str]]:
-    """The cards legal in each given season, from the site's _legal_cards table."""
+    """The cards legal in each given season, by the site's card names, from the cards database's card_legality.
+
+    A workaround until decksite's _legal_cards is repaired (#46): that table is filled once per season and misses cards that supplemental
+    rotations and later name corrections added to the official lists. A season with no set code or no legal cards gets an empty set, with a warning.
+    """
     seasons = sorted(set(season_ids))
+    formats = {f'Penny Dreadful {SEASONS[s - 1]}': s for s in seasons if 1 <= s <= len(SEASONS)}
     legal: dict[int, set[str]] = {s: set() for s in seasons}
-    for r in db().select('SELECT season_id, name FROM _legal_cards WHERE season_id IN %s', [tuple(seasons)]):
-        legal[r['season_id']].add(r['name'])  # type: ignore[index, arg-type]
+    if formats:
+        sql = """
+            SELECT f.name AS format, cc.name
+            FROM card_legality AS cl
+            INNER JOIN format AS f ON f.id = cl.format_id
+            INNER JOIN _cache_card AS cc ON cc.card_id = cl.card_id
+            WHERE cl.legality = 'Legal' AND f.name IN %s
+        """
+        for r in cards_db().select(sql, [tuple(formats)]):
+            legal[formats[r['format']]].add(r['name'])  # type: ignore[index, arg-type]
+    if empty := [s for s, cards in legal.items() if not cards]:
+        logger.warning('No legal cards for season%s %s', '' if len(empty) == 1 else 's', ', '.join(map(str, empty)))
     return {s: frozenset(cards) for s, cards in legal.items()}
 
 # Writing and reading the experiments database

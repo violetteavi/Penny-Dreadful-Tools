@@ -47,7 +47,7 @@ def test_each_row_is_scored_from_the_stored_guesses_and_flagged_for_training_and
     assert results['validation'].scores == score(TREE, [ScoredDeck(201, RED_DECK_WINS, RED_DECK_WINS, MAINDECK_A), ScoredDeck(202, RED_DECK_WINS, None, f'{202:040x}')], min_decks=1)
     assert {name: (r.trained_on, r.tuned_on) for name, r in results.items()} == {
         'held-out, no unseen cards': (False, False), 'held-out, unseen cards': (False, False),
-        'validation': (False, True), 'validation, new maindeck': (False, True), 'validation, repeated maindeck': (False, True)}
+        'validation': (False, True), 'validation, no unseen cards': (False, True), 'validation, unseen cards': (False, True), 'validation, new maindeck': (False, True), 'validation, repeated maindeck': (False, True)}
     tuned_on_held_out_too = score_rows(experiments_db, run_id, TREE, scored(splits), rows, TRAIN, splits, min_decks=1)
     assert all(r.tuned_on for r in tuned_on_held_out_too.values())
 

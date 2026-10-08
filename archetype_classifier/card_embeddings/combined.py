@@ -6,15 +6,15 @@ Two approaches, both weighting mana value, colour and stats a third each and mix
 
 Every statistic (centring means, standardisation, fill values, group scales) is fitted once and frozen, so a new set's cards never move an existing card.
 build_combined joins [sqrt(alpha) * text, sqrt(1 - alpha) * structured / |structured|], so the dot product of two combined vectors is
-alpha * text cosine + (1 - alpha) * structured cosine, and the result is an ordinary Embeddings that the neighbour functions work on unchanged.
+alpha * text cosine + (1 - alpha) * structured cosine, and the result is an ordinary TextEmbeddings that the neighbour functions work on unchanged.
 """
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
 import numpy as np
 
-from archetype_classifier.card_embeddings.embeddings import Embeddings
 from archetype_classifier.card_embeddings.structured import SCALARS, WUBRG, FrontNumbers
+from archetype_classifier.card_embeddings.text_embedding import TextEmbeddings
 
 
 @dataclass(frozen=True)
@@ -26,7 +26,7 @@ class Standardisation:
         return ((rows - self.mean) / self.scale).astype(np.float32)
 
 
-def build_combined(text: Embeddings, structured: np.ndarray, alpha: float, scheme: str | None = None) -> Embeddings:
+def build_combined(text: TextEmbeddings, structured: np.ndarray, alpha: float, scheme: str | None = None) -> TextEmbeddings:
     """Rows of structured must follow text.names. A card whose structured row is all zeros keeps only its text part."""
     if structured.shape[0] != len(text.names):
         raise ValueError(f'{len(text.names)} cards of text but {structured.shape[0]} structured rows')
@@ -34,7 +34,7 @@ def build_combined(text: Embeddings, structured: np.ndarray, alpha: float, schem
     unit = np.divide(structured, norms, out=np.zeros_like(structured, dtype=np.float32), where=norms > 0)
     matrix = np.hstack([np.sqrt(alpha) * text.matrix, np.sqrt(1 - alpha) * unit]).astype(np.float32)
     manifest = {**text.manifest, 'alpha': alpha, **({'structured': scheme} if scheme else {})}
-    return Embeddings(text.names, matrix, manifest)
+    return TextEmbeddings(text.names, matrix, manifest)
 
 def build_group_shares(rows: np.ndarray, columns: Sequence[str], group_of: Callable[[str], str]) -> dict[str, float]:
     """Each column group's share of a row's squared length, averaged over the rows that aren't all zero: how much each group can move a cosine."""
@@ -62,7 +62,7 @@ THIRDS = (1 / 3, 1 / 3, 1 / 3)
 
 @dataclass(frozen=True)
 class GroupedSimilarity:
-    text: Embeddings
+    text: TextEmbeddings
     numbers: FrontNumbers
     centring: Standardisation
     alpha: float
@@ -163,7 +163,8 @@ class AverageThirds:
         return (self.standardised(numbers) * column_scales).astype(np.float32)
 
 
-def build_average_thirds(numbers: FrontNumbers) -> AverageThirds:
+def build_average_thirds(numbers: FrontNumbers, shares: tuple[float, float, float]) -> AverageThirds:
+    """Fits the statistics on these cards; shares is each group's target share of a card's squared length (THIRDS for average thirds)."""
     fixed = numbers.present & ~numbers.variable
     value_means = np.array([numbers.fixed[fixed[:, i], i].mean() if fixed[:, i].any() else 0.0 for i in range(len(SCALARS))])
     logs = np.log(np.maximum(1.0, 1.0 + numbers.fixed))
@@ -171,14 +172,22 @@ def build_average_thirds(numbers: FrontNumbers) -> AverageThirds:
     log_stds = np.array([logs[fixed[:, i], i].std() if fixed[:, i].any() else 0.0 for i in range(len(SCALARS))])
     fit = AverageThirds(np.stack([numbers.present.mean(axis=0), numbers.variable.mean(axis=0)]), numbers.colours.mean(axis=0), value_means,
                         log_means, np.where(log_stds > 0, log_stds, 1.0), np.ones(len(GROUPS)))
-    return AverageThirds(fit.flag_means, fit.colour_means, fit.value_means, fit.log_means, fit.log_stds, build_group_scales(fit.standardised(numbers)))
+    return AverageThirds(fit.flag_means, fit.colour_means, fit.value_means, fit.log_means, fit.log_stds, build_group_scales(fit.standardised(numbers), shares))
 
-def build_group_scales(rows: np.ndarray) -> np.ndarray:
-    """One scale per group so that each group's share of a row's squared length averages a third, found by repeatedly correcting each scale."""
+def build_group_scales(rows: np.ndarray, shares: tuple[float, float, float]) -> np.ndarray:
+    """One scale per group so that each group's share of a row's squared length averages its target share (in GROUPS order), found by repeatedly
+    correcting each scale. A group with share 0 is scaled to 0 and left out, so the others share the rest; that is also the limit as its share
+    shrinks, where fitting it would divide 0 by 0. Rows with no length are skipped; with none left, the kept groups keep scale 1."""
     squares = np.stack([(rows[:, [i for i, c in enumerate(AVERAGE_THIRDS_COLUMNS) if average_thirds_group(c) == g]] ** 2).sum(axis=1) for g in GROUPS], axis=1)
-    scales = np.ones(len(GROUPS))
-    for _ in range(SCALE_FITTING_ROUNDS):
-        weighted = squares * scales ** 2
-        shares = (weighted / weighted.sum(axis=1, keepdims=True)).mean(axis=0)
-        scales *= np.sqrt((1 / len(GROUPS)) / shares)
+    targets = np.array(shares, dtype=np.float64)
+    kept = targets > 0
+    scales = np.where(kept, 1.0, 0.0)
+    if not kept.any():
+        return scales
+    targets = targets[kept] / targets[kept].sum()
+    squares = squares[:, kept][squares[:, kept].sum(axis=1) > 0]  # A row with no length in these groups has no shares; skip it, as build_group_shares does.
+    for _ in range(SCALE_FITTING_ROUNDS if len(squares) else 0):
+        weighted = squares * scales[kept] ** 2
+        achieved = (weighted / weighted.sum(axis=1, keepdims=True)).mean(axis=0)
+        scales[kept] *= np.sqrt(targets / achieved)
     return scales

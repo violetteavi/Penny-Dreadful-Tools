@@ -3,8 +3,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from archetype_classifier.card_embeddings.embeddings import Embeddings, save_embeddings
+from archetype_classifier.card_embeddings.combined_embedding import save_combined_embedding
+from archetype_classifier.card_embeddings.combined_embedding_test import build
 from archetype_classifier.card_embeddings.neighbours import Neighbour, build_all_neighbours, build_neighbours, build_overlap, build_rank, main
+from archetype_classifier.card_embeddings.text_embedding import TextEmbeddings, save_text_embeddings
 from archetype_classifier.data_loading import loader
 
 
@@ -13,7 +15,7 @@ def unit(*rows: list[float]) -> np.ndarray:
     return matrix / np.linalg.norm(matrix, axis=1, keepdims=True)
 
 # Shock and Burst Lightning point the same way; Lightning Strike is close; Cancel and Counterspell are elsewhere, at the same angle from Shock.
-EMBEDDINGS = Embeddings(('Burst Lightning', 'Cancel', 'Counterspell', 'Lightning Strike', 'Shock'),
+EMBEDDINGS = TextEmbeddings(('Burst Lightning', 'Cancel', 'Counterspell', 'Lightning Strike', 'Shock'),
                         unit([1, 0, 0], [0, 1, 0], [0, 0, 1], [3, 1, 0], [1, 0, 0]), {})
 
 
@@ -38,7 +40,7 @@ def test_an_unknown_card_is_named_in_the_error() -> None:
 
 @pytest.fixture
 def saved(tmp_path: Path) -> Path:
-    save_embeddings(Embeddings(EMBEDDINGS.names, EMBEDDINGS.matrix, {'encoder': 'fake', 'recipe': {'style': 'plain', 'mask': False}}), tmp_path)
+    save_text_embeddings(TextEmbeddings(EMBEDDINGS.names, EMBEDDINGS.matrix, {'encoder': 'fake', 'recipe': {'style': 'plain', 'mask': False}}), tmp_path)
     return tmp_path
 
 def test_the_tool_prints_a_cards_neighbours_from_saved_embeddings(saved: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -55,7 +57,7 @@ def test_season_limits_the_tool_to_cards_legal_that_season(saved: Path, capsys: 
                                        '  2  0.000  Counterspell\n')
 
 def test_the_tool_says_how_to_build_missing_embeddings(tmp_path: Path) -> None:
-    with pytest.raises(SystemExit, match=r'No embeddings at .*potion__masked.npy: build them with build_embeddings and save_embeddings'):
+    with pytest.raises(SystemExit, match=r'No embeddings at .*potion__masked.npy: build them with build_text_embeddings and save_text_embeddings'):
         main(['Shock', '--recipe', 'masked', '--dir', str(tmp_path)])
 
 
@@ -89,3 +91,12 @@ def test_neighbours_rank_and_every_cards_top_work_from_any_similarity() -> None:
 
 def test_embeddings_give_their_cosines_as_similarities() -> None:
     assert np.allclose(EMBEDDINGS.similarities(1, 3), EMBEDDINGS.matrix[1:3] @ EMBEDDINGS.matrix.T)
+
+
+def test_the_tool_prints_a_cards_neighbours_from_a_saved_combined_embedding(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    embedding = build('1-38', '1-39')
+    stem = save_combined_embedding(embedding, tmp_path).stem
+    main(['Shock', '--combined', stem, '-n', '2', '--dir', str(tmp_path)])
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0] == f'Shock: {stem}, 3 cards'
+    assert [line.split('  ')[-1] for line in lines[1:]] == [n.name for n in build_neighbours(embedding, 'Shock', 2)]

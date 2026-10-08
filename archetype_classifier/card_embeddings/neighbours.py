@@ -1,6 +1,7 @@
 """A card's nearest neighbours by any similarity over a set of cards: card embeddings' cosine, or a combined similarity (combined.py).
 
     uv run python -m archetype_classifier.card_embeddings.neighbours "Shock" -n 10 [--encoder potion] [--recipe masked] [--season 43]
+    uv run python -m archetype_classifier.card_embeddings.neighbours "Shock" -n 10 --combined potion__masked__average__w0.5-0.1667-0.1667-0.1667__fit1-38__emb1-39
 """
 import argparse
 from collections.abc import Collection, Sequence
@@ -10,8 +11,8 @@ from typing import Protocol
 
 import numpy as np
 
-from archetype_classifier.card_embeddings.embeddings import EMBEDDINGS_DIR, embeddings_path, load_embeddings
 from archetype_classifier.card_embeddings.text import RECIPES
+from archetype_classifier.card_embeddings.text_embedding import EMBEDDINGS_DIR, load_text_embeddings, text_embeddings_path
 from archetype_classifier.data_loading import loader
 
 
@@ -68,14 +69,21 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument('--recipe', default='base', choices=sorted(RECIPES))
     parser.add_argument('-n', type=int, default=10, help='how many neighbours')
     parser.add_argument('--season', type=int, help='only cards legal in this season')
+    parser.add_argument('--combined', help='a saved combined embedding\'s file name without .npz, instead of --encoder and --recipe')
     parser.add_argument('--dir', type=Path, default=EMBEDDINGS_DIR)
     args = parser.parse_args(argv)
-    path = embeddings_path(args.dir, args.encoder, RECIPES[args.recipe])
-    if not path.exists():
-        raise SystemExit(f'No embeddings at {path}: build them with build_embeddings and save_embeddings (card_embeddings.embeddings); #41 adds a command')
-    embeddings = load_embeddings(path)
+    embeddings: Similarities
+    if args.combined:
+        from archetype_classifier.card_embeddings.combined_embedding import load_combined_embedding  # noqa: PLC0415  # It imports this module.
+        embeddings, described = load_combined_embedding(args.dir / f'{args.combined}.npz'), args.combined
+    else:
+        path = text_embeddings_path(args.dir, args.encoder, RECIPES[args.recipe])
+        if not path.exists():
+            raise SystemExit(f'No embeddings at {path}: build them with build_text_embeddings and save_text_embeddings (card_embeddings.text_embedding), '
+                             'or pass --combined for one made by experiments.create_combined_embedding')
+        embeddings, described = load_text_embeddings(path), f'{args.encoder}, {args.recipe}'
     among = loader.load_legal_cards([args.season])[args.season] if args.season else None
-    heading = f'{args.card}: {args.encoder}, {args.recipe}, {len(embeddings.names)} cards'
+    heading = f'{args.card}: {described}, {len(embeddings.names)} cards'
     print(heading + (f', among the {len(among)} legal in season {args.season}' if among is not None else ''))
     for i, n in enumerate(build_neighbours(embeddings, args.card, args.n, among), 1):
         print(f'{i:3}  {n.similarity:.3f}  {n.name}')

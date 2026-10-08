@@ -3,11 +3,11 @@ import math
 import numpy as np
 import pytest
 
-from archetype_classifier.card_embeddings.combined import AVERAGE_THIRDS_COLUMNS, GroupedSimilarity, Standardisation, average_thirds_group, build_average_thirds, build_centring, build_combined, build_group_shares
-from archetype_classifier.card_embeddings.embeddings import Embeddings
+from archetype_classifier.card_embeddings.combined import AVERAGE_THIRDS_COLUMNS, GROUPS, THIRDS, GroupedSimilarity, Standardisation, average_thirds_group, build_average_thirds, build_centring, build_combined, build_group_scales, build_group_shares
 from archetype_classifier.card_embeddings.neighbours import build_neighbours
 from archetype_classifier.card_embeddings.pool import Card, Face
 from archetype_classifier.card_embeddings.structured import build_front_numbers
+from archetype_classifier.card_embeddings.text_embedding import TextEmbeddings
 
 
 def unit(*rows: list[float]) -> np.ndarray:
@@ -15,13 +15,13 @@ def unit(*rows: list[float]) -> np.ndarray:
     return matrix / np.linalg.norm(matrix, axis=1, keepdims=True)
 
 NAMES = ('Burst Lightning', 'Explosive Welcome', 'Lightning Strike', 'Shock')
-TEXT = Embeddings(NAMES, unit([1, 0.1], [1, 0.3], [1, 0.2], [1, 0]), {'encoder': 'fake'})  # By text, all four are burn.
+TEXT = TextEmbeddings(NAMES, unit([1, 0.1], [1, 0.3], [1, 0.2], [1, 0]), {'encoder': 'fake'})  # By text, all four are burn.
 STRUCTURED = np.array([[1, 0], [8, 0], [2, 0], [1, 1]], dtype=np.float32)  # Mana value, and one more column.
 
 
 # Combining: alpha times the text cosine plus (1 - alpha) times the structured cosine.
 
-def cosine(e: Embeddings, a: str, b: str) -> float:
+def cosine(e: TextEmbeddings, a: str, b: str) -> float:
     return float(e.matrix[e.names.index(a)] @ e.matrix[e.names.index(b)])
 
 def test_alpha_1_is_the_text_embedding_alone() -> None:
@@ -30,12 +30,12 @@ def test_alpha_1_is_the_text_embedding_alone() -> None:
 
 def test_alpha_0_is_the_structured_vector_alone() -> None:
     combined = build_combined(TEXT, STRUCTURED, 0.0)
-    structured = Embeddings(NAMES, STRUCTURED / np.linalg.norm(STRUCTURED, axis=1, keepdims=True), {})
+    structured = TextEmbeddings(NAMES, STRUCTURED / np.linalg.norm(STRUCTURED, axis=1, keepdims=True), {})
     assert all([x.name for x in build_neighbours(combined, n, 3)] == [x.name for x in build_neighbours(structured, n, 3)] for n in NAMES)
 
 def test_the_combined_cosine_is_the_weighted_sum_of_the_two_cosines_and_rows_stay_unit_length() -> None:
     combined = build_combined(TEXT, STRUCTURED, 0.6)
-    structured = Embeddings(NAMES, STRUCTURED / np.linalg.norm(STRUCTURED, axis=1, keepdims=True), {})
+    structured = TextEmbeddings(NAMES, STRUCTURED / np.linalg.norm(STRUCTURED, axis=1, keepdims=True), {})
     for a, b in (('Shock', 'Lightning Strike'), ('Shock', 'Explosive Welcome')):
         assert cosine(combined, a, b) == pytest.approx(0.6 * cosine(TEXT, a, b) + 0.4 * cosine(structured, a, b), abs=1e-6)
     assert np.linalg.norm(combined.matrix, axis=1) == pytest.approx(np.ones(4), abs=1e-6)
@@ -86,7 +86,7 @@ CARDS = [
 NUMBERS = build_front_numbers(CARDS)
 POOL_COLOUR_MEANS = np.array([0.210, 0.204, 0.208, 0.209, 0.205])  # W U B R G across the real pool.
 CENTRING = Standardisation(POOL_COLOUR_MEANS, np.ones(5))
-CARD_TEXT = Embeddings(NUMBERS.names, unit(*[[1.0, i / 10] for i in range(len(CARDS))]), {})
+CARD_TEXT = TextEmbeddings(NUMBERS.names, unit(*[[1.0, i / 10] for i in range(len(CARDS))]), {})
 
 def groups(a: str, b: str, alpha: float = 0.5) -> dict[str, float]:
     return GroupedSimilarity(CARD_TEXT, NUMBERS, CENTRING, alpha).group_similarities(a, b)
@@ -143,14 +143,14 @@ def test_colour_centring_is_fitted_once_and_frozen() -> None:
 
 def test_text_and_numbers_must_be_for_the_same_cards_in_the_same_order() -> None:
     with pytest.raises(ValueError, match='The text and the numbers are for different cards'):
-        GroupedSimilarity(Embeddings(tuple(reversed(NUMBERS.names)), CARD_TEXT.matrix, {}), NUMBERS, CENTRING, 0.5)
+        GroupedSimilarity(TextEmbeddings(tuple(reversed(NUMBERS.names)), CARD_TEXT.matrix, {}), NUMBERS, CENTRING, 0.5)
 
 
 # The comparison approach, average thirds: one cosine over a vector whose mana value, colour and stats groups each make up a third of its squared
 # length on average. Yes/no columns are centred; values are logged and standardised; a missing value is filled with the mean (0 after standardising),
 # and a variable one is its fixed part plus the mean of the fixed values.
 
-FIT = build_average_thirds(NUMBERS)
+FIT = build_average_thirds(NUMBERS, THIRDS)
 
 def column(name: str) -> int:
     return AVERAGE_THIRDS_COLUMNS.index(name)
@@ -171,7 +171,7 @@ def test_a_variable_value_is_its_fixed_part_plus_the_mean_of_the_fixed_values() 
 def test_a_subtracted_variable_part_takes_the_mean_away() -> None:
     shapeshifter = face_card('Shapeshifter', '{6}', 'Artifact Creature — Shapeshifter', '*', '7-*')
     numbers = build_front_numbers([*CARDS, shapeshifter])
-    fit = build_average_thirds(numbers)
+    fit = build_average_thirds(numbers, THIRDS)
     fixed_toughness = [2, 3, 2]  # Jibbirik Omnivore, Kalonian Tusker, Ornithopter; Adeline's 4 is fixed too.
     fixed_toughness.append(4)
     assert fit.value_means[2] == pytest.approx(sum(fixed_toughness) / len(fixed_toughness))
@@ -183,5 +183,29 @@ def test_each_group_makes_up_a_third_on_average() -> None:
     assert shares == pytest.approx({'mana value': 1 / 3, 'colour': 1 / 3, 'stats': 1 / 3}, abs=1e-3)
 
 def test_the_average_thirds_statistics_are_frozen() -> None:
-    fit = build_average_thirds(build_front_numbers(CARDS[:10]))
+    fit = build_average_thirds(build_front_numbers(CARDS[:10]), THIRDS)
     assert np.array_equal(fit.apply(NUMBERS)[:10], fit.apply(build_front_numbers(CARDS[:10])))
+
+def shares_after_scaling(rows: np.ndarray, scales: np.ndarray) -> list[float]:
+    """Each group's average share of a row's squared length once the group scales are applied."""
+    column_scales = np.array([scales[GROUPS.index(average_thirds_group(c))] for c in AVERAGE_THIRDS_COLUMNS])
+    shares = build_group_shares(rows * column_scales, AVERAGE_THIRDS_COLUMNS, average_thirds_group)
+    return [shares[g] for g in GROUPS]
+
+def test_the_group_scales_aim_each_group_at_its_target_share() -> None:
+    rows = FIT.standardised(NUMBERS)
+    assert shares_after_scaling(rows, build_group_scales(rows, (0.6, 0.2, 0.2))) == pytest.approx([0.6, 0.2, 0.2], abs=1e-3)
+
+def test_a_group_with_a_zero_share_is_scaled_to_0_and_the_others_share_the_rest() -> None:
+    rows = FIT.standardised(NUMBERS)
+    scales = build_group_scales(rows, (0.5, 0.5, 0.0))
+    assert scales[2] == 0
+    assert shares_after_scaling(rows, scales) == pytest.approx([0.5, 0.5, 0.0], abs=1e-3)
+
+def test_all_zero_shares_scale_every_group_to_0() -> None:
+    assert list(build_group_scales(FIT.standardised(NUMBERS), (0.0, 0.0, 0.0))) == [0, 0, 0]
+
+def test_an_all_zero_row_is_skipped_rather_than_making_every_scale_nan() -> None:
+    rows = FIT.standardised(NUMBERS)
+    with_zero_row = np.vstack([rows, np.zeros((1, rows.shape[1]))])
+    assert np.allclose(build_group_scales(with_zero_row, (0.6, 0.2, 0.2)), build_group_scales(rows, (0.6, 0.2, 0.2)))

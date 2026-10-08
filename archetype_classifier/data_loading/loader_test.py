@@ -99,22 +99,22 @@ def test_a_112_card_maindeck_loads_in_full(life_is_ez_seed: int, experiments_db:
     assert loader.load_deck_facts(experiments_db, loader.create_snapshot(experiments_db)).decks[life_is_ez_seed].maindeck_cards == 112
 
 
-# Scenario: card legality is per season. The real seasons 30 and 41 are checked once, in the rebuild verification.
+# Scenario: card legality is per season. Read from the cards database's card_legality, which is filled from the official lists (#46).
 
-@pytest.fixture
-def legal_cards_seed(seeded_db: Container) -> Iterator[None]:  # noqa: F811
-    """The site's _legal_cards table, which the seeded schema doesn't create, with seasons 30 and 41."""
-    db().execute('CREATE TABLE _legal_cards (season_id INT NOT NULL, name VARCHAR(190) NOT NULL, PRIMARY KEY (season_id, name))')
-    try:
-        db().execute("INSERT INTO _legal_cards (season_id, name) VALUES (30, 'Shock'), (30, 'Burst Lightning'), (30, 'Mountain'), (41, 'Shock'), (41, 'Burst Lightning'), (41, 'Mountain'), (42, 'Shock')")
-        yield
-    finally:
-        db().execute('DROP TABLE _legal_cards')
-
-def test_card_legality_is_per_season(legal_cards_seed: None) -> None:
+def test_card_legality_is_per_season() -> None:
     legal = loader.load_legal_cards([30, 41])
-    assert legal == {30: frozenset({'Shock', 'Burst Lightning', 'Mountain'}), 41: frozenset({'Shock', 'Burst Lightning', 'Mountain'})}
-    assert all('Lightning Bolt' not in cards for cards in legal.values())
+    assert set(legal) == {30, 41}
+    for cards in legal.values():
+        assert {'Shock', 'Burst Lightning', 'Mountain'} <= cards
+        assert not {'Lightning Bolt', 'Fireblast'} & cards
+
+def test_cards_added_by_a_supplemental_rotation_are_legal() -> None:
+    """Plasma Bolt came in season 38's supplemental rotation, which decksite's _legal_cards misses."""
+    assert 'Plasma Bolt' in loader.load_legal_cards([38])[38]
+
+def test_a_season_with_no_set_code_has_no_legal_cards_and_a_warning(caplog: pytest.LogCaptureFixture) -> None:
+    assert loader.load_legal_cards([0]) == {0: frozenset()}
+    assert 'season 0' in caplog.text
 
 
 def test_the_command_line_snapshots_splits_and_summarises(labelled_seed: Container, experiments_db: Database, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:

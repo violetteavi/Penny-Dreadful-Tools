@@ -191,6 +191,13 @@ A deck an experiment neither learns from nor scores, because of a data problem, 
 The decks in the training split: every deck from the training seasons that isn't held out and whose label status the scheme allows for training.
 _Avoid_: Pool, training pool (a pool is the **Legal card pool**)
 
+**Deck vector**:
+A deck's maindeck as one vector: the average of its cards' **Combined embedding** rows, weighted by copies, at unit length. Basic lands count; the sideboard doesn't.
+
+**Training row**:
+One distinct maindeck with one label, standing for every **Train set** deck that has both, with how many decks that is and the newest of them. Repeats of a list count once, so a popular list doesn't outweigh a rare one.
+_Avoid_: Training deck (one row can stand for many decks)
+
 **Eval set**:
 The decks a classifier's predictions are scored on, from any combination of the training, held-out, validation and test splits, each with the label it is scored against.
 _Avoid_: Dataset, test set (the test seasons are only one possible part of it)

@@ -3,6 +3,11 @@
 
     PD_LOCAL_DATA=1 uv run pytest -s archetype_classifier/models/similarity_local_test.py
     PD_LOCAL_DATA_DECKS=50 ...  # how many decks to check against the site (default 20)
+
+The agreement with the site's own guesser takes about a minute per sampled deck, so it's skipped unless PD_SITE_AGREEMENT=1 as well. Rerun it by hand
+whenever the baseline changes:
+
+    PD_LOCAL_DATA=1 PD_SITE_AGREEMENT=1 uv run pytest -s archetype_classifier/models/similarity_local_test.py
 """
 import os
 from collections.abc import Iterator
@@ -82,6 +87,7 @@ def site_index(snapshot: Snapshot) -> Iterator[Index]:
              for i, d in everything.items() if i in contents]
     yield Index(decks, lambda card: 1.0 / max(plays.get(card, FLOOR), FLOOR))
 
+@pytest.mark.skipif(os.environ.get('PD_SITE_AGREEMENT') != '1', reason='about 20 minutes: set PD_SITE_AGREEMENT=1 when the baseline changes')
 def test_the_baseline_agrees_with_the_sites_own_guesser(snapshot: Snapshot, site_index: Index) -> None:
     from decksite.data import deck
     from decksite.main import APP

@@ -1105,7 +1105,7 @@ On real decks, a shared basic land line weighs a few points against totals in th
 
 ### On real decks, the baseline agrees with the site (skipped by default)
 
-Run only when `PD_LOCAL_DATA=1`, against the full local dump.
+Run only when `PD_LOCAL_DATA=1` and `PD_SITE_AGREEMENT=1`, against the full local dump. It takes about 20 minutes, so it's left out of routine runs and rerun by hand whenever the baseline changes (decided 2026-10-08).
 
 - **Expect:**
   - **The real decks above:** the scores, guesses and best matches in this section.

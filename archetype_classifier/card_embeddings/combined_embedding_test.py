@@ -17,6 +17,7 @@ from archetype_classifier.card_embeddings.combined_embedding import (
     build_season_set,
     combined_embedding_path,
     load_combined_embedding,
+    load_embedding_hash,
     save_combined_embedding,
 )
 from archetype_classifier.card_embeddings.combined_test import CARD_TEXT, NUMBERS
@@ -201,3 +202,43 @@ def test_a_saved_file_whose_rows_dont_match_its_names_is_refused(tmp_path: Path)
     path.with_suffix('.json').write_text(json.dumps(saved))
     with pytest.raises(ValueError, match=f'{path.name} has 3 rows but its .json lists 2 cards'):
         load_combined_embedding(path)
+
+
+# The vectors a deck model averages (#44).
+
+def test_vectors_are_each_cards_unit_length_combined_row_in_name_order() -> None:
+    embedding = build('1-38', '1-39')
+    assert embedding.vectors.shape[0] == len(embedding.names)
+    assert np.allclose(np.linalg.norm(embedding.vectors, axis=1), 1)
+    assert np.allclose(embedding.vectors @ embedding.vectors.T, similarities(embedding))
+
+def test_a_combiner_without_a_vector_per_card_has_no_vectors() -> None:
+    embedding = build('1-38', '1-39')
+    object.__setattr__(embedding, 'combined', NoVectors(embedding.names))
+    with pytest.raises(TypeError, match='no vector per card'):
+        _ = embedding.vectors
+
+class NoVectors:
+    """A Similarities that only answers similarities, as exact thirds would."""
+    def __init__(self, names: tuple[str, ...]) -> None:
+        self.names = names
+
+    def similarities(self, start: int, stop: int) -> np.ndarray:
+        return np.zeros((stop - start, len(self.names)))
+
+
+# Scenario: a fitted model loads back, and refuses a changed embedding (Scenarios.md, "The nearest deck on the combined embedding").
+
+def test_an_embedding_rebuilt_with_the_same_settings_has_the_same_hash(tmp_path: Path) -> None:
+    first = save_combined_embedding(build('1-38', '1-39'), tmp_path / 'first')
+    second = save_combined_embedding(build('1-38', '1-39'), tmp_path / 'second')
+    assert load_embedding_hash(first) == load_embedding_hash(second)
+    assert len(load_embedding_hash(first)) == 64
+
+@pytest.mark.parametrize('suffix', ['.npz', '.json'])
+def test_a_change_to_either_file_changes_the_hash(tmp_path: Path, suffix: str) -> None:
+    path = save_combined_embedding(build('1-38', '1-39'), tmp_path)
+    before = load_embedding_hash(path)
+    changed = path.with_suffix(suffix)
+    changed.write_bytes(changed.read_bytes() + b' ')
+    assert load_embedding_hash(path) != before

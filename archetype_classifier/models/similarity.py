@@ -40,7 +40,7 @@ class Pick:
 @register
 class SimilarityBaseline:
     name: ClassVar[str] = 'similarity'
-    version: ClassVar[int] = 1
+    version: ClassVar[int] = 2  # 2: card legality from the cards database, not decksite's _legal_cards (#46).
 
     def __init__(self, params: dict[str, JSON]) -> None:
         self.params = params

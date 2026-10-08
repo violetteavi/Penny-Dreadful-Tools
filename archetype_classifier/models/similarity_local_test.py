@@ -49,7 +49,7 @@ def test_real_weights(baseline: SimilarityBaseline) -> None:
     assert [baseline.playability[c] for c in ('Island', 'Mountain', 'Burst Lightning', 'Make Disappear')] == [0.38226, 0.32338, 0.1311, 0.00173]
     assert baseline.weight("Archmage's Charm") == 1000  # No training deck plays it.
     at_floor = sum(1 for p in baseline.playability.values() if p < FLOOR) / len(baseline.playability)
-    assert (len(baseline.playability), round(at_floor, 2)) == (23416, 0.79)
+    assert (len(baseline.playability), round(at_floor, 2)) == (23618, 0.79)
 
 
 # Scenarios: identical decks, same card and quantity, unseen cards, and decks with no unseen cards but no exact match.
@@ -59,7 +59,7 @@ def test_real_scenario_decks(snapshot: Snapshot, baseline: SimilarityBaseline) -
     assert [(m.deck_id, m.score) for m in oops[:3]] == [(264554, 100), (264496, 100), (262588, 79)]
     expected = {  # deck -> (best match, its score, the guess at 20 by name)
         269508: (264554, 100, 'Oops All Lands'), 269653: (244684, 21, 'Izzet Spells'), 269833: (264566, 17, None), 269466: (264841, 9, None),
-        269940: (269227, 10, None), 269539: (269464, 73, 'Mono Green Stompy'), 269503: (269180, 49, 'Selesnya Heroic'), 270398: (246062, 29, 'Mono White Humans'),
+        269940: (269227, 10, None), 269539: (269464, 73, 'Mono Green Stompy'), 269503: (269180, 61, 'Selesnya Heroic'), 270398: (246062, 29, 'Mono White Humans'),
     }
     for deck_id, (match, score, guess) in expected.items():
         deck = predict_deck(snapshot, deck_id)

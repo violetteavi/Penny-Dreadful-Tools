@@ -87,7 +87,7 @@ def test_lightning_strike_and_searing_spear_are_identical_when_masked(embedded: 
 
 def test_adding_the_cards_new_in_season_43_moves_no_other_vector(encoder: Encoder, pool: dict[str, Card], sample: list[Card], embedded: dict[str, TextEmbeddings]) -> None:
     new = [c for c in pool.values() if min(c.seasons) == 43]
-    assert len(new) == 461
+    assert len(new) == 301
     before = embedded[BASE.label]
     after = build_text_embeddings([*sample, *new], BASE, encoder)
     rows = dict(zip(after.names, after.matrix))

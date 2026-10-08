@@ -130,7 +130,7 @@ def test_a_combiner_saved_as_json_and_loaded_back_gives_identical_similarities(w
     assert np.array_equal(similarities(loaded.combine(CARD_TEXT, NUMBERS)), similarities(combiner.combine(CARD_TEXT, NUMBERS)))
 
 
-# Real cards with their real faces and the seasons they were legal in (decksite _legal_cards).
+# Real cards with their real faces and the seasons they were legal in (the cards database's card_legality).
 SHOCK = Card('Shock', 'normal', (Face('Shock', '{R}', 1, 'Instant', 'Shock deals 2 damage to any target.'),),
              build_season_set('1-3,5-7,9,13-33,35-43'))
 KALONIAN_TUSKER = Card('Kalonian Tusker', 'normal', (Face('Kalonian Tusker', '{G}{G}', 2, 'Creature — Beast', '', '3', '3'),),

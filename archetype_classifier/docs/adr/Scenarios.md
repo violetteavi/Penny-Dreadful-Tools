@@ -760,7 +760,7 @@ These scenarios belong to the row set (#27). A row is a named, versioned group o
 | 301 | HELD_OUT | 0 | its own |
 | 302 | HELD_OUT | 3 | its own |
 | 201 | VALIDATION | 0 | A (repeats deck 101) |
-| 202 | VALIDATION | 0 | its own |
+| 202 | VALIDATION | 3 | its own |
 | 401 | TEST | 0 | B (repeats deck 102) |
 | 402 | TEST | 2 | its own |
 | 403 | TEST | 7 | its own |
@@ -783,12 +783,14 @@ The scored deck set is {HELD_OUT, VALIDATION}.
   | held-out, no unseen cards | 301 |
   | held-out, unseen cards | 302 |
   | validation | 201, 202 |
+  | validation, no unseen cards | 201 |
+  | validation, unseen cards | 202 |
   | validation, new maindeck | 202 |
   | validation, repeated maindeck | 201 |
 
 - **Expect, flags:** the validation rows are marked tuned on. Nothing is marked trained on.
 - **Expect, no held-out maindeck rows:** with twins off, every held-out deck is new by construction, so those rows would say nothing.
-- **Why it matters:** these are the rows we read most often while developing, and the repeated-maindeck row shows how much of a score comes from decks the model has effectively seen.
+- **Why it matters:** these are the rows we read most often while developing, and the repeated-maindeck row shows how much of a score comes from decks the model has effectively seen. Two thirds of season 39 decks have an unseen card, the case this work most needs to get right, so season 39 is split by unseen cards too.
 - **Check:** build the rows for the scored and training deck sets, and score each from a run's guesses.
 
 ### Test rows split by unseen copies, and need the gate
@@ -854,7 +856,7 @@ The scored deck set is {HELD_OUT}, but neither held-out deck has unseen cards (d
 
 ### Rows are versioned
 
-- **Expect:** the row set has a version number, 1. Any change to which rows exist or which decks they hold bumps it, and every report records it, with the metrics version and PR number (decision F).
+- **Expect:** the row set has a version number, 2. Version 2 (2026-10-08, #44) split season 39 by unseen cards, as the held-out decks already were. Any change to which rows exist or which decks they hold bumps it, and every report records it, with the metrics version and PR number (decision F).
 - **Check:** the version is exposed beside the row-building function.
 
 ## Experiment reports
@@ -1103,7 +1105,7 @@ On real decks, a shared basic land line weighs a few points against totals in th
 
 ### On real decks, the baseline agrees with the site (skipped by default)
 
-Run only when `PD_LOCAL_DATA=1`, against the full local dump.
+Run only when `PD_LOCAL_DATA=1` and `PD_SITE_AGREEMENT=1`, against the full local dump. It takes about 20 minutes, so it's left out of routine runs and rerun by hand whenever the baseline changes (decided 2026-10-08).
 
 - **Expect:**
   - **The real decks above:** the scores, guesses and best matches in this section.
@@ -1113,3 +1115,94 @@ Run only when `PD_LOCAL_DATA=1`, against the full local dump.
   - **It also reports** how often a Gatherling deck's top site match is unlabelled.
 - **Why it matters:** it proves the reimplementation is today's guesser, and it can be re-run whenever we doubt it.
 - **Check:** `PD_LOCAL_DATA=1 pytest` on this test.
+
+## The nearest deck on the combined embedding
+
+These scenarios belong to the flat classifier of #44, `EmbeddingNearestDeck`. It's the similarity baseline's rule ("copy the label of the best match") with the combined embedding in place of shared cards:
+- **Deck vector:** the average of the deck's maindeck cards' combined embedding rows, weighted by copies, at unit length. Basic lands count; the sideboard doesn't. A card the embedding lacks is skipped and counted.
+- **Training rows:** one per distinct maindeck and label among the TRAIN decks, with its deck count and its newest deck id.
+- **Picking a label:** the training row with the highest cosine similarity to the deck. Rows within 1e-9 of the best are tied. Among tied rows, the label with the most decks wins; if two labels have equally many, the label whose newest deck is most recent wins.
+- **No tree and no threshold:** it always guesses, unless none of the deck's cards is embedded. Parent fallback is #45.
+
+**Scheme** for every scenario here is scheme 1, "default" (season rule 1–38 / 39 / 40–42 with 10% held out; status rule train {VERIFIED}, eval {VERIFIED}; twins off). Nothing is tuned on season 39.
+
+**Rule-level decks.** Unless a scenario says otherwise, the decks are 60-card League lists of real cards legal in seasons 30 and 39: Shock, Burst Lightning, Mountain, Essence Scatter, Negate and Island. The rule-level checks use a small embedding of those cards. Labels are Red Deck Wins (Aggro), Burn (Aggro) and Azorius Control (Control).
+
+All scenarios here were proposed 2026-10-08.
+
+### Repeated maindecks are one training row
+
+| Deck | Maindeck | Label |
+|---|---|---|
+| 101 | A: 4 Shock, 4 Burst Lightning, 52 Mountain | Red Deck Wins |
+| 103 | A | Red Deck Wins |
+| 105 | A | Burn |
+| 107 | B: 4 Essence Scatter, 4 Negate, 52 Island | Azorius Control |
+
+- **Expect three rows:**
+
+  | Row | Maindeck | Label | Decks | Newest deck |
+  |---|---|---|---|---|
+  | 1 | A | Red Deck Wins | 2 | 103 |
+  | 2 | A | Burn | 1 | 105 |
+  | 3 | B | Azorius Control | 1 | 107 |
+
+- **Why it matters:** a list submitted fifty times is one piece of evidence about what that list is, not fifty. Counting each repeat would mix how popular a list is into how similar it is. Popularity only breaks ties.
+- **Check:** build the training rows from these four decks. A deck with no label is skipped (scheme 1 has none).
+
+### A tie goes to the label with more decks, then to the newer deck
+
+The pick rule on hand-made similarities, with the rows above:
+
+| Case | Similarities (rows 1, 2, 3) | Guess | Evidence |
+|---|---|---|---|
+| A tie between two labels | 1.0, 1.0, 0.91 | **Red Deck Wins** (2 decks beat 1) | match 103, similarity 1.0, 2 decks, 2 tied rows, runner-up Burn at 1.0 |
+| Within the tolerance | 1.0, 1.0 − 1e-10, 0.91 | Red Deck Wins (still tied) | 2 tied rows |
+| Just outside it | 1.0 − 1e-8, 1.0, 0.91 | **Burn** (row 2 alone is best) | match 105, 1 deck, 1 tied row, runner-up Red Deck Wins at 1.0 − 1e-8 |
+| Equal decks | as the first, but row 1 holds 1 deck (newest 101) | **Burn** (1 deck each, and 105 is newer than 101) | match 105 |
+| No other label | only rows 1 and 3, with row 3 relabelled Red Deck Wins | Red Deck Wins | runner-up null |
+
+- **Why it matters:** an identical maindeck labelled two ways is a real disagreement between reviewers. The majority wins, then the most recent judgement, as the baseline also prefers the newer deck. A near one-deck row still beats a far popular one: decks only count among tied rows.
+- **Check:** unit-test the pick on these arrays.
+
+### Copies weigh the deck vector, basic lands count, and the sideboard doesn't
+
+- **Expect:**
+  - "4 Shock, 56 Mountain" is the unit-length 4 × Shock + 56 × Mountain. Doubling every count (a 120-card list) gives the same vector.
+  - A deck's sideboard never changes its vector: the same maindeck with or without a sideboard of 4 Negate gives the same vector.
+  - With the real saved embedding (potion, masked, weights 3/1/1/1), "4 Shock, 56 Mountain" against "4 Burst Lightning, 56 Mountain" is **0.9992**, and against "4 Shock, 56 Island" is **0.9152**. With this many basics, the lands decide. On real season 39 decks it's milder: basics are 17% of maindeck copies at the median, and a deck's vector has cosine 0.97 with its non-basic cards alone and 0.69 with its basics alone (medians).
+- **Why it matters:** the average is what the classifier sees of a deck, so it should be predictable. The real numbers show what averaging gives up, which later deck representations should improve on.
+- **Check:** unit-test the vectors on the small embedding; the real numbers are measured once.
+
+### A card missing from the embedding is skipped and counted
+
+A season 43 deck of 4 Shock, 52 Mountain and 4 Smaug's Fury. Smaug's Fury (a red instant from The Hobbit) is legal only in season 43, so an embedding of seasons 1–39 lacks it.
+
+- **Expect:**
+  - The deck vector is that of 4 Shock and 52 Mountain. The deck's evidence records 56 embedded and 4 skipped copies.
+  - Fitting records the skipped copies over all training decks, how many decks had one, and the 20 most-skipped cards.
+  - A deck of only missing cards gets **no guess** (scored as the root), with its counts in the evidence. That's the only time the model makes no guess.
+- **Why it matters:** data problems are non-fatal, and the counts say how much they matter. Since #46, no maindeck card in the training, season 39 or held-out decks is missing from the saved embedding, so a nonzero count is a warning sign.
+- **Check:** unit-test with the small embedding, which lacks Smaug's Fury.
+
+### A fitted model loads back, and refuses a changed embedding
+
+- **Expect:**
+  - The state holds the embedding's name and a hash of its `.npz` and `.json` together, the training deck and row counts, and the skipped-card counts. It never holds vectors.
+  - Rebuilt from its state and the same training decks, the model guesses identically.
+  - If the embedding file has changed since fitting (a different weight saved under the same name, say), loading refuses, naming both hashes.
+  - Rebuilding the embedding with the same settings gives byte-identical files (checked 2026-10-08), so the same hash.
+- **Why it matters:** the embedding lives outside git and can be rebuilt. A stored run must say exactly which rows it used, and must not be silently replayed on different ones.
+- **Check:** save and load a fitted model; change the embedding file and load again.
+
+### A deck identical to training decks copies their label (real data)
+
+Deck 269508, a season 39 League "Oops All Lands" deck. Its maindeck is identical to training decks 264496 and 264554, both VERIFIED Oops All Lands from season 37.
+
+- **Expect:**
+  - **The row:** those two decks are one training row (2 decks, newest 264554), at similarity **1.0**.
+  - **The next rows** are other Oops All Lands lists: 262588 at 0.9980, then 240722 at 0.9955.
+  - **Guess:** Oops All Lands, with evidence: match 264554, similarity 1.0, 2 decks, 1 tied row, runner-up **Tibalt's Trickery** at 0.9824, 60 embedded and 0 skipped copies.
+  - **Rows:** scheme 1's TRAIN decks make **84,094** training rows.
+- **Why it matters:** it's the simplest real case. Here the baseline also guesses Oops All Lands, from the same deck, 264554.
+- **Check:** `PD_LOCAL_DATA=1`, fit on scheme 1's TRAIN decks and predict deck 269508.

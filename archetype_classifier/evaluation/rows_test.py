@@ -13,7 +13,7 @@ TYPICAL = SplitScheme('typical')
 
 # The decks of "Rows of the results table" (Scenarios.md): deck id -> split, unseen maindeck copies, maindeck.
 DECKS = {101: (Split.TRAIN, 0, MAINDECK_A), 102: (Split.TRAIN, 0, MAINDECK_B), 301: (Split.HELD_OUT, 0, None), 302: (Split.HELD_OUT, 3, None),
-         201: (Split.VALIDATION, 0, MAINDECK_A), 202: (Split.VALIDATION, 0, None), 401: (Split.TEST, 0, MAINDECK_B), 402: (Split.TEST, 2, None),
+         201: (Split.VALIDATION, 0, MAINDECK_A), 202: (Split.VALIDATION, 3, None), 401: (Split.TEST, 0, MAINDECK_B), 402: (Split.TEST, 2, None),
          403: (Split.TEST, 7, None), 404: (Split.TEST, 15, None)}
 
 
@@ -38,6 +38,8 @@ def test_scoring_held_out_and_validation_decks_gives_their_rows() -> None:
         'held-out, no unseen cards': frozenset({301}),
         'held-out, unseen cards': frozenset({302}),
         'validation': frozenset({201, 202}),
+        'validation, no unseen cards': frozenset({201}),
+        'validation, unseen cards': frozenset({202}),
         'validation, new maindeck': frozenset({202}),
         'validation, repeated maindeck': frozenset({201}),
     }
@@ -96,4 +98,4 @@ def test_with_twins_allowed_held_out_decks_get_maindeck_rows() -> None:
 # Scenario: rows are versioned.
 
 def test_rows_are_versioned() -> None:
-    assert ROWS_VERSION == 1
+    assert ROWS_VERSION == 2

@@ -1,6 +1,7 @@
 """The combined embedding: each card's masked-text embedding together with its card numbers, combined by an approach with weights, and stored so
 that later work loads it rather than rebuilding it. The maths of each approach lives in combined.py.
 """
+import hashlib
 import json
 import math
 import re
@@ -135,6 +136,13 @@ class CombinedEmbedding:
     def similarities(self, start: int, stop: int) -> np.ndarray:
         return self.combined.similarities(start, stop)
 
+    @property
+    def vectors(self) -> np.ndarray:
+        """Each card's combined row, in name order and of unit length: what a deck model averages. Only an approach with one vector per card has them."""
+        if not isinstance(self.combined, TextEmbeddings):
+            raise TypeError(f'The {self.combiner.approach!r} combiner gives no vector per card, only similarities')
+        return self.combined.matrix
+
 
 def build_combined_embedding(pool: Sequence[Card], settings: CombinedEmbeddingSettings, approach: CombiningApproach,
                              weights: CombinedEmbeddingWeights, encoder: Encoder) -> CombinedEmbedding:
@@ -205,3 +213,11 @@ def load_combined_embedding(path: Path) -> CombinedEmbedding:
         numbers = FrontNumbers(names, *(arrays[name] for name in NUMBER_ARRAYS))
     combiner = LOAD_COMBINER[saved['combiner']['approach']](saved['combiner'])
     return CombinedEmbedding(settings, text, numbers, combiner)
+
+def load_embedding_hash(path: Path) -> str:
+    """SHA-256 of the .npz then the .json: the rows, and the names and statistics that say what they are. A rebuild with the same settings writes
+    byte-identical files, so the hash changes only when the embedding does."""
+    digest = hashlib.sha256()
+    for file in (path, path.with_suffix('.json')):
+        digest.update(file.read_bytes())
+    return digest.hexdigest()

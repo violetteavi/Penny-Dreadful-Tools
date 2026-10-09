@@ -12,7 +12,7 @@ from shared.database import Database
 
 logger = logging.getLogger(__name__)
 
-ROWS_VERSION = 1  # Bump on any change to which rows exist or which decks they hold.
+ROWS_VERSION = 2  # Bump on any change to which rows exist or which decks they hold. 2: validation split by unseen cards (#44).
 PREFIXES = {Split.TRAIN: 'train', Split.HELD_OUT: 'held-out', Split.VALIDATION: 'validation', Split.TEST: 'test'}
 UNSEEN_BANDS = [('0', 0, 0), ('1–4', 1, 4), ('5–12', 5, 12), ('13+', 13, None)]  # Unseen maindeck copies: label, lowest, highest.
 
@@ -49,13 +49,15 @@ def split_rows(split: Split, repeated: Keep, scheme: SplitScheme) -> list[tuple[
     if split == Split.TRAIN:
         return [('train, in-sample', lambda d: True)]  # How well the model fits the decks it learned from; not a generalisation score.
     if split == Split.HELD_OUT:
-        unseen: list[tuple[str, Keep]] = [('held-out, no unseen cards', lambda d: d.unseen_maindeck_copies == 0), ('held-out, unseen cards', lambda d: d.unseen_maindeck_copies > 0)]
         # Without twins, held-out decks never repeat a training maindeck, so maindeck rows would say nothing.
-        return [*unseen, *maindeck_rows('held-out', repeated)] if scheme.allow_held_out_twins else unseen
+        return [*unseen_rows('held-out'), *maindeck_rows('held-out', repeated)] if scheme.allow_held_out_twins else unseen_rows('held-out')
     if split == Split.VALIDATION:
-        return [('validation', lambda d: True), *maindeck_rows('validation', repeated)]
+        return [('validation', lambda d: True), *unseen_rows('validation'), *maindeck_rows('validation', repeated)]
     bands: list[tuple[str, Keep]] = [(f'test, {label} unseen copies', in_band(low, high)) for label, low, high in UNSEEN_BANDS]
     return [('test, overall', lambda d: True), *bands, *maindeck_rows('test', repeated)]
+
+def unseen_rows(prefix: str) -> list[tuple[str, Keep]]:
+    return [(f'{prefix}, no unseen cards', lambda d: d.unseen_maindeck_copies == 0), (f'{prefix}, unseen cards', lambda d: d.unseen_maindeck_copies > 0)]
 
 def maindeck_rows(prefix: str, repeated: Keep) -> list[tuple[str, Keep]]:
     return [(f'{prefix}, new maindeck', lambda d: not repeated(d)), (f'{prefix}, repeated maindeck', repeated)]

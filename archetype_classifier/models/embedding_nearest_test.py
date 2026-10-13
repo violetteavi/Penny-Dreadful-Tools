@@ -13,7 +13,7 @@ from archetype_classifier.evaluation.metrics import ArchetypeTree
 from archetype_classifier.evaluation.model import FitContext, PredictDeck, Prediction, TrainingDeck, model_class
 from archetype_classifier.models.embedding_nearest import EmbeddingNearestDeck, Pick, build_pick, build_training_rows
 
-AGGRO, CONTROL, RED_DECK_WINS, BURN, AZORIUS_CONTROL = 1, 2, 16, 17, 49
+AGGRO, CONTROL, RED_DECK_WINS, MONO_RED_SWARM, AZORIUS_CONTROL = 1, 2, 16, 17, 49
 MAINDECK_A = cards(Shock=4, Burst_Lightning=4, Mountain=52)
 MAINDECK_B = cards(Essence_Scatter=4, Negate=4, Island=52)
 
@@ -21,7 +21,7 @@ MAINDECK_B = cards(Essence_Scatter=4, Negate=4, Island=52)
 def training(deck_id: int, archetype_id: int | None, maindeck: tuple[CardCount, ...], sideboard: tuple[CardCount, ...] = ()) -> TrainingDeck:
     return TrainingDeck(PredictDeck(deck_id, 'League', maindeck, sideboard), 30, archetype_id, True, LabelStatus.VERIFIED)
 
-TRAINING = [training(101, RED_DECK_WINS, MAINDECK_A), training(103, RED_DECK_WINS, MAINDECK_A, sideboard=cards(Negate=4)), training(105, BURN, MAINDECK_A),
+TRAINING = [training(101, RED_DECK_WINS, MAINDECK_A), training(103, RED_DECK_WINS, MAINDECK_A, sideboard=cards(Negate=4)), training(105, MONO_RED_SWARM, MAINDECK_A),
             training(107, AZORIUS_CONTROL, MAINDECK_B)]
 
 
@@ -30,7 +30,7 @@ TRAINING = [training(101, RED_DECK_WINS, MAINDECK_A), training(103, RED_DECK_WIN
 def test_repeated_maindecks_are_one_training_row() -> None:
     rows = build_training_rows(TRAINING)
     assert list(zip(rows.maindecks, rows.labels.tolist(), rows.deck_counts.tolist(), rows.newest_deck_ids.tolist())) == [
-        (MAINDECK_A, RED_DECK_WINS, 2, 103), (MAINDECK_A, BURN, 1, 105), (MAINDECK_B, AZORIUS_CONTROL, 1, 107)]
+        (MAINDECK_A, RED_DECK_WINS, 2, 103), (MAINDECK_A, MONO_RED_SWARM, 1, 105), (MAINDECK_B, AZORIUS_CONTROL, 1, 107)]
 
 def test_a_training_deck_with_no_label_is_skipped() -> None:
     rows = build_training_rows([*TRAINING, training(109, None, MAINDECK_B)])
@@ -42,23 +42,23 @@ def test_no_training_decks_give_no_rows() -> None:
     assert rows.labels.dtype == np.int64
 
 
-# Scenario: a tie goes to the label with more decks, then to the newer deck. Rows: 1 = A Red Deck Wins (2 decks, newest 103), 2 = A Burn (1, 105),
+# Scenario: a tie goes to the label with more decks, then to the newer deck. Rows: 1 = A Red Deck Wins (2 decks, newest 103), 2 = A Mono Red Swarm (1, 105),
 # 3 = B Azorius Control (1, 107).
 
 ROWS = build_training_rows(TRAINING)
 
 @pytest.mark.parametrize(('similarities', 'pick'), [
-    ([1.0, 1.0, 0.91], Pick(RED_DECK_WINS, 103, 1.0, 2, 2, BURN, 1.0)),  # A tie between two labels: 2 decks beat 1.
-    ([1.0, 1.0 - 1e-10, 0.91], Pick(RED_DECK_WINS, 103, 1.0, 2, 2, BURN, 1.0 - 1e-10)),  # Within the tolerance: still tied.
-    ([1.0 - 1e-8, 1.0, 0.91], Pick(BURN, 105, 1.0, 1, 1, RED_DECK_WINS, 1.0 - 1e-8)),  # Just outside it: row 2 alone is best.
+    ([1.0, 1.0, 0.91], Pick(RED_DECK_WINS, 103, 1.0, 2, 2, MONO_RED_SWARM, 1.0)),  # A tie between two labels: 2 decks beat 1.
+    ([1.0, 1.0 - 1e-10, 0.91], Pick(RED_DECK_WINS, 103, 1.0, 2, 2, MONO_RED_SWARM, 1.0 - 1e-10)),  # Within the tolerance: still tied.
+    ([1.0 - 1e-8, 1.0, 0.91], Pick(MONO_RED_SWARM, 105, 1.0, 1, 1, RED_DECK_WINS, 1.0 - 1e-8)),  # Just outside it: row 2 alone is best.
     ([0.5, 0.2, 0.97], Pick(AZORIUS_CONTROL, 107, 0.97, 1, 1, RED_DECK_WINS, 0.5)),  # A near one-deck row beats the far popular one.
 ])
 def test_the_pick_rule(similarities: list[float], pick: Pick) -> None:
     assert build_pick(np.array(similarities), ROWS) == pick
 
 def test_equal_decks_go_to_the_newer_deck() -> None:
-    rows = build_training_rows([training(101, RED_DECK_WINS, MAINDECK_A), training(105, BURN, MAINDECK_A), training(107, AZORIUS_CONTROL, MAINDECK_B)])
-    assert build_pick(np.array([1.0, 1.0, 0.91]), rows) == Pick(BURN, 105, 1.0, 1, 2, RED_DECK_WINS, 1.0)
+    rows = build_training_rows([training(101, RED_DECK_WINS, MAINDECK_A), training(105, MONO_RED_SWARM, MAINDECK_A), training(107, AZORIUS_CONTROL, MAINDECK_B)])
+    assert build_pick(np.array([1.0, 1.0, 0.91]), rows) == Pick(MONO_RED_SWARM, 105, 1.0, 1, 2, RED_DECK_WINS, 1.0)
 
 def test_with_no_other_label_there_is_no_runner_up() -> None:
     rows = build_training_rows([training(101, RED_DECK_WINS, MAINDECK_A), training(103, RED_DECK_WINS, MAINDECK_A), training(107, RED_DECK_WINS, MAINDECK_B)])
@@ -68,7 +68,7 @@ def test_with_no_other_label_there_is_no_runner_up() -> None:
 # The model through the Model protocol, on the small embedding saved to a temporary folder.
 
 TREE = ArchetypeTree({AGGRO: ArchetypeSnapshot(AGGRO, 'Aggro', None, 0), CONTROL: ArchetypeSnapshot(CONTROL, 'Control', None, 0),
-                      RED_DECK_WINS: ArchetypeSnapshot(RED_DECK_WINS, 'Red Deck Wins', AGGRO, 1), BURN: ArchetypeSnapshot(BURN, 'Burn', AGGRO, 1),
+                      RED_DECK_WINS: ArchetypeSnapshot(RED_DECK_WINS, 'Red Deck Wins', AGGRO, 1), MONO_RED_SWARM: ArchetypeSnapshot(MONO_RED_SWARM, 'Mono Red Swarm', AGGRO, 1),
                       AZORIUS_CONTROL: ArchetypeSnapshot(AZORIUS_CONTROL, 'Azorius Control', CONTROL, 1)})
 
 @pytest.fixture
@@ -91,7 +91,7 @@ def test_the_model_is_found_by_its_name() -> None:
 
 def test_a_deck_identical_to_training_decks_copies_the_label_with_more_decks(embedding_path: Path) -> None:
     [prediction] = fitted(embedding_path).predict([query(201, MAINDECK_A)])
-    assert prediction == Prediction(201, RED_DECK_WINS, {'match_deck_id': 103, 'similarity': 1.0, 'match_decks': 2, 'tied_rows': 2, 'runner_up_id': BURN,
+    assert prediction == Prediction(201, RED_DECK_WINS, {'match_deck_id': 103, 'similarity': 1.0, 'match_decks': 2, 'tied_rows': 2, 'runner_up_id': MONO_RED_SWARM,
                                                          'runner_up_similarity': 1.0, 'embedded_copies': 60, 'skipped_copies': 0})
 
 def test_the_sideboard_never_changes_a_guess(embedding_path: Path) -> None:
@@ -112,7 +112,7 @@ def test_with_no_training_rows_no_deck_gets_a_guess(embedding_path: Path) -> Non
 # Scenarios: a card missing from the embedding is skipped and counted; a fitted model loads back, and refuses a changed embedding.
 
 def test_the_state_records_the_embedding_and_the_skipped_cards_never_vectors(embedding_path: Path) -> None:
-    with_missing = [*TRAINING, training(111, BURN, cards(Shock=4, Mountain=52, Smaug_s_Fury=4)), training(113, BURN, cards(Shock=4, Mountain=52, Smaug_s_Fury=4))]
+    with_missing = [*TRAINING, training(111, MONO_RED_SWARM, cards(Shock=4, Mountain=52, Smaug_s_Fury=4)), training(113, MONO_RED_SWARM, cards(Shock=4, Mountain=52, Smaug_s_Fury=4))]
     assert fitted(embedding_path, with_missing).state() == {
         'embedding': embedding_path.stem, 'embedding_hash': load_embedding_hash(embedding_path), 'training_decks': 6, 'training_rows': 4,
         'skipped_copies': 8, 'decks_with_skipped_cards': 2, 'skipped_cards': {"Smaug's Fury": 8}}

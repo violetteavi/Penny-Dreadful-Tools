@@ -1067,7 +1067,7 @@ Real season 39 League decks with 0 unseen copies whose maindeck repeats no train
 Every one of scheme 2's 202,385 training decks is reviewed, so this never changes a pick in the real data. It's still the site's rule, so it's checked with four small decks: 60-card season 30 lists of 4 Shock and 56 Mountain, with these differences:
 - **The query:** 2 Shock, 4 Burst Lightning, 54 Mountain.
 - **Its identical twin:** an unreviewed Red Deck Wins training deck.
-- **Two reviewed training decks,** one labelled Red Deck Wins and one Burn.
+- **Two reviewed training decks,** one labelled Red Deck Wins and one Mono Red Swarm.
 
 - **Expect:**
   - **As a League deck:** the unreviewed twin scores 100 but is skipped, so the guess comes from the best reviewed match.
@@ -1126,7 +1126,7 @@ These scenarios belong to the flat classifier of #44, `EmbeddingNearestDeck`. It
 
 **Scheme** for every scenario here is scheme 1, "default" (season rule 1–38 / 39 / 40–42 with 10% held out; status rule train {VERIFIED}, eval {VERIFIED}; twins off). Nothing is tuned on season 39.
 
-**Rule-level decks.** Unless a scenario says otherwise, the decks are 60-card League lists of real cards legal in seasons 30 and 39: Shock, Burst Lightning, Mountain, Essence Scatter, Negate and Island. The rule-level checks use a small embedding of those cards. Labels are Red Deck Wins (Aggro), Burn (Aggro) and Azorius Control (Control).
+**Rule-level decks.** Unless a scenario says otherwise, the decks are 60-card League lists of real cards legal in seasons 30 and 39: Shock, Burst Lightning, Mountain, Essence Scatter, Negate and Island. The rule-level checks use a small embedding of those cards. Labels are Red Deck Wins (Aggro), Mono Red Swarm (Aggro) and Azorius Control (Control).
 
 All scenarios here were proposed 2026-10-08.
 
@@ -1136,7 +1136,7 @@ All scenarios here were proposed 2026-10-08.
 |---|---|---|
 | 101 | A: 4 Shock, 4 Burst Lightning, 52 Mountain | Red Deck Wins |
 | 103 | A | Red Deck Wins |
-| 105 | A | Burn |
+| 105 | A | Mono Red Swarm |
 | 107 | B: 4 Essence Scatter, 4 Negate, 52 Island | Azorius Control |
 
 - **Expect three rows:**
@@ -1144,7 +1144,7 @@ All scenarios here were proposed 2026-10-08.
   | Row | Maindeck | Label | Decks | Newest deck |
   |---|---|---|---|---|
   | 1 | A | Red Deck Wins | 2 | 103 |
-  | 2 | A | Burn | 1 | 105 |
+  | 2 | A | Mono Red Swarm | 1 | 105 |
   | 3 | B | Azorius Control | 1 | 107 |
 
 - **Why it matters:** a list submitted fifty times is one piece of evidence about what that list is, not fifty. Counting each repeat would mix how popular a list is into how similar it is. Popularity only breaks ties.
@@ -1156,10 +1156,10 @@ The pick rule on hand-made similarities, with the rows above:
 
 | Case | Similarities (rows 1, 2, 3) | Guess | Evidence |
 |---|---|---|---|
-| A tie between two labels | 1.0, 1.0, 0.91 | **Red Deck Wins** (2 decks beat 1) | match 103, similarity 1.0, 2 decks, 2 tied rows, runner-up Burn at 1.0 |
+| A tie between two labels | 1.0, 1.0, 0.91 | **Red Deck Wins** (2 decks beat 1) | match 103, similarity 1.0, 2 decks, 2 tied rows, runner-up Mono Red Swarm at 1.0 |
 | Within the tolerance | 1.0, 1.0 − 1e-10, 0.91 | Red Deck Wins (still tied) | 2 tied rows |
-| Just outside it | 1.0 − 1e-8, 1.0, 0.91 | **Burn** (row 2 alone is best) | match 105, 1 deck, 1 tied row, runner-up Red Deck Wins at 1.0 − 1e-8 |
-| Equal decks | as the first, but row 1 holds 1 deck (newest 101) | **Burn** (1 deck each, and 105 is newer than 101) | match 105 |
+| Just outside it | 1.0 − 1e-8, 1.0, 0.91 | **Mono Red Swarm** (row 2 alone is best) | match 105, 1 deck, 1 tied row, runner-up Red Deck Wins at 1.0 − 1e-8 |
+| Equal decks | as the first, but row 1 holds 1 deck (newest 101) | **Mono Red Swarm** (1 deck each, and 105 is newer than 101) | match 105 |
 | No other label | only rows 1 and 3, with row 3 relabelled Red Deck Wins | Red Deck Wins | runner-up null |
 
 - **Why it matters:** an identical maindeck labelled two ways is a real disagreement between reviewers. The majority wins, then the most recent judgement, as the baseline also prefers the newer deck. A near one-deck row still beats a far popular one: decks only count among tied rows.
@@ -1215,7 +1215,7 @@ These scenarios belong to #14: a model's **candidates**, ranked best first, alon
 
 A deck whose model ranks candidates but found none for it has an empty list, which misses at every k. A model that doesn't rank candidates at all (such as most common archetype) gets no candidate scores, rather than zeros.
 
-**Archetypes** are from the current tree: Aggro › Red Deck Wins › Prisoner and Mono Red Devotion; Aggro › White Weenie › Mono White Humans; Aggro-Combo › Burn; Control › Azorius Control.
+**Archetypes** are from the current tree: Aggro › Red Deck Wins › Prisoner and Mono Red Devotion; Aggro › Mono Red Swarm; Aggro › White Weenie › Mono White Humans; Control › Azorius Control.
 
 All scenarios here were proposed 2026-10-12.
 
@@ -1226,9 +1226,9 @@ Four decks, each with its own maindeck:
 | Deck | Label | Guess | Candidates, best first | Label's rank |
 |---|---|---|---|---|
 | 501 | Prisoner | Prisoner | Prisoner, Red Deck Wins, Mono Red Devotion | 1 |
-| 502 | Red Deck Wins | Prisoner | Prisoner, Mono Red Devotion, Red Deck Wins, Aggro, Burn | 3 |
-| 503 | Azorius Control | no guess | Prisoner, Red Deck Wins, Mono Red Devotion, Burn, White Weenie, Mono White Humans, Azorius Control, Control | 7 |
-| 504 | Aggro | Red Deck Wins | Red Deck Wins, Burn | not listed |
+| 502 | Red Deck Wins | Prisoner | Prisoner, Mono Red Devotion, Red Deck Wins, Aggro, Mono Red Swarm | 3 |
+| 503 | Azorius Control | no guess | Prisoner, Red Deck Wins, Mono Red Devotion, Mono Red Swarm, White Weenie, Mono White Humans, Azorius Control, Control | 7 |
+| 504 | Aggro | Red Deck Wins | Red Deck Wins, Mono Red Swarm | not listed |
 
 - **Expect:**
   - **Top 1** = 1 / 4 = **0.250** (deck 501).
@@ -1241,7 +1241,7 @@ Four decks, each with its own maindeck:
 
 ### A deck with an empty list scores 0 and is counted
 
-The four decks above, plus deck 505: label Burn, no guess, and an empty list, because the model found no candidates for it (for example, it shares no non-basic card with any training deck).
+The four decks above, plus deck 505: label Mono Red Swarm, no guess, and an empty list, because the model found no candidates for it (for example, it shares no non-basic card with any training deck).
 
 - **Expect:** deck 505 stays in, so Top 1 = 1 / 5 = **0.200**, Top 5 = 2 / 5 = **0.400** and MRR = 1.476 / 5 = **0.295**. The scores report **1** deck with no candidates.
 - **Why it matters:** an empty list is either bad data or a model that can't rank this deck. Leaving the deck out would flatter the model, and the count says how often it happened.
@@ -1290,7 +1290,7 @@ On hand-made scores, for one query deck:
 | Training deck | Label | Reviewed | Score |
 |---|---|---|---|
 | 201 | Red Deck Wins | yes | 64 |
-| 202 | Burn | yes | 64 |
+| 202 | Mono Red Swarm | yes | 64 |
 | 203 | Red Deck Wins | yes | 30 |
 | 204 | Azorius Control | no | 90 |
 | 205 | Prisoner | yes | 12 |
@@ -1299,14 +1299,14 @@ On hand-made scores, for one query deck:
 
   | Case | Candidates (score) | Guess |
   |---|---|---|
-  | League deck, threshold 20 | Burn (64), Red Deck Wins (64), Prisoner (12) | Burn |
+  | League deck, threshold 20 | Mono Red Swarm (64), Red Deck Wins (64), Prisoner (12) | Mono Red Swarm |
   | League deck, threshold 70 | the same | **no guess** |
-  | Gatherling deck, threshold 20 | Azorius Control (90), Burn (64), Red Deck Wins (64), Prisoner (12) | Azorius Control |
+  | Gatherling deck, threshold 20 | Azorius Control (90), Mono Red Swarm (64), Red Deck Wins (64), Prisoner (12) | Azorius Control |
   | Gatherling deck, plus an unlabelled training deck 206 at 95 | as the row above | **no guess** |
   | A deck sharing no non-basic card with any training deck | empty | no guess |
 
 - **Expect, the details:**
-  - Burn comes before Red Deck Wins at 64 because deck 202 is higher than 201.
+  - Mono Red Swarm comes before Red Deck Wins at 64 because deck 202 is higher than 201.
   - Red Deck Wins appears once, at its best match (64, not 30).
   - A League deck leaves out Azorius Control, whose only match is unreviewed. A Gatherling deck includes it.
   - Below the threshold, the deck has no guess but keeps its candidates. Its candidate 1 is the label it would have guessed without the threshold.
@@ -1323,7 +1323,7 @@ The training rows from "Repeated maindecks are one training row", plus a fourth:
 | Row | Maindeck | Label | Decks | Newest deck |
 |---|---|---|---|---|
 | 1 | A: 4 Shock, 4 Burst Lightning, 52 Mountain | Red Deck Wins | 2 | 103 |
-| 2 | A | Burn | 1 | 105 |
+| 2 | A | Mono Red Swarm | 1 | 105 |
 | 3 | B: 4 Essence Scatter, 4 Negate, 52 Island | Azorius Control | 1 | 107 |
 | 4 | C: 4 Burst Lightning, 56 Mountain | Red Deck Wins | 1 | 109 |
 
@@ -1331,16 +1331,16 @@ The training rows from "Repeated maindecks are one training row", plus a fourth:
 
   | Case | Similarities (rows 1, 2, 3, 4) | Candidates (score) | Guess |
   |---|---|---|---|
-  | A tie at the top | 1.0, 1.0, 0.91, 0.70 | Red Deck Wins (1.0), Burn (1.0), Azorius Control (0.91) | Red Deck Wins |
-  | A label's best row decides | 0.80, 0.95, 0.91, 0.97 | Red Deck Wins (0.97), Burn (0.95), Azorius Control (0.91) | Red Deck Wins |
-  | Equal decks | as the first, but row 1 holds 1 deck (newest 101) | Burn (1.0), Red Deck Wins (1.0), Azorius Control (0.91) | Burn |
-  | A tie below the top | 0.99, 0.90, 0.90, 0.50 | Red Deck Wins (0.99), Azorius Control (0.90), Burn (0.90) | Red Deck Wins |
+  | A tie at the top | 1.0, 1.0, 0.91, 0.70 | Red Deck Wins (1.0), Mono Red Swarm (1.0), Azorius Control (0.91) | Red Deck Wins |
+  | A label's best row decides | 0.80, 0.95, 0.91, 0.97 | Red Deck Wins (0.97), Mono Red Swarm (0.95), Azorius Control (0.91) | Red Deck Wins |
+  | Equal decks | as the first, but row 1 holds 1 deck (newest 101) | Mono Red Swarm (1.0), Red Deck Wins (1.0), Azorius Control (0.91) | Mono Red Swarm |
+  | A tie below the top | 0.99, 0.90, 0.90, 0.50 | Red Deck Wins (0.99), Azorius Control (0.90), Mono Red Swarm (0.90) | Red Deck Wins |
   | None of the deck's cards is embedded | — | empty | no guess |
 
 - **Expect, the details:**
-  - In the first case, Red Deck Wins wins the tie with 2 decks to Burn's 1. Row 4 doesn't add to it, since it isn't tied.
+  - In the first case, Red Deck Wins wins the tie with 2 decks to Mono Red Swarm's 1. Row 4 doesn't add to it, since it isn't tied.
   - In the second, Red Deck Wins ranks first on row 4 alone. Its weaker row 1 doesn't pull it down, and the rows aren't summed (that's #45 and #50).
-  - In the fourth, Burn and Azorius Control tie at 0.90 with one deck each, so the newer deck, 107, puts Azorius Control first.
+  - In the fourth, Mono Red Swarm and Azorius Control tie at 0.90 with one deck each, so the newer deck, 107, puts Azorius Control first.
   - Candidate 1 is the guess in every case with a guess.
 - **Why it matters:** ranking labels by their best row keeps candidate 1 equal to today's guess and reproduces the throwaway estimate below.
 - **Check:** unit-test the ranking on these arrays, and on random similarities, that candidate 1 is always the guess.

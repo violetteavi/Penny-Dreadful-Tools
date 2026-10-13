@@ -9,9 +9,9 @@ from archetype_classifier.evaluation.metrics import ArchetypeTree
 from archetype_classifier.evaluation.model import JSON, FitContext, LabelledDeck, PredictDeck, Prediction, TrainingDeck, model_class
 from archetype_classifier.models.similarity import Match, SimilarityBaseline
 
-AGGRO, CONTROL, RED_DECK_WINS, BURN, AZORIUS_CONTROL = 1, 2, 16, 17, 49
+AGGRO, CONTROL, RED_DECK_WINS, MONO_RED_SWARM, AZORIUS_CONTROL = 1, 2, 16, 17, 49
 TREE = ArchetypeTree({AGGRO: ArchetypeSnapshot(AGGRO, 'Aggro', None, 0), CONTROL: ArchetypeSnapshot(CONTROL, 'Control', None, 0),
-                      RED_DECK_WINS: ArchetypeSnapshot(RED_DECK_WINS, 'Red Deck Wins', AGGRO, 1), BURN: ArchetypeSnapshot(BURN, 'Burn', AGGRO, 1),
+                      RED_DECK_WINS: ArchetypeSnapshot(RED_DECK_WINS, 'Red Deck Wins', AGGRO, 1), MONO_RED_SWARM: ArchetypeSnapshot(MONO_RED_SWARM, 'Mono Red Swarm', AGGRO, 1),
                       AZORIUS_CONTROL: ArchetypeSnapshot(AZORIUS_CONTROL, 'Azorius Control', CONTROL, 1)})
 LEGAL = frozenset({'Shock', 'Burst Lightning', 'Mountain', 'Essence Scatter', 'Negate', 'Island', 'Smash to Smithereens', 'Searing Spear'})
 CONTEXT = FitContext(TREE, {30: LEGAL, 39: LEGAL}, seed=0)

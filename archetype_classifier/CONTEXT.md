@@ -156,15 +156,25 @@ A hand-written definition of an archetype as cards a deck must contain (in minim
 A score between 0 and 1 of how alike two maindecks are, weighting shared rarely played cards more heavily.
 
 **Guess**:
-A label proposed automatically, by rules or by copying the archetype of the most similar reviewed deck.
-_Avoid_: Prediction (reserve for a classifier's output)
+The one label a model proposes for a deck: the site's rules or its similarity guesser today, or a classifier from this project. A model may also make no guess.
+_Avoid_: Provisional label
+
+**Site guess**:
+The guess the live site gives a deck, stored as its label until a review. Today it comes from rules, then from copying the archetype of the most similar reviewed deck.
+
+**Prediction**:
+A model's whole output for one deck: its **Guess**, its **Candidates** and its evidence (what the guess rests on).
+
+**Candidates**:
+Every archetype a model ranks for a deck, best first, each with a score. Reviewers see the first five, in the archetype drop-down. They're a separate output from the guess: candidate 1 needn't be the guess, and a deck can have candidates but no guess (for example, below a threshold). A score's meaning depends on the model, so scores are never compared across models.
+_Avoid_: Top-k list, suggestions
 
 **Review**:
-A person validating a guess, or changing it to a different archetype.
+A person validating a site guess, or changing it to a different archetype.
 _Avoid_: Approval, tagging
 
 **Label history**:
-The record of every label a deck has had, when it was assigned, and whether a person or an automatic guess assigned it; the best evidence of label quality.
+The record of every label a deck has had, when it was assigned, and whether a person or a site guess assigned it; the best evidence of label quality.
 
 **Mistagged deck**:
 A deck whose label disagrees with the archetype its matching rule gives.
@@ -198,6 +208,15 @@ A deck's maindeck as one vector: the average of its cards' **Combined embedding*
 One distinct maindeck with one label, standing for every **Train set** deck that has both, with how many decks that is and the newest of them. Repeats of a list count once, so a popular list doesn't outweigh a rare one.
 _Avoid_: Training deck (one row can stand for many decks)
 
+**Top-k match**:
+A deck whose label is among its first k **Candidates**, exactly: a parent or child of the label doesn't count. Top 1 and Top 5 are the shares of decks with a top-1 and a top-5 match. A deck with fewer than k candidates is judged on the ones it has, and a deck with none misses.
+
+**Mean reciprocal rank**:
+The average over decks of 1 ÷ the label's rank among the deck's **Candidates**, counting the whole list, or 0 when the label isn't in it. MRR for short.
+
+**New archetype**:
+An archetype with fewer than 5 decks labelled exactly with it in a model's **Train set** (a parent's count doesn't include its children's decks). Those few labels were often given after the fact: a person creates the archetype partway through a season, sometimes relabelling large batches of past decks, so a model on a live feed would have seen even fewer.
+
 **Eval set**:
 The decks a classifier's predictions are scored on, from any combination of the training, held-out, validation and test splits, each with the label it is scored against.
 _Avoid_: Dataset, test set (the test seasons are only one possible part of it)
@@ -207,7 +226,8 @@ _Avoid_: Dataset, test set (the test seasons are only one possible part of it)
 - A **Set** release triggers a **Rotation**, which starts a new **Season** with a new **Legal card pool**.
 - A **Deck** belongs to one **Season** and usually one **Competition**, and has exactly one **Label** (an **Archetype**) at a time.
 - An **Archetype** has at most one parent in the **Archetype tree**; a **Deck** may be labelled at any depth.
-- A **Guess** becomes a trusted **Label** only through **Review**.
+- A **Site guess** becomes a trusted **Label** only through **Review**.
+- A **Prediction** holds at most one **Guess** and any number of **Candidates**; scoring the guess (hF) and the candidates (top-k match, mean reciprocal rank) are separate.
 - Each **Rotation** can introduce **Unseen cards** into **Decks** relative to any classifier trained on earlier **Seasons**.
 - Every **Deck** is in exactly one **Split**. Held-out, validation and test decks can never be in the **Train set**; by default a deck that repeats a held-out maindeck is held out with it. Training decks may also be in an **Eval set**, where their scores measure fit rather than generalisation.
 - An **Excluded deck** leaves every other deck's **Split** and scores unchanged: an experiment is the same whether or not it exists.

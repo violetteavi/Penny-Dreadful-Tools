@@ -4,6 +4,10 @@ A deck is compared with every training deck that shares a non-basic maindeck car
 share (same card and quantity), divided by the larger deck total, as a rounded whole percentage. Each card weighs 1 / max(playability, 0.001), with
 playability computed by the site's formula from the training decks only. A League deck copies the label of its best match that is reviewed and
 labelled; a Gatherling deck copies the label of its single top match. A match must reach the threshold, or the deck gets no guess.
+
+Its candidates (#14) are every label among the matches its rule allows (League: reviewed and labelled; Gatherling: labelled), each ranked by its best
+match, highest score first, then higher deck id. A candidate's score is that match's score. The threshold only decides whether there's a guess, so a
+deck below it keeps its candidates, and candidate 1 is the guess whenever there is one.
 """
 from collections import Counter, defaultdict
 from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -14,7 +18,7 @@ import numpy as np
 from scipy import sparse
 
 from archetype_classifier.evaluation.metrics import ArchetypeTree, overlap, sum_overlaps
-from archetype_classifier.evaluation.model import JSON, FitContext, LabelledDeck, PredictDeck, Prediction, TrainingDeck, register
+from archetype_classifier.evaluation.model import JSON, Candidate, FitContext, LabelledDeck, PredictDeck, Prediction, TrainingDeck, register
 
 FLOOR = 0.001  # The lowest playability a card weighs as: 1 / 0.001 = 1,000.
 SIDEBOARD_WEIGHT = 0.2  # A deck playing a card only in its sideboard counts as this much of a deck, as on the site.
@@ -40,7 +44,7 @@ class Pick:
 @register
 class SimilarityBaseline:
     name: ClassVar[str] = 'similarity'
-    version: ClassVar[int] = 2  # 2: card legality from the cards database, not decksite's _legal_cards (#46).
+    version: ClassVar[int] = 3  # 2: card legality from the cards database, not decksite's _legal_cards (#46). 3: ranked candidates (#14).
 
     def __init__(self, params: dict[str, JSON]) -> None:
         self.params = params
@@ -83,10 +87,11 @@ class SimilarityBaseline:
         predictions = []
         for (rows, scores), deck in zip(self.index.scores(decks), decks):
             pick = self.index.pick(deck.source, rows, scores)
+            candidates = build_candidates(deck.source, rows, scores, self.index)
             if pick is None or pick.score < self.threshold:
-                predictions.append(Prediction(deck.deck_id, None, {}))
+                predictions.append(Prediction(deck.deck_id, None, {}, candidates))
             else:
-                predictions.append(Prediction(deck.deck_id, pick.label_id, {'match_deck_id': pick.deck_id, 'score': pick.score, 'rule': pick.rule}))
+                predictions.append(Prediction(deck.deck_id, pick.label_id, {'match_deck_id': pick.deck_id, 'score': pick.score, 'rule': pick.rule}, candidates))
         return predictions
 
     def state(self) -> dict[str, JSON]:
@@ -186,6 +191,17 @@ class Index:
                     cols.append(col)
                     data.append(1.0 if weights is None else weights[col])
         return sparse.csr_matrix((data, (rows, cols)), shape=(len(decks), len(weights) if weights is not None else len(self.names)))
+
+def build_candidates(source: str, rows: np.ndarray, scores: np.ndarray, index: 'Index') -> tuple[Candidate, ...]:
+    """Every label among the matches the deck's rule allows, each at its best match: highest score first, then higher deck id, as best_match orders."""
+    allowed = index.labels[rows] >= 0
+    if source != 'Gatherling':
+        allowed &= index.reviewed[rows]
+    rows, scores = rows[allowed], scores[allowed]
+    best: dict[int, int] = {}
+    for k in np.lexsort((-index.deck_ids[rows], -scores)):
+        best.setdefault(int(index.labels[rows[k]]), int(scores[k]))
+    return tuple(Candidate(label, score) for label, score in best.items())
 
 def best_match(rows: np.ndarray, scores: np.ndarray, deck_ids: np.ndarray) -> int | None:
     """The position of the best match among the given rows: highest score, then higher deck id."""

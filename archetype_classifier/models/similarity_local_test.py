@@ -72,6 +72,17 @@ def test_real_scenario_decks(snapshot: Snapshot, baseline: SimilarityBaseline) -
         assert name(snapshot, baseline.predict([deck])[0].guess_id) == guess, deck_id
 
 
+
+# Scenario: on season 39, the new runs reproduce the old guesses (Scenarios.md, "Ranked candidates"): candidate 1 is the guess for every deck that has one.
+
+def test_on_season_39_candidate_1_is_the_guess(snapshot: Snapshot, baseline: SimilarityBaseline) -> None:
+    validation = build_deck_set(snapshot, frozenset({Split.VALIDATION}))
+    predictions = baseline.predict(build_predict_decks(validation, loader.load_contents(validation.decks)))
+    assert all(p.candidates is not None for p in predictions)
+    guessed = [p for p in predictions if p.guess_id is not None]
+    assert guessed and all(p.candidates and p.candidates[0].archetype_id == p.guess_id for p in guessed)
+    assert any(p.guess_id is None and p.candidates for p in predictions)  # Below the threshold, with candidates.
+
 # Scenario: on real decks, the baseline agrees with the site.
 
 @pytest.fixture(scope='module')

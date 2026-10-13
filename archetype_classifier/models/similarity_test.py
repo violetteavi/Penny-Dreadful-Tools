@@ -1,13 +1,14 @@
 """The similarity baseline on small rule-level decks: 60-card season 30 lists legal in seasons 30 and 39. Real decks are checked in similarity_local_test.py."""
 from typing import cast
 
+import numpy as np
 import pytest
 
 from archetype_classifier.data_loading.dataset import ArchetypeSnapshot, CardCount
 from archetype_classifier.data_loading.labels import LabelStatus
 from archetype_classifier.evaluation.metrics import ArchetypeTree
-from archetype_classifier.evaluation.model import JSON, FitContext, LabelledDeck, PredictDeck, Prediction, TrainingDeck, model_class
-from archetype_classifier.models.similarity import Match, SimilarityBaseline
+from archetype_classifier.evaluation.model import JSON, Candidate, FitContext, LabelledDeck, PredictDeck, Prediction, TrainingDeck, model_class
+from archetype_classifier.models.similarity import Index, Match, SimilarityBaseline, build_candidates
 
 AGGRO, CONTROL, RED_DECK_WINS, MONO_RED_SWARM, AZORIUS_CONTROL = 1, 2, 16, 17, 49
 TREE = ArchetypeTree({AGGRO: ArchetypeSnapshot(AGGRO, 'Aggro', None, 0), CONTROL: ArchetypeSnapshot(CONTROL, 'Control', None, 0),
@@ -59,7 +60,7 @@ def test_an_identical_deck_matches_at_100_and_ties_go_to_the_higher_id() -> None
     model = fitted()
     deck = query(201, cards(Shock=4, Burst_Lightning=4, Mountain=52))
     assert model.matches(deck) == [Match(101, 100), Match(104, 33), Match(103, 33)]
-    assert model.predict([deck]) == [Prediction(201, RED_DECK_WINS, {'match_deck_id': 101, 'score': 100, 'rule': 'league'})]
+    assert model.predict([deck]) == [Prediction(201, RED_DECK_WINS, {'match_deck_id': 101, 'score': 100, 'rule': 'league'}, (Candidate(RED_DECK_WINS, 100),))]
 
 
 # Scenario: a match needs the same card and quantity.
@@ -68,7 +69,7 @@ def test_a_match_needs_the_same_card_and_quantity() -> None:
     deck = query(210, cards(Shock=4, Mountain=56))
     assert fitted().matches(deck) == [Match(103, 33), Match(101, 33), Match(104, 0)]  # 104 plays 2 Shock: a candidate, but nothing shared.
     assert fitted(20).predict([deck])[0].guess_id == RED_DECK_WINS
-    assert fitted(34).predict([deck]) == [Prediction(210, None, {})]
+    assert fitted(34).predict([deck]) == [Prediction(210, None, {}, (Candidate(RED_DECK_WINS, 33),))]  # Below the threshold: no guess, but still its candidates.
 
 
 # Scenario: sharing only a basic land isn't a match (a rule-level check).
@@ -85,8 +86,8 @@ def test_league_decks_skip_unreviewed_matches_and_gatherling_decks_dont() -> Non
     maindeck = cards(Shock=2, Burst_Lightning=4, Mountain=54)  # Identical to 104, which isn't reviewed.
     model = fitted()
     league, gatherling = model.predict([query(209, maindeck, 'League'), query(209, maindeck, 'Gatherling')])
-    assert league == Prediction(209, RED_DECK_WINS, {'match_deck_id': 103, 'score': 33, 'rule': 'league'})
-    assert gatherling == Prediction(209, RED_DECK_WINS, {'match_deck_id': 104, 'score': 100, 'rule': 'gatherling'})
+    assert league == Prediction(209, RED_DECK_WINS, {'match_deck_id': 103, 'score': 33, 'rule': 'league'}, (Candidate(RED_DECK_WINS, 33),))
+    assert gatherling == Prediction(209, RED_DECK_WINS, {'match_deck_id': 104, 'score': 100, 'rule': 'gatherling'}, (Candidate(RED_DECK_WINS, 100),))
 
 
 # Scenario: the tuned threshold maximises hF on the validation decks.
@@ -166,7 +167,7 @@ def test_a_gatherling_deck_whose_top_match_is_unlabelled_or_missing_gets_no_gues
     model.fit([*TRAINING, unlabelled_twin], [], CONTEXT)
     stompy = VALIDATION[3].deck  # Shares no card with any training deck.
     assert model.predict([query(210, cards(Shock=4, Mountain=56), 'Gatherling'), PredictDeck(260, 'Gatherling', stompy.maindeck, ())]) == [
-        Prediction(210, None, {}), Prediction(260, None, {})]
+        Prediction(210, None, {}, (Candidate(RED_DECK_WINS, 33),)), Prediction(260, None, {}, ())]  # The unlabelled twin isn't a candidate.
     assert model.predict([query(210, cards(Shock=4, Mountain=56), 'League')])[0].evidence['match_deck_id'] == 103  # A League deck skips the unlabelled twin.
 
 def test_decks_are_scored_the_same_however_they_are_chunked(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -174,3 +175,35 @@ def test_decks_are_scored_the_same_however_they_are_chunked(monkeypatch: pytest.
     whole = fitted().predict(decks)
     monkeypatch.setattr('archetype_classifier.models.similarity.CHUNK', 2)
     assert fitted().predict(decks) == whole
+
+
+
+# Scenario: the site's guesser ranks each label by its best allowed match (Scenarios.md, "Ranked candidates").
+
+PRISONER = 222
+RANKING_DECKS = [training(201, RED_DECK_WINS, ()), training(202, MONO_RED_SWARM, ()), training(203, RED_DECK_WINS, ()), training(204, AZORIUS_CONTROL, (), reviewed=False),
+                 training(205, PRISONER, ()), TrainingDeck(PredictDeck(206, 'League', (), ()), 30, None, True, LabelStatus.UNLABELLED)]
+RANKING_INDEX = Index(RANKING_DECKS, lambda card: 1.0)
+SCORES = np.array([64, 64, 30, 90, 12])  # Decks 201 to 205.
+
+@pytest.mark.parametrize(('source', 'rows', 'scores', 'expected'), [
+    ('League', np.arange(5), SCORES, ((MONO_RED_SWARM, 64), (RED_DECK_WINS, 64), (PRISONER, 12))),
+    ('Gatherling', np.arange(5), SCORES, ((AZORIUS_CONTROL, 90), (MONO_RED_SWARM, 64), (RED_DECK_WINS, 64), (PRISONER, 12))),
+    ('Gatherling', np.arange(6), np.array([*SCORES, 95]), ((AZORIUS_CONTROL, 90), (MONO_RED_SWARM, 64), (RED_DECK_WINS, 64), (PRISONER, 12))),  # Unlabelled 206 at 95.
+    ('League', np.array([], dtype=int), np.array([], dtype=int), ()),  # Shares no non-basic card with any training deck.
+], ids=['league', 'gatherling', 'gatherling, unlabelled top match', 'no shared card'])
+def test_the_sites_guesser_ranks_each_label_by_its_best_allowed_match(source: str, rows: np.ndarray, scores: np.ndarray, expected: tuple[tuple[int, int], ...]) -> None:
+    assert build_candidates(source, rows, scores, RANKING_INDEX) == tuple(Candidate(a, s) for a, s in expected)
+
+def test_candidate_1_is_the_guess_whenever_there_is_one() -> None:
+    model = fitted(1)
+    decks = [d for v in VALIDATION for d in (v.deck, PredictDeck(v.deck.deck_id, 'Gatherling', v.deck.maindeck, ()))] + [query(209, cards(Shock=2, Burst_Lightning=4, Mountain=54), 'Gatherling')]
+    predictions = model.predict(decks)
+    assert any(p.guess_id is not None for p in predictions)
+    for p in predictions:
+        assert p.candidates is not None
+        if p.guess_id is not None:
+            assert p.candidates[0].archetype_id == p.guess_id
+
+def test_version_3_ranks_candidates() -> None:
+    assert SimilarityBaseline.version == 3

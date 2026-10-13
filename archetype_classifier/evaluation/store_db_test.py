@@ -14,8 +14,8 @@ from archetype_classifier.data_loading.labels import LabelStatus
 from archetype_classifier.data_loading.slices import build_deck_set, deck_ids_hash
 from archetype_classifier.data_loading.splits import ExclusionReason, Split, SplitScheme
 from archetype_classifier.evaluation.metrics import ArchetypeTree
-from archetype_classifier.evaluation.model import FitContext, LabelledDeck, Model, Prediction, TrainingDeck, build_labelled_decks, build_predict_decks, build_training_decks, register
-from archetype_classifier.evaluation.store import ModelRecord, StoreConflict, canonical, load_guesses, load_model, load_model_record, load_run, load_test_looks, log_test_look, prediction_hash, save_model, save_run
+from archetype_classifier.evaluation.model import Candidate, FitContext, LabelledDeck, Model, Prediction, TrainingDeck, build_labelled_decks, build_predict_decks, build_training_decks, register
+from archetype_classifier.evaluation.store import CANDIDATE_ROWS_SQL, TOP_5_SQL, ModelRecord, StoreConflict, canonical, load_guesses, load_model, load_model_record, load_run, load_test_looks, log_test_look, prediction_hash, save_model, save_run
 from archetype_classifier.models.most_common import MostCommonArchetype
 from shared.database import Database
 
@@ -206,6 +206,52 @@ def test_a_run_stores_one_guess_per_deck(experiments_db: Database, site: Site) -
     assert run.prediction_hash == prediction_hash(predictions) == prediction_hash(list(reversed(predictions)))
     assert load_guesses(experiments_db, run_id) == {p.deck_id: p for p in predictions}
     assert load_guesses(experiments_db, run_id)[203].guess_id is None
+    assert {r['candidates'] for r in experiments_db.select('SELECT candidates FROM run_guess WHERE run_id = %s', [run_id])} == {None}  # The model doesn't rank candidates.
+
+
+# Ranked candidates (#14): tests only, as agreed, not scenarios.
+
+RANKED = [Prediction(201, RED_DECK_WINS, {}, (Candidate(RED_DECK_WINS, 0.912345), Candidate(AZORIUS_CONTROL, 0.5))),
+          Prediction(202, None, {}, (Candidate(AZORIUS_CONTROL, 0.7), Candidate(AZORIUS_TEMPO, 0.6), Candidate(RED_DECK_WINS, 0.1))),
+          Prediction(203, None, {}, ())]
+
+def test_a_run_stores_its_candidates_as_rounded(experiments_db: Database, site: Site) -> None:
+    run_id = save_run(experiments_db, saved_model(experiments_db), VALIDATION, RANKED)
+    guesses = load_guesses(experiments_db, run_id)
+    assert guesses[201] == Prediction(201, RED_DECK_WINS, {}, (Candidate(RED_DECK_WINS, 0.9123), Candidate(AZORIUS_CONTROL, 0.5)))
+    assert (guesses[202], guesses[203]) == (RANKED[1], RANKED[2])
+    assert load_run(experiments_db, run_id).prediction_hash == prediction_hash(RANKED)
+    assert experiments_db.value('SELECT candidates FROM run_guess WHERE run_id = %s AND deck_id = 203', [run_id]) == '[]'
+
+def test_problems_in_candidates_are_warned_once_per_kind_and_the_run_carries_on(experiments_db: Database, site: Site, caplog: pytest.LogCaptureFixture) -> None:
+    predictions = [Prediction(201, RED_DECK_WINS, {}, (Candidate(RED_DECK_WINS, 0.9), Candidate(RED_DECK_WINS, 0.8), Candidate(999, 0.7))),
+                   Prediction(202, AZORIUS_CONTROL, {}, (Candidate(AZORIUS_CONTROL, 0.5), Candidate(999, 0.6))),
+                   Prediction(203, None, {})]
+    with caplog.at_level(logging.WARNING):
+        run_id = save_run(experiments_db, saved_model(experiments_db), VALIDATION, predictions)
+    messages = sorted(r.getMessage() for r in caplog.records)
+    assert len(messages) == 4
+    assert [m for m in messages if 'not in the tree' in m] == ['2 decks had an archetype not in the tree among their candidates, kept as given: 201, 202']
+    assert any(m.startswith('1 deck had a duplicated archetype') and m.endswith(': 201') for m in messages)
+    assert any(m.startswith('1 deck had scores out of order') and m.endswith(': 202') for m in messages)
+    assert any(m.startswith('1 deck had no candidates where the others have them') and m.endswith(': 203') for m in messages)
+    guesses = load_guesses(experiments_db, run_id)
+    assert guesses[201].candidates == (Candidate(RED_DECK_WINS, 0.9), Candidate(999, 0.7))
+    assert guesses[202].candidates == predictions[1].candidates
+    assert guesses[203].candidates == ()
+
+def test_a_warning_names_at_most_20_decks(experiments_db: Database, site: Site, caplog: pytest.LogCaptureFixture) -> None:
+    predictions = [Prediction(i, None, {}, (Candidate(999, None),)) for i in range(1, 22)]
+    with caplog.at_level(logging.WARNING):
+        save_run(experiments_db, saved_model(experiments_db), VALIDATION, predictions)
+    assert caplog.records[0].getMessage() == '21 decks had an archetype not in the tree among their candidates, kept as given: ' + ', '.join(str(i) for i in range(1, 21)) + ', ...'
+
+def test_the_documented_queries_read_the_stored_candidates(experiments_db: Database, site: Site) -> None:
+    run_id = save_run(experiments_db, saved_model(experiments_db), VALIDATION, RANKED)
+    assert {r['deck_id'] for r in experiments_db.select(TOP_5_SQL, [run_id, str(AZORIUS_CONTROL)])} == {201, 202}
+    assert {r['deck_id'] for r in experiments_db.select(TOP_5_SQL, [run_id, str(AGGRO)])} == set()
+    rows = [(r['deck_id'], r['candidate_rank'], r['archetype_id'], r['score']) for r in experiments_db.select(CANDIDATE_ROWS_SQL, [run_id])]
+    assert rows == [(201, 1, RED_DECK_WINS, 0.9123), (201, 2, AZORIUS_CONTROL, 0.5), (202, 1, AZORIUS_CONTROL, 0.7), (202, 2, AZORIUS_TEMPO, 0.6), (202, 3, RED_DECK_WINS, 0.1)]
 
 
 # Scenario: the same model on the same decks must guess the same.

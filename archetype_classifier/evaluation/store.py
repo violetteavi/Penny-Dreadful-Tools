@@ -1,7 +1,16 @@
-"""The model and run store, in the experiments database. Models are saved as their record and what fitting learned, runs as one guess per deck; never decks, never scores."""
+"""The model and run store, in the experiments database. Models are saved as their record and what fitting learned, runs as one guess per deck; never decks, never scores.
+
+A run of a model that ranks candidates (#14) also stores each deck's candidates in run_guess.candidates: a compact JSON array of [archetype id, score]
+pairs, best first, with scores to 4 decimals and no cap on length. NULL means the model doesn't rank candidates; '[]' means it found none for that deck.
+Two queries read them in SQL without a separate table: TOP_5_SQL (the decks with an archetype among their first five candidates) and
+CANDIDATE_ROWS_SQL (one row per candidate, for joins and GROUP BY). On a full run of about 20,000 decks they take about 2 and 6 seconds.
+"""
+import dataclasses
 import hashlib
 import json
 import logging
+import math
+from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -11,7 +20,7 @@ from archetype_classifier.data_loading import loader
 from archetype_classifier.data_loading.slices import build_deck_set, deck_ids_hash
 from archetype_classifier.data_loading.splits import Split
 from archetype_classifier.evaluation.metrics import ArchetypeTree
-from archetype_classifier.evaluation.model import JSON, FitContext, Model, Prediction, build_training_decks, model_class
+from archetype_classifier.evaluation.model import JSON, Candidate, FitContext, Model, Prediction, build_training_decks, model_class
 from shared.database import Database
 
 logger = logging.getLogger(__name__)
@@ -56,9 +65,11 @@ SCHEMA = [
         deck_id INT NOT NULL,
         guess_archetype_id INT NULL,
         evidence TEXT NOT NULL,
+        candidates MEDIUMTEXT NULL,
         PRIMARY KEY (run_id, deck_id),
         FOREIGN KEY (run_id) REFERENCES run (id) ON DELETE CASCADE
     )""",
+    'ALTER TABLE run_guess ADD COLUMN IF NOT EXISTS candidates MEDIUMTEXT NULL',  # For stores made before #14.
     """CREATE TABLE IF NOT EXISTS test_look (
         id INT AUTO_INCREMENT PRIMARY KEY,
         run_id INT NOT NULL,
@@ -67,6 +78,14 @@ SCHEMA = [
         FOREIGN KEY (run_id) REFERENCES run (id)
     )""",
 ]
+
+SCORE_DECIMALS = 4
+LISTED_DECKS = 20  # The most deck ids a warning about candidates names.
+TOP_5_SQL = """SELECT deck_id FROM run_guess
+WHERE run_id = %s AND JSON_CONTAINS(JSON_EXTRACT(candidates, '$[0 to 4][0]'), %s)"""  # Parameters: the run, and the archetype id as text.
+CANDIDATE_ROWS_SQL = """SELECT g.deck_id, j.candidate_rank, j.archetype_id, j.score
+FROM run_guess g, JSON_TABLE(g.candidates, '$[*]' COLUMNS (candidate_rank FOR ORDINALITY, archetype_id INT PATH '$[0]', score DOUBLE PATH '$[1]')) j
+WHERE g.run_id = %s ORDER BY g.deck_id, j.candidate_rank"""  # Parameter: the run.
 
 
 class StoreConflict(Exception):
@@ -156,8 +175,11 @@ class RunRecord:
     created_at: datetime
 
 def save_run(edb: Database, model_id: int, scope: frozenset[Split], predictions: Sequence[Prediction], seconds: float = 0.0) -> int:
-    """Save one guess per deck for a stored model, and return the run's id. Scores are never stored: they're recomputed from guesses."""
+    """Save one guess per deck for a stored model, and return the run's id. Scores are never stored: they're recomputed from guesses.
+
+    Candidates are checked first, warning once per kind of problem and carrying on, and the run is hashed and stored as checked."""
     ensure_schema(edb)
+    predictions = checked_candidates(edb, model_id, predictions)
     input_hash, guesses_hash = deck_ids_hash(p.deck_id for p in predictions), prediction_hash(predictions)
     earlier = edb.select('SELECT id, input_hash, prediction_hash FROM run WHERE model_id = %s AND scope = %s ORDER BY id', [model_id, splits_text(scope)])
     for r in earlier:
@@ -170,16 +192,72 @@ def save_run(edb: Database, model_id: int, scope: frozenset[Split], predictions:
         logger.warning('The decks it predicted on changed since run %s of model %d on %s. Saving a new run.', r['id'], model_id, splits_text(scope))
     run_id = edb.insert('INSERT INTO run (model_id, scope, deck_count, input_hash, prediction_hash, seconds) VALUES (%s, %s, %s, %s, %s, %s)',
                         [model_id, splits_text(scope), len(predictions), input_hash, guesses_hash, seconds])
-    loader.insert_rows(edb, 'run_guess', ['run_id', 'deck_id', 'guess_archetype_id', 'evidence'], [[run_id, p.deck_id, p.guess_id, canonical(p.evidence)] for p in predictions])
+    loader.insert_rows(edb, 'run_guess', ['run_id', 'deck_id', 'guess_archetype_id', 'evidence', 'candidates'],
+                       [[run_id, p.deck_id, p.guess_id, canonical(p.evidence), candidates_json(p.candidates)] for p in predictions])
     return run_id
+
+def checked_candidates(edb: Database, model_id: int, predictions: Sequence[Prediction]) -> list[Prediction]:
+    """The predictions with their candidates checked against the model's archetype tree. A model that ranks candidates for some decks ranks them for
+    all, so a deck with None gets an empty list."""
+    if not any(p.candidates is not None for p in predictions):
+        return list(predictions)
+    snapshot_id = int(edb.value('SELECT snapshot_id FROM model WHERE id = %s', [model_id]))  # type: ignore[arg-type]
+    archetype_ids = frozenset(loader.load_archetype_snapshot(edb, snapshot_id))
+    problems: dict[str, list[int]] = defaultdict(list)
+    checked = []
+    for p in predictions:
+        if p.candidates is None:
+            problems['no candidates where the others have them, stored as an empty list'].append(p.deck_id)
+        candidates, found = clean_candidates(p.candidates or (), archetype_ids)
+        for problem in found:
+            problems[f'{problem} among their candidates, {FIXES[problem]}'].append(p.deck_id)
+        checked.append(dataclasses.replace(p, candidates=candidates))
+    for problem, deck_ids in sorted(problems.items()):
+        listed = ', '.join(str(i) for i in sorted(deck_ids)[:LISTED_DECKS]) + (', ...' if len(deck_ids) > LISTED_DECKS else '')
+        logger.warning('%d deck%s had %s: %s', len(deck_ids), '' if len(deck_ids) == 1 else 's', problem, listed)
+    return checked
+
+FIXES = {'a duplicated archetype': 'kept at its first position', 'an archetype not in the tree': 'kept as given',
+         'scores out of order': "kept in the model's order", 'a NaN score': 'stored with no score'}
+
+def clean_candidates(candidates: Sequence[Candidate], archetype_ids: frozenset[int]) -> tuple[tuple[Candidate, ...], frozenset[str]]:
+    """The candidates as stored, and the kinds of problem found. Only a duplicate is removed, and only a NaN score changed: the model's ranking is
+    what's scored, so it's never re-sorted."""
+    problems = set()
+    seen: set[int] = set()
+    cleaned = []
+    for c in candidates:
+        if c.archetype_id in seen:
+            problems.add('a duplicated archetype')
+            continue
+        seen.add(c.archetype_id)
+        if c.archetype_id not in archetype_ids:
+            problems.add('an archetype not in the tree')
+        if c.score is not None and math.isnan(c.score):
+            problems.add('a NaN score')
+            c = Candidate(c.archetype_id, None)
+        cleaned.append(c)
+    scores = [c.score for c in cleaned if c.score is not None]
+    if any(later > earlier for earlier, later in zip(scores, scores[1:], strict=False)):
+        problems.add('scores out of order')
+    return tuple(cleaned), frozenset(problems)
+
+def candidates_json(candidates: Sequence[Candidate] | None) -> str | None:
+    """Compact [archetype id, score] pairs, scores to 4 decimals; a missing or NaN score is null. None when the model doesn't rank candidates."""
+    if candidates is None:
+        return None
+    return json.dumps([[c.archetype_id, None if c.score is None or math.isnan(c.score) else round(c.score, SCORE_DECIMALS)] for c in candidates], separators=(',', ':'))
+
+def load_candidates(text: str | None) -> tuple[Candidate, ...] | None:
+    return None if text is None else tuple(Candidate(int(i), score) for i, score in json.loads(text))
 
 def load_run(edb: Database, run_id: int) -> RunRecord:
     r = edb.select('SELECT * FROM run WHERE id = %s', [run_id])[0]
     return RunRecord(r['id'], r['model_id'], splits_from_text(r['scope']), r['deck_count'], r['input_hash'], r['prediction_hash'], r['seconds'], r['created_at'])  # type: ignore[arg-type]
 
 def load_guesses(edb: Database, run_id: int) -> dict[int, Prediction]:
-    return {r['deck_id']: Prediction(r['deck_id'], r['guess_archetype_id'], json.loads(r['evidence']))  # type: ignore[misc, arg-type]
-            for r in edb.select('SELECT deck_id, guess_archetype_id, evidence FROM run_guess WHERE run_id = %s', [run_id])}
+    return {r['deck_id']: Prediction(r['deck_id'], r['guess_archetype_id'], json.loads(r['evidence']), load_candidates(r['candidates']))  # type: ignore[misc, arg-type]
+            for r in edb.select('SELECT deck_id, guess_archetype_id, evidence, candidates FROM run_guess WHERE run_id = %s', [run_id])}
 
 @dataclass(frozen=True)
 class TestLook:
@@ -206,6 +284,7 @@ def splits_from_text(text: str) -> frozenset[Split]:
     return frozenset(Split(s) for s in text.split(',') if s)
 
 def prediction_hash(predictions: Sequence[Prediction]) -> str:
-    """A fingerprint of a run's guesses: every deck and its guess, in any order. Evidence is left out, since scores depend only on guesses."""
-    pairs = sorted((p.deck_id, -1 if p.guess_id is None else p.guess_id) for p in predictions)
-    return hashlib.sha1(';'.join(f'{deck_id}:{guess_id}' for deck_id, guess_id in pairs).encode()).hexdigest()
+    """A fingerprint of a run's guesses: every deck, its guess and its candidates as stored, in any order. Evidence is left out, since scores depend
+    only on guesses and candidates. A deck without candidates is hashed as before #14, so earlier runs keep their hashes."""
+    entries = sorted((p.deck_id, -1 if p.guess_id is None else p.guess_id, candidates_json(p.candidates)) for p in predictions)
+    return hashlib.sha1(';'.join(f'{deck_id}:{guess_id}' + ('' if text is None else f':{text}') for deck_id, guess_id, text in entries).encode()).hexdigest()

@@ -46,10 +46,17 @@ class FitContext:
     embeddings_dir: Path | None = None  # Where a model finds its card embeddings; None is the standard embeddings/ folder. Not part of a model's identity.
 
 @dataclass(frozen=True)
+class Candidate:
+    archetype_id: int
+    score: float | None  # What the model ranked it by. Its meaning depends on the model, so it's never compared across models. None if it had none.
+
+@dataclass(frozen=True)
 class Prediction:
     deck_id: int
     guess_id: int | None  # One guess per deck; None for no guess.
     evidence: dict[str, JSON]  # What the guess rests on, so a report can trace it.
+    candidates: tuple[Candidate, ...] | None = None  # Every archetype the model ranks, best first, for a reviewer's drop-down; candidate 1 needn't be the guess,
+    # and a deck can have candidates but no guess. The list may be shorter than any k, or empty. None when the model doesn't rank candidates.
 
 class Model(Protocol):
     """Every model is fitted, predicts, and saves what fitting learned through this one contract.

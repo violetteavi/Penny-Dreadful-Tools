@@ -55,7 +55,7 @@ def test_the_header_says_exactly_what_produced_the_numbers(experiments_db: Datab
     assert lines[0] == '# Run 1: most common archetype v1'
     for expected in ['| Run | 1 |', '| Scope | held_out, validation |', '| Decks predicted | 4 |', f'| Prediction hash | {prediction_hash([Prediction(i, g, {}) for i, g in RUN_1.items()])} |',
                      '| Model | 1: most common archetype v1, parameters {}, seed 0 |', '| Snapshot | 1 |', '| Scheme | 1 (typical) |',
-                     '| Trained on | train (2 decks) |', '| Tuned on | validation (2 decks) |', '| Metrics version | 1 |', '| Rows version | 2 |', '| PRs | #6, #31 |']:
+                     '| Trained on | train (2 decks) |', '| Tuned on | validation (2 decks) |', '| Metrics version | 2 |', '| Rows version | 2 |', '| PRs | #6, #31 |']:
         assert expected in lines
     assert any(line.startswith('| Made | ') for line in lines)
 

@@ -11,7 +11,7 @@ from archetype_classifier.data_loading import loader
 from archetype_classifier.data_loading.labels import LabelStatus
 from archetype_classifier.data_loading.splits import Split, SplitScheme
 from archetype_classifier.evaluation import report
-from archetype_classifier.evaluation.model import JSON, Prediction, register
+from archetype_classifier.evaluation.model import JSON, Candidate, Prediction, register
 from archetype_classifier.evaluation.report import render_report
 from archetype_classifier.evaluation.store import ModelRecord, load_test_looks, prediction_hash, save_model, save_run
 from archetype_classifier.evaluation.store_db_test import BLUE, RED, store_snapshot
@@ -55,7 +55,7 @@ def test_the_header_says_exactly_what_produced_the_numbers(experiments_db: Datab
     assert lines[0] == '# Run 1: most common archetype v1'
     for expected in ['| Run | 1 |', '| Scope | held_out, validation |', '| Decks predicted | 4 |', f'| Prediction hash | {prediction_hash([Prediction(i, g, {}) for i, g in RUN_1.items()])} |',
                      '| Model | 1: most common archetype v1, parameters {}, seed 0 |', '| Snapshot | 1 |', '| Scheme | 1 (typical) |',
-                     '| Trained on | train (2 decks) |', '| Tuned on | validation (2 decks) |', '| Metrics version | 1 |', '| Rows version | 2 |', '| PRs | #6, #31 |']:
+                     '| Trained on | train (2 decks) |', '| Tuned on | validation (2 decks) |', '| Metrics version | 2 |', '| Rows version | 3 |', '| PRs | #6, #31 |']:
         assert expected in lines
     assert any(line.startswith('| Made | ') for line in lines)
 
@@ -107,6 +107,39 @@ def test_a_baseline_run_is_compared_deck_by_deck(experiments_db: Database, runs:
     assert not any(line.startswith('## Compared with') for line in render(experiments_db, run_1))
 
 
+# Ranked candidates (#14): a run with candidates gets a Candidates table, and two such runs a candidates comparison.
+
+RD, AC = Candidate(RED_DECK_WINS, 0.9), Candidate(AZORIUS_CONTROL, 0.5)
+BRACKET, SIGNED_BRACKET = r'\[\d\.\d\d, \d\.\d\d\]', r'\[-?\d\.\d\d, -?\d\.\d\d\]'  # An interval after its value.
+RANKED_1 = {301: (RD, AC), 302: (RD, AC), 201: (AC, RD), 202: ()}  # Validation: deck 201's label at rank 2, deck 202 with no candidates.
+RANKED_2 = {**RANKED_1, 201: (RD, AC)}  # Deck 201's label moves up to rank 1.
+
+def ranked_run(edb: Database, seed: int, candidates: dict[int, tuple[Candidate, ...]]) -> int:
+    model_id = save_model(edb, *mock_model(seed))
+    return save_run(edb, model_id, SCOPE, [Prediction(i, g, {}, candidates[i]) for i, g in RUN_1.items()])
+
+def test_a_run_with_candidates_gets_a_candidates_table(experiments_db: Database, runs: tuple[int, int]) -> None:
+    lines = render(experiments_db, ranked_run(experiments_db, 2, RANKED_1))
+    table = lines[lines.index('## Candidates') + 2:]
+    assert table[:2] == ['| Row | Decks | Maindecks | Top 1 | Top 5 | MRR | Notes |', '|---|---|---|---|---|---|---|']
+    validation = next(line for line in table if line.startswith('| validation |'))
+    assert re.fullmatch(rf'\| validation \| 2 \| 2 \| 0\.00 {BRACKET} \| 0\.50 {BRACKET} \| 0\.25 {BRACKET} \| tuned on, 1 deck had no candidates \|', validation)
+    assert next(line for line in table if line.startswith('| held-out, no unseen cards |')).endswith('| 1.00 [1.00, 1.00] |  |')
+    assert lines.index('## Results') < lines.index('## Candidates') < lines.index('## Validation curve')
+
+def test_a_run_without_candidates_has_no_candidates_table(experiments_db: Database, runs: tuple[int, int]) -> None:
+    assert '## Candidates' not in render(experiments_db, runs[0])
+
+def test_two_runs_with_candidates_are_compared_on_them_too(experiments_db: Database, runs: tuple[int, int]) -> None:
+    run_1, run_2 = ranked_run(experiments_db, 2, RANKED_1), ranked_run(experiments_db, 3, RANKED_2)
+    lines = render(experiments_db, run_2, baseline_run_id=run_1)
+    table = lines[lines.index('### Candidates compared') + 2:]
+    assert table[:2] == ['| Row | Decks compared | Top 1 | Top 5 | MRR |', '|---|---|---|---|---|']
+    validation = next(line for line in table if line.startswith('| validation |'))
+    assert re.fullmatch(rf'\| validation \| 2 \| 0\.50 {SIGNED_BRACKET} \| 0\.00 {SIGNED_BRACKET} \| 0\.25 {SIGNED_BRACKET} \|', validation)
+    assert '### Candidates compared' not in render(experiments_db, run_2, baseline_run_id=runs[0])  # The baseline has no candidates.
+
+
 # Scenario: a validation curve is shown when the model has one.
 
 @register
@@ -137,7 +170,7 @@ def test_test_results_need_the_gate_and_each_report_logs_one_look(experiments_db
     assert load_test_looks(experiments_db, run_id) == []
     lines = render(experiments_db, run_id, include_test=True)
     assert any(line.startswith('| test, overall | 1 |') for line in lines)
-    assert [look.rows for look in load_test_looks(experiments_db, run_id)] == [['test, overall', 'test, 0 unseen copies', 'test, new maindeck']]
+    assert [look.rows for look in load_test_looks(experiments_db, run_id)] == [['test, overall', 'test, 0 unseen copies', 'test, new maindeck', 'test, new archetypes']]
 
 
 # Scenario: the same run always gives the same report.

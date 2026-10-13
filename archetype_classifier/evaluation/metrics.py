@@ -1,4 +1,4 @@
-"""Scores archetype guesses against the archetype tree with hierarchical precision, recall and F (ADR 0001)."""
+"""Scores archetype guesses against the archetype tree with hierarchical precision, recall and F (ADR 0001), and ranked candidates with Top 1, Top 5 and mean reciprocal rank (#14)."""
 import dataclasses
 import logging
 from collections import Counter, defaultdict
@@ -12,7 +12,8 @@ from archetype_classifier.data_loading.dataset import ArchetypeSnapshot
 
 logger = logging.getLogger(__name__)
 
-METRICS_VERSION = 1  # Bump on any change to how a metric is computed; every report records it.
+METRICS_VERSION = 2  # Bump on any change to how a metric is computed; every report records it. 2: Top 1, Top 5 and MRR on candidates (#14).
+REVIEWER_CANDIDATES = 5  # The candidates a reviewer sees in the archetype drop-down: Top 5 counts these.
 DEFAULT_SEED = 20260930
 DEFAULT_RESAMPLES = 1000
 
@@ -23,6 +24,7 @@ class ScoredDeck:
     label_id: int
     guess_id: int | None  # None is no guess, scored as a guess of the root.
     group_key: str  # The maindeck hash: decks sharing it are resampled together.
+    candidates: tuple[int, ...] | None = None  # Ranked archetype ids, best first; None when the model doesn't rank candidates. Ids needn't be in the tree.
 
 class ArchetypeTree:
     def __init__(self, archetypes: Mapping[int, ArchetypeSnapshot]) -> None:
@@ -103,6 +105,21 @@ class Confusion:
     on_path: bool
 
 @dataclass(frozen=True)
+class RankingIntervals:
+    top_1: Interval
+    top_5: Interval
+    mrr: Interval
+
+@dataclass(frozen=True)
+class Ranking:
+    """How well the candidates rank each deck's label, exactly: a parent or child of the label doesn't count."""
+    top_1: float
+    top_5: float
+    mrr: float  # Over the whole list: a label at rank r adds 1 / r, a label not listed adds 0.
+    intervals: RankingIntervals
+    no_candidates: int  # Decks with an empty list. They stay in, scoring 0.
+
+@dataclass(frozen=True)
 class Scores:
     decks: int
     maindecks: int  # Distinct maindecks among the decks: the units the bootstrap resamples.
@@ -121,6 +138,7 @@ class Scores:
     confusions: list[Confusion]  # Every non-exact (label, guess) pair, most common first.
     skipped_decks: int  # Decks whose label or guess isn't in the tree. Nothing else counts them.
     missing_archetype_ids: frozenset[int]
+    ranking: Ranking | None = None  # None when no deck has candidates: the model doesn't rank them.
 
 def score(tree: ArchetypeTree, decks: Sequence[ScoredDeck], min_decks: int, seed: int = DEFAULT_SEED, resamples: int = DEFAULT_RESAMPLES) -> Scores:
     decks, skipped, missing = in_tree(tree, decks)
@@ -143,21 +161,42 @@ def score(tree: ArchetypeTree, decks: Sequence[ScoredDeck], min_decks: int, seed
     confusions = [Confusion(label_id, guess_id, n, score_deck(tree, label_id, guess_id).on_path) for (label_id, guess_id), n in pairs.most_common()]
     groups = maindeck_sums(decks, [o for _, o in overlaps])
     draws = bootstrap_sums(groups, seed, resamples)
-    return Scores(len(decks), len(groups), sum_overlaps(o for _, o in overlaps).hierarchical(), micro_intervals(draws), seed, resamples, macro, min_decks, len(qualifying), len(by_label), coverage, exact_match_rate, on_path, off_path, confusions, skipped, missing)
+    ranking = build_ranking(decks, groups, draws) if has_candidates(decks) else None
+    return Scores(len(decks), len(groups), sum_overlaps(o for _, o in overlaps).hierarchical(), micro_intervals(draws), seed, resamples, macro, min_decks, len(qualifying), len(by_label), coverage, exact_match_rate, on_path, off_path, confusions, skipped, missing, ranking)
 
-SHARED, GUESSED, LABELLED, EXACT, DECKS = range(5)
+def has_candidates(decks: Iterable[ScoredDeck]) -> bool:
+    """Whether the model ranks candidates. If it does, a deck with None counts as an empty list."""
+    return any(d.candidates is not None for d in decks)
+
+def build_ranking(decks: Sequence[ScoredDeck], groups: np.ndarray, draws: np.ndarray) -> Ranking:
+    point, r = rates(groups.sum(axis=0, keepdims=True)), rates(draws)
+    return Ranking(float(point['top_1'][0]), float(point['top_5'][0]), float(point['mrr'][0]), RankingIntervals(interval(r['top_1']), interval(r['top_5']), interval(r['mrr'])),
+                   sum(not d.candidates for d in decks))
+
+def label_rank(label_id: int, candidates: Sequence[int]) -> int | None:
+    """The label's rank among the candidates, from 1, or None when it isn't listed."""
+    return candidates.index(label_id) + 1 if label_id in candidates else None
+
+SHARED, GUESSED, LABELLED, EXACT, DECKS, TOP_1, TOP_5, RECIPROCAL = range(8)
+COLUMNS = 8
 
 def maindeck_sums(decks: Sequence[ScoredDeck], overlaps: Sequence[Overlap]) -> np.ndarray:
-    """One row per maindeck, in order of first appearance: shared, guessed and labelled archetype counts, exact matches and decks, summed over its decks."""
-    rows: dict[str, list[int]] = {}
+    """One row per maindeck, in order of first appearance: shared, guessed and labelled archetype counts, exact matches, decks, and the label's
+    top-1 and top-5 matches and reciprocal rank among the candidates, summed over its decks."""
+    rows: dict[str, list[float]] = {}
     for d, o in zip(decks, overlaps, strict=True):
-        row = rows.setdefault(d.group_key, [0] * 5)
+        row = rows.setdefault(d.group_key, [0.0] * COLUMNS)
         row[SHARED] += o.shared
         row[GUESSED] += o.guessed
         row[LABELLED] += o.labelled
         row[EXACT] += d.guess_id == d.label_id
         row[DECKS] += 1
-    return np.array(list(rows.values()), dtype=float).reshape(-1, 5)
+        rank = label_rank(d.label_id, d.candidates or ())
+        if rank is not None:
+            row[TOP_1] += rank <= 1
+            row[TOP_5] += rank <= REVIEWER_CANDIDATES
+            row[RECIPROCAL] += 1 / rank
+    return np.array(list(rows.values()), dtype=float).reshape(-1, COLUMNS)
 
 def bootstrap_sums(groups: np.ndarray, seed: int, resamples: int) -> np.ndarray:
     """One row per resample: the column sums over as many maindecks as there are, drawn with replacement."""
@@ -166,12 +205,14 @@ def bootstrap_sums(groups: np.ndarray, seed: int, resamples: int) -> np.ndarray:
     return np.array([np.bincount(rng.integers(0, n, n), minlength=n) @ groups for _ in range(resamples)])
 
 def rates(sums: np.ndarray) -> dict[str, np.ndarray]:
-    """Micro hP, hR and hF and exact-match rate for each row of summed maindeck columns. hP is NaN when nothing was guessed."""
+    """Micro hP, hR and hF, exact-match rate, Top 1, Top 5 and MRR for each row of summed maindeck columns. hP is NaN when nothing was guessed."""
     with np.errstate(divide='ignore', invalid='ignore'):
         hp = sums[:, SHARED] / sums[:, GUESSED]
         hr = sums[:, SHARED] / sums[:, LABELLED]
         hf = np.where(hp + hr > 0, 2 * hp * hr / (hp + hr), 0.0)
-    return {'hp': hp, 'hr': hr, 'hf': hf, 'exact_match_rate': sums[:, EXACT] / sums[:, DECKS]}
+    decks = sums[:, DECKS]
+    return {'hp': hp, 'hr': hr, 'hf': hf, 'exact_match_rate': sums[:, EXACT] / decks, 'top_1': sums[:, TOP_1] / decks, 'top_5': sums[:, TOP_5] / decks,
+            'mrr': sums[:, RECIPROCAL] / decks}
 
 def micro_intervals(draws: np.ndarray) -> HierarchicalIntervals:
     r = rates(draws)
@@ -212,6 +253,9 @@ class Difference:
     hr: float
     hf: float
     exact_match_rate: float
+    top_1: float | None = None  # None unless both models rank candidates.
+    top_5: float | None = None
+    mrr: float | None = None
 
 @dataclass(frozen=True)
 class DifferenceIntervals:
@@ -219,6 +263,9 @@ class DifferenceIntervals:
     hr: Interval
     hf: Interval
     exact_match_rate: Interval
+    top_1: Interval | None = None
+    top_5: Interval | None = None
+    mrr: Interval | None = None
 
 @dataclass(frozen=True)
 class Comparison:
@@ -248,7 +295,7 @@ def compare(tree: ArchetypeTree, a: Sequence[ScoredDeck], b: Sequence[ScoredDeck
     width = groups_a.shape[1]
     point_a, point_b = rates(groups_a.sum(axis=0, keepdims=True)), rates(groups_b.sum(axis=0, keepdims=True))
     draws_a, draws_b = rates(draws[:, :width]), rates(draws[:, width:])
-    names = ('hp', 'hr', 'hf', 'exact_match_rate')
+    names = ('hp', 'hr', 'hf', 'exact_match_rate', *(('top_1', 'top_5', 'mrr') if has_candidates(a) and has_candidates(b_aligned) else ()))
     difference = Difference(*(float(point_b[n][0] - point_a[n][0]) for n in names))
     intervals = DifferenceIntervals(*(interval(draws_b[n] - draws_a[n]) for n in names))
     return Comparison(difference, intervals, len(a), left_out, seed, resamples)

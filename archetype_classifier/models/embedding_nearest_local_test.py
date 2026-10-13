@@ -4,6 +4,7 @@ database, the real site database and the saved embedding in embeddings/.
     PD_LOCAL_DATA=1 uv run --group archetypes pytest -s archetype_classifier/models/embedding_nearest_local_test.py
 """
 import os
+import time
 
 import pytest
 
@@ -45,3 +46,14 @@ def test_deck_269508_copies_the_label_of_its_identical_training_decks(snapshot: 
 def test_scheme_1_makes_84094_training_rows_and_no_card_is_missing(model: EmbeddingNearestDeck) -> None:
     state = model.state()
     assert (state['training_rows'], state['skipped_copies'], state['decks_with_skipped_cards']) == (84094, 0, 0)
+
+
+# Scenario: on season 39, the new runs reproduce the old guesses (Scenarios.md, "Ranked candidates"): candidate 1 is the guess for every deck that has one.
+
+def test_on_season_39_candidate_1_is_the_guess_and_every_label_is_ranked(snapshot: Snapshot, model: EmbeddingNearestDeck) -> None:
+    validation = build_deck_set(snapshot, frozenset({Split.VALIDATION}))
+    start = time.perf_counter()
+    predictions = model.predict(build_predict_decks(validation, loader.load_contents(validation.decks)))
+    print(f'{len(predictions)} decks predicted with candidates in {time.perf_counter() - start:.1f}s')
+    labels = len(set(model.rows.labels.tolist()))
+    assert all(p.guess_id is not None and p.candidates and p.candidates[0].archetype_id == p.guess_id and len(p.candidates) == labels for p in predictions)

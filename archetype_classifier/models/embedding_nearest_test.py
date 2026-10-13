@@ -1,5 +1,6 @@
 """The nearest deck on the combined embedding, on rule-level decks (Scenarios.md, "The nearest deck on the combined embedding"). Real data is checked in
 embedding_nearest_local_test.py."""
+import dataclasses
 from pathlib import Path
 
 import numpy as np
@@ -10,8 +11,8 @@ from archetype_classifier.card_embeddings.deck_vectors_test import EMBEDDING, ca
 from archetype_classifier.data_loading.dataset import ArchetypeSnapshot, CardCount
 from archetype_classifier.data_loading.labels import LabelStatus
 from archetype_classifier.evaluation.metrics import ArchetypeTree
-from archetype_classifier.evaluation.model import FitContext, PredictDeck, Prediction, TrainingDeck, model_class
-from archetype_classifier.models.embedding_nearest import EmbeddingNearestDeck, Pick, build_pick, build_training_rows
+from archetype_classifier.evaluation.model import Candidate, FitContext, PredictDeck, Prediction, TrainingDeck, model_class
+from archetype_classifier.models.embedding_nearest import EmbeddingNearestDeck, Pick, build_candidates, build_pick, build_training_rows
 
 AGGRO, CONTROL, RED_DECK_WINS, MONO_RED_SWARM, AZORIUS_CONTROL = 1, 2, 16, 17, 49
 MAINDECK_A = cards(Shock=4, Burst_Lightning=4, Mountain=52)
@@ -91,8 +92,11 @@ def test_the_model_is_found_by_its_name() -> None:
 
 def test_a_deck_identical_to_training_decks_copies_the_label_with_more_decks(embedding_path: Path) -> None:
     [prediction] = fitted(embedding_path).predict([query(201, MAINDECK_A)])
-    assert prediction == Prediction(201, RED_DECK_WINS, {'match_deck_id': 103, 'similarity': 1.0, 'match_decks': 2, 'tied_rows': 2, 'runner_up_id': MONO_RED_SWARM,
-                                                         'runner_up_similarity': 1.0, 'embedded_copies': 60, 'skipped_copies': 0})
+    assert dataclasses.replace(prediction, candidates=None) == Prediction(201, RED_DECK_WINS, {
+        'match_deck_id': 103, 'similarity': 1.0, 'match_decks': 2, 'tied_rows': 2, 'runner_up_id': MONO_RED_SWARM, 'runner_up_similarity': 1.0, 'embedded_copies': 60, 'skipped_copies': 0})
+    assert prediction.candidates is not None
+    assert [c.archetype_id for c in prediction.candidates] == [RED_DECK_WINS, MONO_RED_SWARM, AZORIUS_CONTROL]
+    assert [c.score for c in prediction.candidates[:2]] == pytest.approx([1.0, 1.0])
 
 def test_the_sideboard_never_changes_a_guess(embedding_path: Path) -> None:
     model = fitted(embedding_path)
@@ -102,11 +106,11 @@ def test_the_sideboard_never_changes_a_guess(embedding_path: Path) -> None:
 
 def test_a_deck_of_only_missing_cards_gets_no_guess(embedding_path: Path) -> None:
     [prediction] = fitted(embedding_path).predict([query(202, cards(Smaug_s_Fury=60))])
-    assert prediction == Prediction(202, None, {'embedded_copies': 0, 'skipped_copies': 60})
+    assert prediction == Prediction(202, None, {'embedded_copies': 0, 'skipped_copies': 60}, ())  # The model ranks candidates, but has none for this deck.
 
 def test_with_no_training_rows_no_deck_gets_a_guess(embedding_path: Path) -> None:
     [prediction] = fitted(embedding_path, [training(109, None, MAINDECK_A)]).predict([query(201, MAINDECK_A)])
-    assert prediction == Prediction(201, None, {'embedded_copies': 60, 'skipped_copies': 0})
+    assert prediction == Prediction(201, None, {'embedded_copies': 60, 'skipped_copies': 0}, ())
 
 
 # Scenarios: a card missing from the embedding is skipped and counted; a fitted model loads back, and refuses a changed embedding.
@@ -131,3 +135,42 @@ def test_a_changed_embedding_is_refused_naming_both_hashes(embedding_path: Path)
     json_file.write_text(json_file.read_text() + ' ')
     with pytest.raises(ValueError, match=f'{before}.*{load_embedding_hash(embedding_path)}'):
         EmbeddingNearestDeck.from_state(model.params, model.state(), TRAINING, context(embedding_path))
+
+
+
+# Scenario: the nearest deck ranks each label by its best training row (Scenarios.md, "Ranked candidates").
+
+MAINDECK_C = cards(Burst_Lightning=4, Mountain=56)
+RANKING = [*TRAINING, training(109, RED_DECK_WINS, MAINDECK_C)]  # Rows: 1 = A Red Deck Wins (2 decks, newest 103), 2 = A Mono Red Swarm (1, 105),
+# 3 = B Azorius Control (1, 107), 4 = C Red Deck Wins (1, 109).
+RED, SWARM, BLUE = RED_DECK_WINS, MONO_RED_SWARM, AZORIUS_CONTROL
+
+@pytest.mark.parametrize(('training_decks', 'similarities', 'expected'), [
+    (RANKING, [1.0, 1.0, 0.91, 0.70], [(RED, 1.0), (SWARM, 1.0), (BLUE, 0.91)]),  # A tie at the top: 2 decks beat 1.
+    (RANKING, [0.80, 0.95, 0.91, 0.97], [(RED, 0.97), (SWARM, 0.95), (BLUE, 0.91)]),  # A label's best row decides.
+    ([t for t in RANKING if t.deck.deck_id != 103], [1.0, 1.0, 0.91, 0.70], [(SWARM, 1.0), (RED, 1.0), (BLUE, 0.91)]),  # Equal decks: 105 is newer than 101.
+    (RANKING, [0.99, 0.90, 0.90, 0.50], [(RED, 0.99), (BLUE, 0.90), (SWARM, 0.90)]),  # A tie below the top: 107 is newer than 105.
+], ids=['tie at the top', 'best row decides', 'equal decks', 'tie below the top'])
+def test_the_nearest_deck_ranks_each_label_by_its_best_training_row(training_decks: list[TrainingDeck], similarities: list[float], expected: list[tuple[int, float]]) -> None:
+    rows = build_training_rows(training_decks)
+    candidates = build_candidates(np.array(similarities), rows)
+    assert candidates == tuple(Candidate(a, s) for a, s in expected)
+    assert candidates[0].archetype_id == build_pick(np.array(similarities), rows).label_id
+
+def test_with_no_training_rows_there_are_no_candidates() -> None:
+    assert build_candidates(np.array([]), build_training_rows([])) == ()
+
+def test_candidate_1_is_always_the_guess_on_random_similarities() -> None:
+    rng = np.random.default_rng(0)
+    decks = [training(200 + i, int(rng.choice([RED, SWARM, BLUE, AGGRO, CONTROL])), (CardCount('Mountain', i + 1),)) for i in range(40)]
+    rows = build_training_rows(decks + decks[:15])  # Repeats make deck counts differ.
+    for _ in range(300):
+        similarities = rng.choice([0.2, 0.5, 0.5 + 1e-10, 0.8, 1.0], size=len(rows.labels))  # Few values, so ties are common.
+        candidates = build_candidates(similarities, rows)
+        assert candidates[0].archetype_id == build_pick(similarities, rows).label_id
+        assert sorted(c.archetype_id for c in candidates) == sorted(set(rows.labels.tolist()))
+        scores = [c.score for c in candidates]
+        assert all(later is not None and earlier is not None and later <= earlier + 1e-9 for earlier, later in zip(scores, scores[1:]))
+
+def test_version_2_ranks_candidates() -> None:
+    assert EmbeddingNearestDeck.version == 2

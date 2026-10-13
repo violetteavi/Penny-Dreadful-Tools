@@ -55,7 +55,7 @@ def test_the_header_says_exactly_what_produced_the_numbers(experiments_db: Datab
     assert lines[0] == '# Run 1: most common archetype v1'
     for expected in ['| Run | 1 |', '| Scope | held_out, validation |', '| Decks predicted | 4 |', f'| Prediction hash | {prediction_hash([Prediction(i, g, {}) for i, g in RUN_1.items()])} |',
                      '| Model | 1: most common archetype v1, parameters {}, seed 0 |', '| Snapshot | 1 |', '| Scheme | 1 (typical) |',
-                     '| Trained on | train (2 decks) |', '| Tuned on | validation (2 decks) |', '| Metrics version | 2 |', '| Rows version | 2 |', '| PRs | #6, #31 |']:
+                     '| Trained on | train (2 decks) |', '| Tuned on | validation (2 decks) |', '| Metrics version | 2 |', '| Rows version | 3 |', '| PRs | #6, #31 |']:
         assert expected in lines
     assert any(line.startswith('| Made | ') for line in lines)
 
@@ -137,7 +137,7 @@ def test_test_results_need_the_gate_and_each_report_logs_one_look(experiments_db
     assert load_test_looks(experiments_db, run_id) == []
     lines = render(experiments_db, run_id, include_test=True)
     assert any(line.startswith('| test, overall | 1 |') for line in lines)
-    assert [look.rows for look in load_test_looks(experiments_db, run_id)] == [['test, overall', 'test, 0 unseen copies', 'test, new maindeck']]
+    assert [look.rows for look in load_test_looks(experiments_db, run_id)] == [['test, overall', 'test, 0 unseen copies', 'test, new maindeck', 'test, new archetypes']]
 
 
 # Scenario: the same run always gives the same report.

@@ -1,6 +1,7 @@
 """The rows of the results table: named, versioned groups of scored decks. Scores are never stored; they're recomputed from a run's guesses (decision F)."""
 import logging
-from collections.abc import Callable, Sequence
+from collections import Counter
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 
 from archetype_classifier.data_loading.labels import LabelStatus
@@ -8,11 +9,13 @@ from archetype_classifier.data_loading.slices import DeckSet, SnapshotDeck
 from archetype_classifier.data_loading.splits import Split, SplitScheme
 from archetype_classifier.evaluation import store
 from archetype_classifier.evaluation.metrics import ArchetypeTree, ScoredDeck, Scores, in_tree, score
+from archetype_classifier.evaluation.model import Prediction
 from shared.database import Database
 
 logger = logging.getLogger(__name__)
 
-ROWS_VERSION = 2  # Bump on any change to which rows exist or which decks they hold. 2: validation split by unseen cards (#44).
+ROWS_VERSION = 3  # Bump on any change to which rows exist or which decks they hold. 2: validation split by unseen cards (#44). 3: new and existing archetypes (#14).
+NEW_ARCHETYPE_DECKS = 5  # An archetype with fewer training decks than this, with exactly its label, is new.
 PREFIXES = {Split.TRAIN: 'train', Split.HELD_OUT: 'held-out', Split.VALIDATION: 'validation', Split.TEST: 'test'}
 UNSEEN_BANDS = [('0', 0, 0), ('1–4', 1, 4), ('5–12', 5, 12), ('13+', 13, None)]  # Unseen maindeck copies: label, lowest, highest.
 
@@ -27,6 +30,7 @@ class Row:
 def build_rows(scored: DeckSet, training: DeckSet, scheme: SplitScheme) -> list[Row]:
     """The rows for the splits that were scored. Every row but the unverified one holds VERIFIED decks only."""
     training_maindecks = {d.maindeck_hash for d in training.decks.values()}
+    training_counts = Counter(d.site_archetype_id for d in training.decks.values())  # The label the model trains on, so its count of each archetype.
     def repeated(d: SnapshotDeck) -> bool:
         return d.maindeck_hash in training_maindecks
     rows = []
@@ -35,7 +39,7 @@ def build_rows(scored: DeckSet, training: DeckSet, scheme: SplitScheme) -> list[
             continue
         decks = [d for d in scored.decks.values() if d.split == split]
         verified = [d for d in decks if d.label_status == LabelStatus.VERIFIED]
-        for name, keep in split_rows(split, repeated, scheme):
+        for name, keep in split_rows(split, repeated, scheme, training_counts):
             rows.append(Row(name, frozenset({split}), frozenset(d.deck_id for d in verified if keep(d))))
         allowed = scheme.train_statuses if split == Split.TRAIN else scheme.eval_statuses
         if LabelStatus.UNVERIFIED in allowed:
@@ -44,7 +48,7 @@ def build_rows(scored: DeckSet, training: DeckSet, scheme: SplitScheme) -> list[
         logger.info("Row '%s' has no decks, so it's left out", empty.name)  # The metrics module can't score an empty set.
     return [r for r in rows if r.deck_ids]
 
-def split_rows(split: Split, repeated: Keep, scheme: SplitScheme) -> list[tuple[str, Keep]]:
+def split_rows(split: Split, repeated: Keep, scheme: SplitScheme, training_counts: Mapping[int | None, int]) -> list[tuple[str, Keep]]:
     """Each row a split's scored decks fall into, as its name and which of the split's decks it keeps."""
     if split == Split.TRAIN:
         return [('train, in-sample', lambda d: True)]  # How well the model fits the decks it learned from; not a generalisation score.
@@ -52,9 +56,9 @@ def split_rows(split: Split, repeated: Keep, scheme: SplitScheme) -> list[tuple[
         # Without twins, held-out decks never repeat a training maindeck, so maindeck rows would say nothing.
         return [*unseen_rows('held-out'), *maindeck_rows('held-out', repeated)] if scheme.allow_held_out_twins else unseen_rows('held-out')
     if split == Split.VALIDATION:
-        return [('validation', lambda d: True), *unseen_rows('validation'), *maindeck_rows('validation', repeated)]
+        return [('validation', lambda d: True), *unseen_rows('validation'), *maindeck_rows('validation', repeated), *archetype_rows('validation', training_counts)]
     bands: list[tuple[str, Keep]] = [(f'test, {label} unseen copies', in_band(low, high)) for label, low, high in UNSEEN_BANDS]
-    return [('test, overall', lambda d: True), *bands, *maindeck_rows('test', repeated)]
+    return [('test, overall', lambda d: True), *bands, *maindeck_rows('test', repeated), *archetype_rows('test', training_counts)]
 
 def unseen_rows(prefix: str) -> list[tuple[str, Keep]]:
     return [(f'{prefix}, no unseen cards', lambda d: d.unseen_maindeck_copies == 0), (f'{prefix}, unseen cards', lambda d: d.unseen_maindeck_copies > 0)]
@@ -62,8 +66,19 @@ def unseen_rows(prefix: str) -> list[tuple[str, Keep]]:
 def maindeck_rows(prefix: str, repeated: Keep) -> list[tuple[str, Keep]]:
     return [(f'{prefix}, new maindeck', lambda d: not repeated(d)), (f'{prefix}, repeated maindeck', repeated)]
 
+def archetype_rows(prefix: str, training_counts: Mapping[int | None, int]) -> list[tuple[str, Keep]]:
+    """Decks whose label has at least NEW_ARCHETYPE_DECKS training decks, and the rest: neighbour lookup can't rank an archetype it has barely seen.
+    Only decks with exactly the label count, so a parent's count leaves out its children's decks. Held-out decks get no such rows: their archetypes
+    almost always have training decks."""
+    def existing(d: SnapshotDeck) -> bool:
+        return training_counts.get(d.label_id, 0) >= NEW_ARCHETYPE_DECKS
+    return [(f'{prefix}, existing archetypes', existing), (f'{prefix}, new archetypes', lambda d: not existing(d))]
+
 def in_band(low: int, high: int | None) -> Keep:
     return lambda d: d.unseen_maindeck_copies >= low and (high is None or d.unseen_maindeck_copies <= high)
+
+def candidate_ids(prediction: Prediction) -> tuple[int, ...] | None:
+    return None if prediction.candidates is None else tuple(c.archetype_id for c in prediction.candidates)
 
 @dataclass(frozen=True)
 class RowScores:
@@ -84,7 +99,7 @@ def score_rows(edb: Database, run_id: int, tree: ArchetypeTree, scored: DeckSet,
         missing = sorted(i for i in row.deck_ids if i not in guesses)
         if missing:
             logger.warning("Row '%s': skipped %d deck%s with no stored guess: %s", row.name, len(missing), '' if len(missing) == 1 else 's', missing)
-        decks = [ScoredDeck(i, scored.decks[i].label_id, guesses[i].guess_id, scored.decks[i].maindeck_hash)  # type: ignore[arg-type]  # Scored decks always have a label and a maindeck.
+        decks = [ScoredDeck(i, scored.decks[i].label_id, guesses[i].guess_id, scored.decks[i].maindeck_hash, candidate_ids(guesses[i]))  # type: ignore[arg-type]  # Scored decks always have a label and a maindeck.
                  for i in sorted(row.deck_ids) if i in guesses]
         if not decks:
             logger.warning("Row '%s' has no decks with a stored guess, so it's left out", row.name)

@@ -8,7 +8,7 @@ from archetype_classifier.data_loading.dataset import ArchetypeSnapshot
 from archetype_classifier.data_loading.slices import DeckSet, build_deck_set
 from archetype_classifier.data_loading.splits import Split, SplitScheme
 from archetype_classifier.evaluation.metrics import ArchetypeTree, ScoredDeck, score
-from archetype_classifier.evaluation.model import Prediction
+from archetype_classifier.evaluation.model import Candidate, Prediction
 from archetype_classifier.evaluation.rows import build_rows, score_rows
 from archetype_classifier.evaluation.rows_test import MAINDECK_A, RED_DECK_WINS, SNAPSHOT
 from archetype_classifier.evaluation.store import ModelRecord, load_test_looks, save_model, save_run
@@ -22,15 +22,15 @@ GUESSES = {101: RED_DECK_WINS, 102: AZORIUS_CONTROL, 301: RED_DECK_WINS, 302: AZ
            401: RED_DECK_WINS, 402: AZORIUS_CONTROL, 403: RED_DECK_WINS, 404: RED_DECK_WINS}  # Every deck is labelled Red Deck Wins.
 
 
-def run(edb: Database, scope: frozenset[Split], guesses: dict[int, int | None] = GUESSES) -> int:
-    """A stored run of a stored model, with the given guesses for the scope's decks."""
+def run(edb: Database, scope: frozenset[Split], guesses: dict[int, int | None] = GUESSES, candidates: dict[int, tuple[Candidate, ...]] | None = None) -> int:
+    """A stored run of a stored model, with the given guesses (and candidates, if given) for the scope's decks."""
     loader.ensure_schema(edb)
     edb.execute("INSERT INTO snapshot (id, deck_count, max_deck_id, notes) VALUES (1, 0, 0, 'test')")
     scheme_id = loader.create_scheme(edb, SplitScheme('typical'))
     record = ModelRecord('most common archetype', 1, {}, 1, scheme_id, 0, TRAIN, VALIDATION, 2, 'a' * 40, 2, 'b' * 40, 0.0)
     model_id = save_model(edb, MostCommonArchetype({}), record)
     in_scope = [i for i, d in SNAPSHOT.decks.items() if d.split in scope and i in guesses]
-    return save_run(edb, model_id, scope, [Prediction(i, guesses[i], {}) for i in in_scope])
+    return save_run(edb, model_id, scope, [Prediction(i, guesses[i], {}, None if candidates is None else candidates[i]) for i in in_scope])
 
 def scored(splits: frozenset[Split]) -> DeckSet:
     return build_deck_set(SNAPSHOT, splits, include_test=Split.TEST in splits)
@@ -47,7 +47,8 @@ def test_each_row_is_scored_from_the_stored_guesses_and_flagged_for_training_and
     assert results['validation'].scores == score(TREE, [ScoredDeck(201, RED_DECK_WINS, RED_DECK_WINS, MAINDECK_A), ScoredDeck(202, RED_DECK_WINS, None, f'{202:040x}')], min_decks=1)
     assert {name: (r.trained_on, r.tuned_on) for name, r in results.items()} == {
         'held-out, no unseen cards': (False, False), 'held-out, unseen cards': (False, False),
-        'validation': (False, True), 'validation, no unseen cards': (False, True), 'validation, unseen cards': (False, True), 'validation, new maindeck': (False, True), 'validation, repeated maindeck': (False, True)}
+        'validation': (False, True), 'validation, no unseen cards': (False, True), 'validation, unseen cards': (False, True), 'validation, new maindeck': (False, True), 'validation, repeated maindeck': (False, True),
+        'validation, new archetypes': (False, True)}
     tuned_on_held_out_too = score_rows(experiments_db, run_id, TREE, scored(splits), rows, TRAIN, splits, min_decks=1)
     assert all(r.tuned_on for r in tuned_on_held_out_too.values())
 
@@ -72,7 +73,8 @@ def test_test_rows_need_the_gate_and_each_scoring_logs_one_look(experiments_db: 
     assert load_test_looks(experiments_db, run_id) == []
 
     results = score_rows(experiments_db, run_id, TREE, scored(test), rows, TRAIN, VALIDATION, min_decks=1, include_test=True)
-    names = ['test, overall', 'test, 0 unseen copies', 'test, 1–4 unseen copies', 'test, 5–12 unseen copies', 'test, 13+ unseen copies', 'test, new maindeck', 'test, repeated maindeck']
+    names = ['test, overall', 'test, 0 unseen copies', 'test, 1–4 unseen copies', 'test, 5–12 unseen copies', 'test, 13+ unseen copies', 'test, new maindeck', 'test, repeated maindeck',
+             'test, new archetypes']
     assert list(results) == names
     assert [look.rows for look in load_test_looks(experiments_db, run_id)] == [names]
 
@@ -98,3 +100,29 @@ def test_a_stored_no_guess_is_scored(experiments_db: Database) -> None:
     rows = build_rows(scored(validation_only), scored(TRAIN), SNAPSHOT.scheme)
     results = score_rows(experiments_db, run_id, TREE, scored(validation_only), rows, TRAIN, VALIDATION, min_decks=1)
     assert (results['validation, new maindeck'].scores.decks, results['validation, new maindeck'].skipped) == (1, 0)
+
+
+# Ranked candidates (#14): a row's scores rank its decks' stored candidates.
+
+def test_a_rows_scores_rank_the_stored_candidates(experiments_db: Database) -> None:
+    validation_only = frozenset({Split.VALIDATION})
+    candidates = {201: (Candidate(AZORIUS_CONTROL, 0.9), Candidate(RED_DECK_WINS, 0.8)), 202: ()}
+    run_id = run(experiments_db, validation_only, candidates=candidates)
+    rows = build_rows(scored(validation_only), scored(TRAIN), SNAPSHOT.scheme)
+    results = score_rows(experiments_db, run_id, TREE, scored(validation_only), rows, TRAIN, VALIDATION, min_decks=1)
+    assert results['validation'].scores == score(TREE, [ScoredDeck(201, RED_DECK_WINS, RED_DECK_WINS, MAINDECK_A, (AZORIUS_CONTROL, RED_DECK_WINS)),
+                                                       ScoredDeck(202, RED_DECK_WINS, None, f'{202:040x}', ())], min_decks=1)
+    ranking = results['validation'].scores.ranking
+    assert ranking is not None and (ranking.top_1, ranking.mrr, ranking.no_candidates) == (0.0, 0.25, 1)
+
+
+# A data problem: a row whose decks all have a guess outside the tree is left out with a warning (their scores would be empty).
+
+def test_a_row_with_no_decks_in_the_tree_is_left_out(experiments_db: Database, caplog: pytest.LogCaptureFixture) -> None:
+    validation_only = frozenset({Split.VALIDATION})
+    run_id = run(experiments_db, validation_only, guesses={201: 999, 202: 999})
+    rows = build_rows(scored(validation_only), scored(TRAIN), SNAPSHOT.scheme)
+    with caplog.at_level(logging.WARNING):
+        results = score_rows(experiments_db, run_id, TREE, scored(validation_only), rows, TRAIN, VALIDATION, min_decks=1)
+    assert results == {}
+    assert "Row 'validation' has no decks whose label and guess are in the tree, so it's left out" in caplog.text

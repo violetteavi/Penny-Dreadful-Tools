@@ -4,8 +4,9 @@ import logging
 import pytest
 from pytest import approx
 
-from archetype_classifier.evaluation.metrics import METRICS_VERSION, ScoredDeck, compare, score, score_deck
-from archetype_classifier.evaluation.scenario_set import AGGRO, AZORIUS_CONTROL, MONO_RED_DEVOTION, NO_GUESS, PRISONER, RED_DECK_WINS, TREE, scenario_decks
+from archetype_classifier.data_loading.dataset import ArchetypeSnapshot
+from archetype_classifier.evaluation.metrics import METRICS_VERSION, REVIEWER_CANDIDATES, ArchetypeTree, ScoredDeck, compare, label_rank, score, score_deck
+from archetype_classifier.evaluation.scenario_set import AGGRO, AZORIUS_CONTROL, CONTROL, MONO_RED_DEVOTION, NO_GUESS, PRISONER, RED_DECK_WINS, TREE, scenario_decks
 
 THREE_PLACES = 0.0005  # Scenarios.md gives scores to three decimal places.
 
@@ -194,7 +195,77 @@ def test_comparing_models_with_no_decks_in_common_is_an_error() -> None:
         compare(TREE, [ScoredDeck(1, PRISONER, PRISONER, 'a')], [ScoredDeck(2, PRISONER, PRISONER, 'b')])
 
 
-# Scenario: metrics are versioned (Scenarios.md, "Experiment reports").
+
+# Scenarios: "Ranked candidates". Candidate ids needn't be in the tree; labels and guesses must be, as for hF.
+
+MONO_RED_SWARM, WHITE_WEENIE, MONO_WHITE_HUMANS = 8, 9, 10
+RANKED_TREE = ArchetypeTree({**TREE.archetypes, MONO_RED_SWARM: ArchetypeSnapshot(MONO_RED_SWARM, 'Mono Red Swarm', AGGRO, 1),
+                             WHITE_WEENIE: ArchetypeSnapshot(WHITE_WEENIE, 'White Weenie', AGGRO, 1),
+                             MONO_WHITE_HUMANS: ArchetypeSnapshot(MONO_WHITE_HUMANS, 'Mono White Humans', WHITE_WEENIE, 2)})
+RANKED = [
+    ScoredDeck(501, PRISONER, PRISONER, 'm501', (PRISONER, RED_DECK_WINS, MONO_RED_DEVOTION)),
+    ScoredDeck(502, RED_DECK_WINS, PRISONER, 'm502', (PRISONER, MONO_RED_DEVOTION, RED_DECK_WINS, AGGRO, MONO_RED_SWARM)),
+    ScoredDeck(503, AZORIUS_CONTROL, NO_GUESS, 'm503', (PRISONER, RED_DECK_WINS, MONO_RED_DEVOTION, MONO_RED_SWARM, WHITE_WEENIE, MONO_WHITE_HUMANS, AZORIUS_CONTROL, CONTROL)),
+    ScoredDeck(504, AGGRO, RED_DECK_WINS, 'm504', (RED_DECK_WINS, MONO_RED_SWARM)),
+]
+EMPTY_LIST = ScoredDeck(505, MONO_RED_SWARM, NO_GUESS, 'm505', ())
+
+def test_top_1_top_5_and_mrr_count_the_labels_rank() -> None:
+    ranking = score(RANKED_TREE, RANKED, min_decks=1).ranking
+    assert ranking is not None
+    assert (ranking.top_1, ranking.top_5, ranking.mrr) == approx((0.250, 0.500, 0.369), abs=THREE_PLACES)
+    assert ranking.no_candidates == 0
+
+def test_a_deck_with_an_empty_list_scores_0_and_is_counted() -> None:
+    ranking = score(RANKED_TREE, [*RANKED, EMPTY_LIST], min_decks=1).ranking
+    assert ranking is not None
+    assert (ranking.top_1, ranking.top_5, ranking.mrr) == approx((0.200, 0.400, 0.295), abs=THREE_PLACES)
+    assert ranking.no_candidates == 1
+
+def test_candidate_intervals_treat_identical_maindecks_as_one() -> None:
+    decks = [*RANKED, EMPTY_LIST]
+    twins = [dataclasses.replace(d, deck_id=d.deck_id + 1000) for d in decks]
+    single, doubled = score(RANKED_TREE, decks, min_decks=1, seed=7).ranking, score(RANKED_TREE, decks + twins, min_decks=1, seed=7).ranking
+    assert single is not None and doubled is not None
+    assert dataclasses.replace(doubled, no_candidates=1) == single  # Only the count of decks doubles.
+    for name in ('top_1', 'top_5', 'mrr'):
+        interval = getattr(single.intervals, name)
+        assert interval.low <= getattr(single, name) <= interval.high
+    c = compare(RANKED_TREE, decks, decks, resamples=200)
+    for name in ('top_1', 'top_5', 'mrr'):
+        assert getattr(c.difference, name) == 0.0
+        assert (getattr(c.intervals, name).low, getattr(c.intervals, name).high) == (0.0, 0.0)
+
+def test_a_better_ranking_shows_in_the_comparison() -> None:
+    better = [dataclasses.replace(RANKED[1], candidates=(RED_DECK_WINS, PRISONER)), *RANKED[:1], *RANKED[2:]]  # Deck 502's label moves from rank 3 to rank 1.
+    c = compare(RANKED_TREE, RANKED, better, resamples=200)
+    assert (c.difference.top_1, c.difference.top_5, c.difference.mrr) == approx((0.25, 0.0, (1 - 1 / 3) / 4))
+
+def test_a_model_without_candidates_has_no_ranking() -> None:
+    assert score(TREE, scenario_decks(), min_decks=1, resamples=200).ranking is None
+    c = compare(RANKED_TREE, [dataclasses.replace(d, candidates=None) for d in RANKED], RANKED, resamples=200)
+    assert (c.difference.top_1, c.difference.top_5, c.difference.mrr) == (None, None, None)
+    assert (c.intervals.top_1, c.intervals.top_5, c.intervals.mrr) == (None, None, None)
+    assert c.difference.hf == 0.0  # The guesses are still compared.
+
+def test_in_a_set_with_candidates_a_deck_without_them_counts_as_an_empty_list() -> None:
+    ranking = score(RANKED_TREE, [*RANKED, dataclasses.replace(EMPTY_LIST, candidates=None)], min_decks=1).ranking
+    assert ranking == score(RANKED_TREE, [*RANKED, EMPTY_LIST], min_decks=1).ranking
+
+def test_a_candidate_outside_the_tree_is_a_miss_not_a_skip() -> None:
+    scores = score(RANKED_TREE, [ScoredDeck(1, PRISONER, PRISONER, 'a', (NOT_IN_TREE, PRISONER))], min_decks=1, resamples=200)
+    assert scores.skipped_decks == 0
+    assert scores.ranking is not None
+    assert (scores.ranking.top_1, scores.ranking.top_5, scores.ranking.mrr) == (0.0, 1.0, 0.5)
+
+def test_label_rank_counts_from_1_and_misses_with_none() -> None:
+    assert label_rank(PRISONER, (RED_DECK_WINS, PRISONER)) == 2
+    assert label_rank(AGGRO, (RED_DECK_WINS, PRISONER)) is None  # A child of the label doesn't count.
+    assert label_rank(PRISONER, ()) is None
+    assert REVIEWER_CANDIDATES == 5
+
+
+# Scenario: metrics are versioned (Scenarios.md, "Experiment reports"). 2: Top 1, Top 5 and MRR on candidates (#14).
 
 def test_metrics_are_versioned() -> None:
-    assert METRICS_VERSION == 1
+    assert METRICS_VERSION == 2

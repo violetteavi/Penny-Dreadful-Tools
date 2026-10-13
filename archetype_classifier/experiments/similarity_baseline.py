@@ -4,6 +4,7 @@ Both are fitted on scheme 2's TRAIN decks ("similarity baseline": train {VERIFIE
 into docs/experiments/. The test seasons aren't used. It composes existing functions only.
 
     uv run python -m archetype_classifier.experiments.similarity_baseline --min-decks 20 --pr 34
+    uv run python -m archetype_classifier.experiments.similarity_baseline --threshold 20 --min-decks 10 --date 20261012  # The site's threshold only.
 """
 import argparse
 import time
@@ -28,6 +29,7 @@ def main() -> None:
     parser.add_argument('--min-decks', type=int, required=True, help='the fewest decks an archetype needs to count in macro averages')
     parser.add_argument('--pr', type=int, action='append', default=[], help='a PR that produced the runs (repeatable)')
     parser.add_argument('--date', required=True, help='YYYYMMDD, for the report file names')
+    parser.add_argument('--threshold', action='append', type=threshold_arg, help="a whole-number threshold or 'tuned' (repeatable; default: 20 and tuned)")
     args = parser.parse_args()
 
     edb = loader.experiments_db()
@@ -41,7 +43,8 @@ def main() -> None:
     print(f'{len(training)} training decks, {len(labelled)} validation decks, {len(predict_decks)} decks to predict')
 
     run_ids = {}
-    for label, threshold in (('fixed20', 20), ('tuned', 'tuned')):
+    for threshold in args.threshold or [20, 'tuned']:
+        label = 'tuned' if threshold == 'tuned' else f'fixed{threshold}'
         model = SimilarityBaseline({'threshold': threshold})
         start = time.perf_counter()
         model.fit(training, labelled, context)
@@ -55,10 +58,14 @@ def main() -> None:
         print(f'{label}: threshold {model.threshold}, fitted in {fit_seconds:.0f}s, model {model_id}, run {run_ids[label]}')
 
     OUT.mkdir(parents=True, exist_ok=True)
-    for label, baseline in (('fixed20', None), ('tuned', run_ids['fixed20'])):
+    for label, run_id in run_ids.items():
+        baseline = run_ids.get('fixed20') if label == 'tuned' else None  # The tuned threshold is compared with the site's.
         path = OUT / f'{args.date}_similarity_{label}.md'
-        path.write_text(render_report(edb, run_ids[label], args.min_decks, baseline_run_id=baseline, prs=args.pr))
+        path.write_text(render_report(edb, run_id, args.min_decks, baseline_run_id=baseline, prs=args.pr))
         print(f'Wrote {path}')
+
+def threshold_arg(text: str) -> int | str:
+    return text if text == 'tuned' else int(text)
 
 if __name__ == '__main__':
     main()

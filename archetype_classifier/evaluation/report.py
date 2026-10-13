@@ -8,9 +8,9 @@ from archetype_classifier.data_loading import loader
 from archetype_classifier.data_loading.dataset import ArchetypeSnapshot
 from archetype_classifier.data_loading.slices import DeckSet, build_deck_set
 from archetype_classifier.data_loading.splits import Split
-from archetype_classifier.evaluation.metrics import METRICS_VERSION, ArchetypeTree, Confusion, Interval, ScoredDeck, compare, in_tree, score
+from archetype_classifier.evaluation.metrics import METRICS_VERSION, ArchetypeTree, Comparison, Confusion, Interval, Ranking, ScoredDeck, compare, in_tree, score
 from archetype_classifier.evaluation.model import JSON, Prediction
-from archetype_classifier.evaluation.rows import PREFIXES, ROWS_VERSION, Row, RowScores, build_rows, score_rows
+from archetype_classifier.evaluation.rows import PREFIXES, ROWS_VERSION, Row, RowScores, build_rows, candidate_ids, score_rows
 from archetype_classifier.evaluation.store import canonical, load_guesses, load_model_record, load_run, splits_text
 from shared.database import Database
 
@@ -51,6 +51,7 @@ def render_report(edb: Database, run_id: int, min_decks: int, baseline_run_id: i
     results = score_rows(edb, run.id, tree, scored, rows, record.training_splits, record.validation_splits, min_decks, include_test)
     lines += ['', '## Results', '', '| Row | Decks | Maindecks | hF | hP | hR | Exact match | Coverage | Macro hF | Notes |', '|---|---|---|---|---|---|---|---|---|---|']
     lines += [result_line(name, r) for name, r in results.items()]
+    lines += candidate_lines(results)
     lines += curve_lines(state)
     guesses = load_guesses(edb, run.id)
     for split in (Split.TRAIN, Split.HELD_OUT, Split.VALIDATION, Split.TEST):
@@ -61,6 +62,20 @@ def render_report(edb: Database, run_id: int, min_decks: int, baseline_run_id: i
     if baseline_run_id is not None:
         lines += comparison_lines(run.id, baseline_run_id, rows, scored, guesses, load_guesses(edb, baseline_run_id), tree)
     return '\n'.join(lines) + '\n'
+
+def candidate_lines(results: Mapping[str, RowScores]) -> list[str]:
+    """How well the run's candidates rank each row's labels (#14). A run whose model doesn't rank candidates gets no table, rather than zeros."""
+    ranked = {name: r for name, r in results.items() if r.scores.ranking is not None}
+    if not ranked:
+        return []
+    lines = ['', '## Candidates', '', '| Row | Decks | Maindecks | Top 1 | Top 5 | MRR | Notes |', '|---|---|---|---|---|---|---|']
+    for name, r in ranked.items():
+        k = cast(Ranking, r.scores.ranking)
+        empty = f'{k.no_candidates} deck{"" if k.no_candidates == 1 else "s"} had no candidates'
+        notes = [note for note, applies in (('trained on', r.trained_on), ('tuned on', r.tuned_on), (empty, k.no_candidates > 0)) if applies]
+        lines.append(f'| {name} | {r.scores.decks} | {r.scores.maindecks} | {with_interval(k.top_1, k.intervals.top_1)} | {with_interval(k.top_5, k.intervals.top_5)} | '
+                     f'{with_interval(k.mrr, k.intervals.mrr)} | {", ".join(notes)} |')
+    return lines
 
 def curve_lines(state: Mapping[str, JSON]) -> list[str]:
     """The model's validation curve, if it keeps one in its state (as the Model protocol documents), with the chosen threshold marked."""
@@ -79,18 +94,31 @@ def comparison_lines(run_id: int, baseline_run_id: int, rows: Sequence[Row], sco
     """This run minus the baseline, row by row, on the decks both guessed: each resample draws the same maindecks for both."""
     lines = ['', f'## Compared with run {baseline_run_id}', '', f'Run {run_id} minus run {baseline_run_id}, on the decks both runs guessed, with paired intervals.', '',
              '| Row | Decks compared | Left out | hF | hP | hR | Exact match |', '|---|---|---|---|---|---|---|']
+    comparisons: dict[str, Comparison] = {}
     for row in rows:
         ours, theirs = scored_decks(row, scored, guesses, tree), scored_decks(row, scored, baseline, tree)
-        if not {d.deck_id for d in ours} & {d.deck_id for d in theirs}:
-            continue
-        c = compare(tree, theirs, ours)
+        if {d.deck_id for d in ours} & {d.deck_id for d in theirs}:
+            comparisons[row.name] = compare(tree, theirs, ours)
+    for name, c in comparisons.items():
         d, i = c.difference, c.intervals
-        lines.append(f'| {row.name} | {c.decks} | {c.left_out} | {with_interval(d.hf, i.hf)} | {with_interval(d.hp, i.hp)} | {with_interval(d.hr, i.hr)} | '
+        lines.append(f'| {name} | {c.decks} | {c.left_out} | {with_interval(d.hf, i.hf)} | {with_interval(d.hp, i.hp)} | {with_interval(d.hr, i.hr)} | '
                      f'{with_interval(d.exact_match_rate, i.exact_match_rate)} |')
+    return lines + candidate_comparison_lines(comparisons)
+
+def candidate_comparison_lines(comparisons: Mapping[str, Comparison]) -> list[str]:
+    """The candidates' differences, when both runs rank candidates."""
+    ranked = {name: c for name, c in comparisons.items() if c.intervals.top_1 is not None}
+    if not ranked:
+        return []
+    lines = ['', '### Candidates compared', '', '| Row | Decks compared | Top 1 | Top 5 | MRR |', '|---|---|---|---|---|']
+    for name, c in ranked.items():
+        d, i = c.difference, c.intervals
+        lines.append(f'| {name} | {c.decks} | {with_interval(d.top_1, cast(Interval, i.top_1))} | {with_interval(d.top_5, cast(Interval, i.top_5))} | '
+                     f'{with_interval(d.mrr, cast(Interval, i.mrr))} |')
     return lines
 
 def scored_decks(row: Row, scored: DeckSet, guesses: Mapping[int, Prediction], tree: ArchetypeTree) -> list[ScoredDeck]:
-    return in_tree(tree, [ScoredDeck(i, scored.decks[i].label_id, guesses[i].guess_id, scored.decks[i].maindeck_hash)  # type: ignore[arg-type]
+    return in_tree(tree, [ScoredDeck(i, scored.decks[i].label_id, guesses[i].guess_id, scored.decks[i].maindeck_hash, candidate_ids(guesses[i]))  # type: ignore[arg-type]
                           for i in sorted(row.deck_ids) if i in guesses])[0]
 
 def confusion_lines(split_name: str, decks: list[ScoredDeck], confusions: list[Confusion], archetypes: Mapping[int, ArchetypeSnapshot]) -> list[str]:

@@ -17,9 +17,9 @@ DECKS = {101: (Split.TRAIN, 0, MAINDECK_A), 102: (Split.TRAIN, 0, MAINDECK_B), 3
          403: (Split.TEST, 7, None), 404: (Split.TEST, 15, None)}
 
 
-def snapshot_deck(deck_id: int, split: Split, unseen: int, maindeck: str | None, status: LabelStatus = LabelStatus.VERIFIED) -> SnapshotDeck:
+def snapshot_deck(deck_id: int, split: Split, unseen: int, maindeck: str | None, status: LabelStatus = LabelStatus.VERIFIED, label: int = RED_DECK_WINS) -> SnapshotDeck:
     return SnapshotDeck(deck_id=deck_id, season_id=30, source='League', maindeck_hash=maindeck or f'{deck_id:040x}', reviewed=True, split=split, exclusion_reason=None,
-                        label_status=status, label_id=RED_DECK_WINS, unseen_maindeck_copies=unseen, labels=LabelFacts(None, None, None, None), site_archetype_id=RED_DECK_WINS)
+                        label_status=status, label_id=label, unseen_maindeck_copies=unseen, labels=LabelFacts(None, None, None, None), site_archetype_id=label)
 
 def snapshot(decks: dict[int, SnapshotDeck], scheme: SplitScheme = TYPICAL) -> Snapshot:
     return Snapshot(decks, {}, scheme)
@@ -42,6 +42,7 @@ def test_scoring_held_out_and_validation_decks_gives_their_rows() -> None:
         'validation, unseen cards': frozenset({202}),
         'validation, new maindeck': frozenset({202}),
         'validation, repeated maindeck': frozenset({201}),
+        'validation, new archetypes': frozenset({201, 202}),  # Red Deck Wins has only 2 training decks.
     }
 
 
@@ -56,6 +57,7 @@ def test_test_rows_split_by_unseen_copies_and_by_repeated_maindeck() -> None:
         'test, 13+ unseen copies': frozenset({404}),
         'test, new maindeck': frozenset({402, 403, 404}),
         'test, repeated maindeck': frozenset({401}),
+        'test, new archetypes': frozenset({401, 402, 403, 404}),
     }
 
 
@@ -95,7 +97,29 @@ def test_with_twins_allowed_held_out_decks_get_maindeck_rows() -> None:
     assert (found['held-out, new maindeck'], found['held-out, repeated maindeck']) == (frozenset({302}), frozenset({301}))
 
 
-# Scenario: rows are versioned.
+# Scenario: new and existing archetypes are separate rows (Scenarios.md, "Ranked candidates").
+
+PRISONER, MONO_RED_DEVOTION, AZORIUS_CONTROL = 222, 50, 49
+
+def test_new_and_existing_archetypes_are_separate_rows() -> None:
+    training = [(PRISONER, MAINDECK_A)] * 5 + [(MONO_RED_DEVOTION, None)] * 4 + [(RED_DECK_WINS, None)] * 2  # Prisoner's five decks share one maindeck.
+    decks = {i: snapshot_deck(i, Split.TRAIN, 0, maindeck, label=label) for i, (label, maindeck) in enumerate(training, start=1)}
+    for first, split in ((601, Split.VALIDATION), (701, Split.TEST)):
+        for i, label in enumerate((PRISONER, MONO_RED_DEVOTION, RED_DECK_WINS, AZORIUS_CONTROL), start=first):
+            decks[i] = snapshot_deck(i, split, 3, None, label=label)
+    found = rows({Split.VALIDATION, Split.TEST}, snapshot(decks))
+    assert {name: ids for name, ids in found.items() if 'archetypes' in name} == {
+        'validation, existing archetypes': frozenset({601}),
+        'validation, new archetypes': frozenset({602, 603, 604}),
+        'test, existing archetypes': frozenset({701}),
+        'test, new archetypes': frozenset({702, 703, 704}),
+    }
+
+def test_held_out_decks_get_no_archetype_rows() -> None:
+    assert not [name for name in rows({Split.HELD_OUT}) if 'archetypes' in name]
+
+
+# Scenario: rows are versioned. 3: new and existing archetypes (#14).
 
 def test_rows_are_versioned() -> None:
-    assert ROWS_VERSION == 2
+    assert ROWS_VERSION == 3

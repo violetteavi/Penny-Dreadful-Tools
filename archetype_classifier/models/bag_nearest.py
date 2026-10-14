@@ -14,7 +14,9 @@ from scipy import sparse
 from archetype_classifier.data_loading.dataset import CardCount
 from archetype_classifier.evaluation.model import JSON, FitContext, LabelledDeck, PredictDeck, Prediction, TrainingDeck, register
 from archetype_classifier.models.card_weights import COPIES, build_card_weights
-from archetype_classifier.models.embedding_nearest import CHUNK, build_candidates, build_pick, build_training_rows
+from archetype_classifier.models.embedding_nearest import build_candidates, build_pick, build_training_rows
+
+CHUNK = 500  # Decks compared at once: an 84,000 x 500 float64 block is 340 MB. A sparse product would be nearly dense, and larger.
 
 
 @dataclass(frozen=True)
@@ -74,7 +76,7 @@ class BagNearestDeck:
         self.training_decks = len(training)
         self.rows = build_training_rows(training)
         self.vocabulary = build_vocabulary(self.rows.maindecks)
-        self.row_vectors = self.bag_vectors(self.rows.maindecks).matrix.T.tocsr()
+        self.row_vectors = self.bag_vectors(self.rows.maindecks).matrix
 
     def bag_vectors(self, maindecks: Sequence[tuple[CardCount, ...]]) -> BagVectors:
         return build_bag_vectors(maindecks, self.vocabulary, self.card_weights.weight, COPIES[self.copies])
@@ -84,7 +86,7 @@ class BagNearestDeck:
         for start in range(0, len(decks), CHUNK):
             chunk = decks[start:start + CHUNK]
             vectors = self.bag_vectors([d.maindeck for d in chunk])
-            similarities = (vectors.matrix @ self.row_vectors).toarray()
+            similarities = (self.row_vectors @ vectors.matrix.T.toarray()).T  # Sparse rows times a dense block: never a near-dense sparse result.
             for i, deck in enumerate(chunk):
                 counts: dict[str, JSON] = {'known_copies': int(vectors.known[i]), 'unseen_copies': int(vectors.unseen[i])}
                 if not vectors.known[i]:

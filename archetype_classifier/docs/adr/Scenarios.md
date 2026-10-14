@@ -1544,7 +1544,7 @@ The small embedding plus Divination. Divination is legal in seasons 30 and 31 bu
 - **Expect:**
   - Both models' state holds a summary of their card weights (the number of cards, the never-legal weight, the five basic lands' weights, the cards played outside their legal seasons) and `card_weights_hash`, a SHA-1 of the sorted weights to 6 decimals. It never holds the full table.
   - Rebuilt from state, the same training decks and the same legality, each model guesses identically.
-  - If the legality given at load differs (Negate dropped from season 30, say), loading refuses, naming both hashes. The nearest deck still refuses a changed embedding too.
+  - If the legality given at load changes the weights (Divination dropped from season 31, say), loading refuses, naming both hashes. Dropping Negate from season 30 wouldn't: a season 30 deck plays it, so that season still counts as legal. The nearest deck still refuses a changed embedding too.
 - **Why it matters:** legality comes from the cards database, which changes when the list files do. A stored run must not be silently replayed on different weights.
 - **Check:** save and load each model; change the legality and load again.
 

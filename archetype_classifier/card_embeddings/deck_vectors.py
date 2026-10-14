@@ -1,10 +1,11 @@
-"""Deck vectors: a deck's maindeck as the average of its cards' combined embedding rows, weighted by copies, at unit length (#44).
+"""Deck vectors: a deck's maindeck as the sum of its cards' combined embedding rows, each times copies(n) x the card's weight, at unit length (#44, #50).
+With no weights and linear copies, the defaults, that's the copy-weighted average of #44.
 
 Basic lands count like any other card. Only maindecks reach this module, so a sideboard never changes a deck's vector. A card the embedding lacks is
 skipped and counted, never fatal.
 """
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -22,9 +23,12 @@ class DeckVectors:
     skipped_cards: Counter[str]  # Copies of each missing card, over all the decks.
 
 
-def build_deck_vectors(maindecks: Sequence[tuple[CardCount, ...]], embedding: CombinedEmbedding) -> DeckVectors:
+def build_deck_vectors(maindecks: Sequence[tuple[CardCount, ...]], embedding: CombinedEmbedding, weight: Callable[[str], float] | None = None,
+                       copies: Callable[[int], float] = float) -> DeckVectors:
+    """Each line counts copies(n) x weight(card); weight None counts every card as 1. The embedded and skipped counts stay in copies."""
     index = {name: i for i, name in enumerate(embedding.names)}
-    rows, cols, copies = [], [], []
+    rows, cols, values = [], [], []
+    embedded = np.zeros(len(maindecks), dtype=np.int64)
     skipped = np.zeros(len(maindecks), dtype=np.int64)
     skipped_cards: Counter[str] = Counter()
     for row, maindeck in enumerate(maindecks):
@@ -36,9 +40,10 @@ def build_deck_vectors(maindecks: Sequence[tuple[CardCount, ...]], embedding: Co
             else:
                 rows.append(row)
                 cols.append(col)
-                copies.append(line.n)
-    counts = sparse.csr_matrix((copies, (rows, cols)), shape=(len(maindecks), len(index)), dtype=np.float64)
-    summed = np.asarray(counts @ embedding.vectors.astype(np.float64))
+                values.append(copies(line.n) * (1.0 if weight is None else weight(line.card)))
+                embedded[row] += line.n
+    lines = sparse.csr_matrix((values, (rows, cols)), shape=(len(maindecks), len(index)), dtype=np.float64)
+    summed = np.asarray(lines @ embedding.vectors.astype(np.float64))
     norms = np.linalg.norm(summed, axis=1, keepdims=True)
     matrix = np.divide(summed, norms, out=np.zeros_like(summed), where=norms > 0)
-    return DeckVectors(matrix, np.asarray(counts.sum(axis=1), dtype=np.int64).ravel(), skipped, skipped_cards)
+    return DeckVectors(matrix, embedded, skipped, skipped_cards)

@@ -1,4 +1,5 @@
 """Deck vectors on a small embedding of the scenario cards (Scenarios.md, "The nearest deck on the combined embedding")."""
+import math
 from collections import Counter
 
 import numpy as np
@@ -77,3 +78,54 @@ def test_a_deck_of_only_missing_cards_has_a_zero_vector() -> None:
 def test_no_decks_give_an_empty_matrix() -> None:
     vectors = build_deck_vectors([], EMBEDDING)
     assert vectors.matrix.shape == (0, EMBEDDING.vectors.shape[1])
+
+
+# Scenario: card weights and √copies shape the deck vector (b) (#50). Weights from the scenario's training decks.
+
+WEIGHTS = {'Shock': 1.8109, 'Mountain': 1.5878, 'Island': 1.5878, 'Essence Scatter': 1.8109, 'Divination': 3.1972}
+
+def test_card_weights_and_square_root_copies_weigh_each_line() -> None:
+    vectors = build_deck_vectors([cards(Shock=4, Mountain=56)], EMBEDDING, WEIGHTS.__getitem__, math.sqrt)
+    assert np.allclose(vectors.matrix[0], unit(2 * 1.8109 * ROW['Shock'] + math.sqrt(56) * 1.5878 * ROW['Mountain']))
+    assert (vectors.embedded.tolist(), vectors.skipped.tolist()) == ([60], [0])  # Counts stay in copies.
+
+def test_card_weights_with_linear_copies() -> None:
+    vectors = build_deck_vectors([cards(Shock=4, Mountain=56)], EMBEDDING, WEIGHTS.__getitem__)
+    assert np.allclose(vectors.matrix[0], unit(4 * 1.8109 * ROW['Shock'] + 56 * 1.5878 * ROW['Mountain']))
+
+def test_square_root_copies_shift_the_balance_but_not_under_doubling() -> None:
+    vectors = build_deck_vectors([cards(Shock=4, Mountain=56), cards(Shock=8, Mountain=112)], EMBEDDING, copies=math.sqrt)
+    assert np.allclose(vectors.matrix[0], vectors.matrix[1])  # Every line times the square root of 2.
+    linear = build_deck_vectors([cards(Shock=4, Mountain=56)], EMBEDDING)
+    shock = unit(ROW['Shock'])
+    assert vectors.matrix[0] @ shock > linear.matrix[0] @ shock  # The four-of counts for more against 56 basics.
+
+def test_no_weights_and_linear_copies_give_todays_vectors_exactly() -> None:
+    decks = [cards(Shock=4, Mountain=56), cards(Essence_Scatter=4, Negate=4, Island=52), cards(Shock=4, Mountain=52, Smaug_s_Fury=4)]
+    today = build_deck_vectors(decks, EMBEDDING)
+    explicit = build_deck_vectors(decks, EMBEDDING, lambda card: 1.0, float)
+    assert np.array_equal(today.matrix, explicit.matrix)
+    assert (today.embedded.tolist(), today.skipped.tolist(), today.skipped_cards) == (explicit.embedded.tolist(), explicit.skipped.tolist(), explicit.skipped_cards)
+
+def test_a_missing_card_is_still_skipped_and_counted_with_weights() -> None:
+    vectors = build_deck_vectors([cards(Shock=4, Mountain=52, Smaug_s_Fury=4)], EMBEDDING, WEIGHTS.__getitem__, math.sqrt)
+    assert np.allclose(vectors.matrix[0], unit(2 * 1.8109 * ROW['Shock'] + math.sqrt(52) * 1.5878 * ROW['Mountain']))
+    assert (vectors.embedded.tolist(), vectors.skipped.tolist()) == ([56], [4])
+
+
+# Scenario: in the embedding average, an unseen card counts through its rules text (b). The small embedding plus Divination, which no training deck plays.
+
+def divination_embedding() -> CombinedEmbedding:
+    pool = [*SCENARIO_POOL, Card('Divination', 'normal', (Face('Divination', '{2}{U}', 3, 'Sorcery', 'Draw two cards.'),), SEASONS)]
+    return build_combined_embedding(pool, CombinedEmbeddingSettings('fake', MASKED, SEASONS, SEASONS), 'average', CombinedEmbeddingWeights(3, 1, 1, 1), FakeEncoder())
+
+def test_an_unseen_card_the_embedding_knows_moves_the_deck_unevenly() -> None:
+    embedding = divination_embedding()
+    row = {name: embedding.vectors[i].astype(np.float64) for i, name in enumerate(embedding.names)}
+    blue, red = cards(Essence_Scatter=4, Island=56), cards(Shock=4, Mountain=56)
+    with_it, without_it = cards(Divination=4, Essence_Scatter=4, Island=52), cards(Essence_Scatter=4, Island=52)
+    vectors = build_deck_vectors([with_it, without_it, blue, red], embedding, WEIGHTS.__getitem__, math.sqrt)
+    assert np.allclose(vectors.matrix[0], unit(2 * 3.1972 * row['Divination'] + 2 * 1.8109 * row['Essence Scatter'] + math.sqrt(52) * 1.5878 * row['Island']))
+    assert (vectors.embedded.tolist()[0], vectors.skipped.tolist()[0]) == (60, 0)  # An unseen card isn't a skipped card.
+    blue_ratio, red_ratio = ((vectors.matrix[0] @ vectors.matrix[r]) / (vectors.matrix[1] @ vectors.matrix[r]) for r in (2, 3))
+    assert not np.isclose(blue_ratio, red_ratio)  # Unlike in the bag, not one factor for every row.

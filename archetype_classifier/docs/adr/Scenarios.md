@@ -1488,7 +1488,7 @@ All scenarios here were proposed 2026-10-14.
 - **Expect:**
   - With `weights=idf` and `copies=sqrt`, "4 Shock, 56 Mountain" is the unit-length 2 × 1.8109 × Shock + √56 × 1.5878 × Mountain.
   - With `copies=linear`, it's the unit-length 4 × 1.8109 × Shock + 56 × 1.5878 × Mountain.
-  - Doubling every count no longer gives the same vector under √copies: that's intended.
+  - Doubling every count still gives the same vector under √copies: every line is multiplied by √2. Only the balance between lines changes. Under √copies a four-of counts for more against 56 basics than under linear copies.
   - The sideboard still never changes the vector, and a card the embedding lacks is still skipped and counted.
 - **Why it matters:** the weighted average is the fix the #44 error analysis points to: a few archetype-defining cards diluted among staples and basics.
 - **Check:** unit-test on the small embedding.

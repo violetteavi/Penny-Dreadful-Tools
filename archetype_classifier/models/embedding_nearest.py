@@ -8,7 +8,10 @@ the deck's cards is in the embedding.
 
 Its candidates (#14) are every label among the training rows, each ranked by its best row's similarity, which is also the candidate's score. Labels
 within TIE_TOLERANCE of the first label of their group are tied, and ordered as the guess breaks ties: more decks among those rows, then the newer
-deck. So candidate 1 is always the guess. Rows aren't summed: that's #45 and #50.
+deck. So candidate 1 is always the guess. Rows aren't summed: that's #45 and #18.
+
+Version 3 (#50) can weigh each card by its card weight (parameter weights: none or idf) and count copies linearly or by square root (copies: linear or
+sqrt). With neither parameter it's version 2's model: no weights and linear copies.
 """
 from collections import Counter
 from collections.abc import Sequence
@@ -18,13 +21,15 @@ from typing import ClassVar, cast
 import numpy as np
 
 from archetype_classifier.card_embeddings.combined_embedding import load_combined_embedding, load_embedding_hash
-from archetype_classifier.card_embeddings.deck_vectors import build_deck_vectors
+from archetype_classifier.card_embeddings.deck_vectors import DeckVectors, build_deck_vectors
 from archetype_classifier.card_embeddings.text_embedding import EMBEDDINGS_DIR
 from archetype_classifier.data_loading.dataset import CardCount
 from archetype_classifier.evaluation.model import JSON, Candidate, FitContext, LabelledDeck, PredictDeck, Prediction, TrainingDeck, register
+from archetype_classifier.models.card_weights import COPIES, CardWeights, build_card_weights
 
 CHUNK = 1000  # Decks compared with every training row at once: a 1,000 x 84,000 float64 block is 670 MB.
 SKIPPED_CARDS_KEPT = 20  # The most-skipped cards the state names.
+WEIGHTS = ('none', 'idf')
 TIE_TOLERANCE = 1e-9  # Rows this close to the best similarity are tied. Identical maindecks give exactly equal vectors, so they always tie.
 
 
@@ -108,13 +113,22 @@ def build_candidates(similarities: np.ndarray, rows: TrainingRows) -> tuple[Cand
 @register
 class EmbeddingNearestDeck:
     name: ClassVar[str] = 'embedding nearest deck'
-    version: ClassVar[int] = 2  # 2: ranked candidates (#14).
+    version: ClassVar[int] = 3  # 2: ranked candidates (#14). 3: card weights and copies (#50).
 
     def __init__(self, params: dict[str, JSON]) -> None:
         self.params = params
+        self.weights = str(params.get('weights', 'none'))
+        self.copies = str(params.get('copies', 'linear'))
+        if self.weights not in WEIGHTS:
+            raise ValueError(f'weights must be one of {WEIGHTS}, not {self.weights!r}')
+        if self.copies not in COPIES:
+            raise ValueError(f'copies must be one of {tuple(COPIES)}, not {self.copies!r}')
+        self.card_weights: CardWeights | None = None
 
     def fit(self, training: Sequence[TrainingDeck], validation: Sequence[LabelledDeck], context: FitContext) -> None:
         """Nothing is tuned, so the validation decks aren't used."""
+        if self.weights == 'idf':
+            self.card_weights = build_card_weights(training, context.legal_cards)
         self.load_embedding(context)
         self.build_index(training)
         skipped = [(line.card, line.n * int(n)) for maindeck, n in zip(self.rows.maindecks, self.rows.deck_counts) for line in maindeck if line.card not in self.known]
@@ -134,14 +148,17 @@ class EmbeddingNearestDeck:
 
     def build_index(self, training: Sequence[TrainingDeck]) -> None:
         self.rows = build_training_rows(training)
-        vectors = build_deck_vectors(self.rows.maindecks, self.embedding)
+        vectors = self.deck_vectors(self.rows.maindecks)
         self.row_vectors, self.row_skipped = vectors.matrix, vectors.skipped
+
+    def deck_vectors(self, maindecks: Sequence[tuple[CardCount, ...]]) -> DeckVectors:
+        return build_deck_vectors(maindecks, self.embedding, None if self.card_weights is None else self.card_weights.weight, COPIES[self.copies])
 
     def predict(self, decks: Sequence[PredictDeck]) -> list[Prediction]:
         predictions = []
         for start in range(0, len(decks), CHUNK):
             chunk = decks[start:start + CHUNK]
-            vectors = build_deck_vectors([d.maindeck for d in chunk], self.embedding)
+            vectors = self.deck_vectors([d.maindeck for d in chunk])
             similarities = vectors.matrix @ self.row_vectors.T
             for i, deck in enumerate(chunk):
                 counts: dict[str, JSON] = {'embedded_copies': int(vectors.embedded[i]), 'skipped_copies': int(vectors.skipped[i])}
@@ -157,16 +174,25 @@ class EmbeddingNearestDeck:
 
     def state(self) -> dict[str, JSON]:
         """Which embedding, exactly, and what fitting found about its inputs; never the vectors, which the embedding and the training decks rebuild."""
-        return {'embedding': self.params['embedding'], 'embedding_hash': self.embedding_hash, 'training_decks': self.training_decks, 'training_rows': len(self.rows.labels),
-                'skipped_copies': self.skipped_copies, 'decks_with_skipped_cards': self.decks_with_skipped_cards, 'skipped_cards': dict(self.skipped_cards)}
+        state: dict[str, JSON] = {'embedding': self.params['embedding'], 'embedding_hash': self.embedding_hash, 'training_decks': self.training_decks,
+                                  'training_rows': len(self.rows.labels), 'skipped_copies': self.skipped_copies, 'decks_with_skipped_cards': self.decks_with_skipped_cards,
+                                  'skipped_cards': dict(self.skipped_cards)}
+        if self.card_weights is not None:
+            state['card_weights'] = self.card_weights.summary()
+        return state
 
     @classmethod
     def from_state(cls, params: dict[str, JSON], state: dict[str, JSON], training: Sequence[TrainingDeck], context: FitContext) -> 'EmbeddingNearestDeck':
-        """Reloads the embedding, refusing one that changed since fitting, and rebuilds the rows from the training decks."""
+        """Reloads the embedding and rebuilds the card weights, refusing either if it changed since fitting, and rebuilds the rows from the training decks."""
         model = cls(params)
         model.load_embedding(context)
         if model.embedding_hash != state['embedding_hash']:
             raise ValueError(f'The embedding {params["embedding"]} has changed since the model was fitted: it was {state["embedding_hash"]}, it is now {model.embedding_hash}')
+        if model.weights == 'idf':
+            model.card_weights = build_card_weights(training, context.legal_cards)
+            fitted_hash = cast(dict[str, JSON], state['card_weights'])['card_weights_hash']
+            if model.card_weights.hash() != fitted_hash:
+                raise ValueError(f'The card weights have changed since the model was fitted: they were {fitted_hash}, they are now {model.card_weights.hash()}')
         model.build_index(training)
         model.training_decks = cast(int, state['training_decks'])
         model.skipped_copies = cast(int, state['skipped_copies'])

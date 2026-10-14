@@ -1,17 +1,22 @@
 """The nearest deck on the combined embedding, on rule-level decks (Scenarios.md, "The nearest deck on the combined embedding"). Real data is checked in
 embedding_nearest_local_test.py."""
 import dataclasses
+import math
 from pathlib import Path
 
 import numpy as np
 import pytest
 
 from archetype_classifier.card_embeddings.combined_embedding import load_embedding_hash, save_combined_embedding
+from archetype_classifier.card_embeddings.deck_vectors import build_deck_vectors
 from archetype_classifier.card_embeddings.deck_vectors_test import EMBEDDING, cards
 from archetype_classifier.data_loading.dataset import ArchetypeSnapshot, CardCount
 from archetype_classifier.data_loading.labels import LabelStatus
 from archetype_classifier.evaluation.metrics import ArchetypeTree
 from archetype_classifier.evaluation.model import Candidate, FitContext, PredictDeck, Prediction, TrainingDeck, model_class
+from archetype_classifier.models.card_weights import build_card_weights
+from archetype_classifier.models.card_weights_test import LEGAL
+from archetype_classifier.models.card_weights_test import TRAINING as WEIGHT_TRAINING
 from archetype_classifier.models.embedding_nearest import EmbeddingNearestDeck, Pick, build_candidates, build_pick, build_training_rows
 
 AGGRO, CONTROL, RED_DECK_WINS, MONO_RED_SWARM, AZORIUS_CONTROL = 1, 2, 16, 17, 49
@@ -172,5 +177,48 @@ def test_candidate_1_is_always_the_guess_on_random_similarities() -> None:
         scores = [c.score for c in candidates]
         assert all(later is not None and earlier is not None and later <= earlier + 1e-9 for earlier, later in zip(scores, scores[1:]))
 
-def test_version_2_ranks_candidates() -> None:
-    assert EmbeddingNearestDeck.version == 2
+def test_version_3_weighs_cards() -> None:
+    assert EmbeddingNearestDeck.version == 3
+
+
+# Card weights and copies (#50; Scenarios.md, "Deck representations"), on the card-weight scenario's training decks.
+
+def weighted(path: Path, legal: dict[int, frozenset[str]] = LEGAL, **params: str) -> EmbeddingNearestDeck:
+    model = EmbeddingNearestDeck({'embedding': path.stem, **params})
+    model.fit(WEIGHT_TRAINING, [], FitContext(TREE, legal, seed=0, embeddings_dir=path.parent))
+    return model
+
+def test_unknown_weights_or_copies_are_refused() -> None:
+    with pytest.raises(ValueError, match="weights must be one of"):
+        EmbeddingNearestDeck({'embedding': 'e', 'weights': 'tf-idf'})
+    with pytest.raises(ValueError, match="copies must be one of"):
+        EmbeddingNearestDeck({'embedding': 'e', 'copies': 'log'})
+
+def test_no_weights_and_linear_copies_are_version_2s_model(embedding_path: Path) -> None:
+    default, explicit = fitted(embedding_path), weighted(embedding_path, weights='none', copies='linear')
+    explicit.fit(TRAINING, [], context(embedding_path))
+    decks = [query(201, MAINDECK_A), query(202, cards(Shock=4, Burst_Lightning=2, Mountain=54)), query(203, cards(Essence_Scatter=2, Negate=4, Island=54))]
+    assert explicit.predict(decks) == default.predict(decks)
+    assert 'card_weights' not in default.state()
+
+def test_rows_and_decks_are_read_with_card_weights_and_square_root_copies(embedding_path: Path) -> None:
+    model = weighted(embedding_path, weights='idf', copies='sqrt')
+    weights = build_card_weights(WEIGHT_TRAINING, LEGAL)
+    assert np.allclose(model.row_vectors, build_deck_vectors(model.rows.maindecks, EMBEDDING, weights.weight, math.sqrt).matrix)
+    [prediction] = model.predict([query(201, cards(Shock=4, Mountain=56))])
+    assert prediction.evidence['similarity'] == pytest.approx(1.0)  # Read the same way as its identical training row.
+    assert model.state()['card_weights'] == weights.summary()
+
+def test_a_weighted_model_loads_back_and_guesses_the_same(embedding_path: Path) -> None:
+    model = weighted(embedding_path, weights='idf', copies='sqrt')
+    decks = [query(201, cards(Shock=4, Burst_Lightning=4, Mountain=52)), query(202, cards(Essence_Scatter=4, Negate=4, Island=52))]
+    loaded = EmbeddingNearestDeck.from_state(model.params, model.state(), WEIGHT_TRAINING, FitContext(TREE, LEGAL, seed=0, embeddings_dir=embedding_path.parent))
+    assert loaded.predict(decks) == model.predict(decks)
+    assert loaded.state() == model.state()
+
+def test_changed_card_weights_are_refused_naming_both_hashes(embedding_path: Path) -> None:
+    model = weighted(embedding_path, weights='idf', copies='sqrt')
+    changed = {30: LEGAL[30], 31: LEGAL[31] - {'Divination'}}
+    before, after = build_card_weights(WEIGHT_TRAINING, LEGAL).hash(), build_card_weights(WEIGHT_TRAINING, changed).hash()
+    with pytest.raises(ValueError, match=f'card weights.*{before}.*{after}'):
+        EmbeddingNearestDeck.from_state(model.params, model.state(), WEIGHT_TRAINING, FitContext(TREE, changed, seed=0, embeddings_dir=embedding_path.parent))

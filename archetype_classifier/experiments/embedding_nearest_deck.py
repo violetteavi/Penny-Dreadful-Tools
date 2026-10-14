@@ -2,6 +2,8 @@
 
 It's fitted on scheme 1's TRAIN decks ("default": train {VERIFIED}) with no validation decks, since nothing is tuned, so no row is flagged as tuned on.
 It's saved, run on {HELD_OUT, VALIDATION} and reported into docs/experiments/. The test seasons aren't used. It composes existing functions only.
+The report is rendered by evaluation.report in place of this process, so the fitted model's memory is freed first (a report holds every
+candidate of two runs, about 4.4 GB for 20,173 decks).
 
     uv run --group archetypes python -m archetype_classifier.experiments.embedding_nearest_deck \\
         --embedding potion__masked__average__w0.5-0.1667-0.1667-0.1667__fit1-38__emb1-39 --label text_and_numbers \\
@@ -13,6 +15,8 @@ It's saved, run on {HELD_OUT, VALIDATION} and reported into docs/experiments/. T
     ... --bag --copies sqrt --label idf_sqrt --baseline-run 8 ...
 """
 import argparse
+import os
+import sys
 import time
 from pathlib import Path
 
@@ -21,7 +25,6 @@ from archetype_classifier.data_loading.slices import build_deck_set, deck_ids_ha
 from archetype_classifier.data_loading.splits import Split
 from archetype_classifier.evaluation.metrics import ArchetypeTree
 from archetype_classifier.evaluation.model import JSON, FitContext, Model, build_predict_decks, build_training_decks
-from archetype_classifier.evaluation.report import render_report
 from archetype_classifier.evaluation.store import ModelRecord, save_model, save_run
 from archetype_classifier.models.bag_nearest import BagNearestDeck
 from archetype_classifier.models.embedding_nearest import EmbeddingNearestDeck
@@ -71,8 +74,10 @@ def main() -> None:
 
     OUT.mkdir(parents=True, exist_ok=True)
     path = OUT / f'{args.date}_{"bag" if args.bag else "embedding"}_nearest_{args.label}.md'
-    path.write_text(render_report(edb, run_id, args.min_decks, baseline_run_id=args.baseline_run, prs=args.pr))
-    print(f'Wrote {path}')
+    report = [sys.executable, '-m', 'archetype_classifier.evaluation.report', str(run_id), '--baseline', str(args.baseline_run),
+              '--min-decks', str(args.min_decks), *(f'--pr={pr}' for pr in args.pr), '--out', str(path)]
+    sys.stdout.flush()
+    os.execv(sys.executable, report)
 
 if __name__ == '__main__':
     main()

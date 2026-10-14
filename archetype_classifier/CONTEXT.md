@@ -208,6 +208,10 @@ A deck's maindeck as one vector: the average of its cards' **Combined embedding*
 One distinct maindeck with one label, standing for every **Train set** deck that has both, with how many decks that is and the newest of them. Repeats of a list count once, so a popular list doesn't outweigh a rare one.
 _Avoid_: Training deck (one row can stand for many decks)
 
+**Reference deck**:
+A deck every model is checked on, whatever its method, listed once for all models. A **guard** is one every current model gets right, and a model must keep it right. A **hard case** is one the current models get wrong, recorded but never required. An **extreme** is too far outside the data for "right" to be clear, so it's only recorded.
+_Avoid_: Test deck (the test seasons are something else), benchmark
+
 **Top-k match**:
 A deck whose label is among its first k **Candidates**, exactly: a parent or child of the label doesn't count. Top 1 and Top 5 are the shares of decks with a top-1 and a top-5 match. A deck with fewer than k candidates is judged on the ones it has, and a deck with none misses.
 

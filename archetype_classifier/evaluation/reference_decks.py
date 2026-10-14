@@ -11,13 +11,18 @@ were frozen from run 8 on 2026-10-14, so later models don't move the groups.
 The extreme, HAND_MADE_ID, isn't a real submission: its maindeck is written out here and it's built in memory, never loaded or stored. Its id is
 negative so it can never collide with a real deck.
 """
+import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 
 from archetype_classifier.data_loading.dataset import CardCount
-from archetype_classifier.evaluation.model import PredictDeck, sorted_lines
+from archetype_classifier.evaluation.model import PredictDeck, Prediction, sorted_lines
+
+logger = logging.getLogger(__name__)
 
 HAND_MADE_ID = -1
+TOP_FIVE = 5
 
 
 class Kind(Enum):
@@ -33,6 +38,15 @@ class ReferenceDeck:
     top: int  # Passes if the label is within this many candidates (or is the guess, for a model without candidates); 0 for an extreme.
     why: str
     maindeck: tuple[CardCount, ...] | None = None  # Only for a hand-made deck; a real deck's cards are loaded.
+
+@dataclass(frozen=True)
+class ReferenceResult:
+    deck_id: int
+    rank: int | None  # The label's position among the candidates (1 for a correct guess, for a model without candidates); None if it isn't there.
+    passed: bool | None  # None for an extreme, or for a label the snapshot lacks.
+    guess_id: int | None
+    top_five: tuple[int, ...]  # The first five candidates; empty for a model without candidates.
+    missing_label: bool
 
 
 def lines(*counts: tuple[int, str]) -> tuple[CardCount, ...]:
@@ -76,3 +90,19 @@ GROUPS: dict[int, tuple[int, ...]] = {
 
 def build_hand_made_deck() -> PredictDeck:
     return PredictDeck(HAND_MADE_ID, 'League', ALL_NEW_SIMIC, ())
+
+def build_reference_result(deck: ReferenceDeck, prediction: Prediction, archetype_ids: Mapping[str, int]) -> ReferenceResult:
+    """How one model did on one deck: the reference deck itself, or another deck of its group, judged by the reference deck's label and mark.
+    A label the snapshot lacks is warned about and recorded, never fatal."""
+    top_five = tuple(c.archetype_id for c in prediction.candidates[:TOP_FIVE]) if prediction.candidates is not None else ()
+    if deck.label is None:
+        return ReferenceResult(prediction.deck_id, None, None, prediction.guess_id, top_five, False)
+    if deck.label not in archetype_ids:
+        logger.warning('No archetype named %r for reference deck %d', deck.label, deck.deck_id)
+        return ReferenceResult(prediction.deck_id, None, None, prediction.guess_id, top_five, True)
+    label_id = archetype_ids[deck.label]
+    if prediction.candidates is None:
+        rank = 1 if prediction.guess_id == label_id else None
+    else:
+        rank = next((k for k, c in enumerate(prediction.candidates, start=1) if c.archetype_id == label_id), None)
+    return ReferenceResult(prediction.deck_id, rank, rank is not None and rank <= deck.top, prediction.guess_id, top_five, False)

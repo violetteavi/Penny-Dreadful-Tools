@@ -1,8 +1,11 @@
 """Reference decks for every model, rule-level (Scenarios.md, "Reference decks for every model"). Real data is checked in reference_decks_local_test.py."""
+import logging
 from collections import Counter
 
-from archetype_classifier.evaluation.model import PredictDeck
-from archetype_classifier.evaluation.reference_decks import GROUPS, HAND_MADE_ID, REFERENCE_DECKS, Kind, build_hand_made_deck
+import pytest
+
+from archetype_classifier.evaluation.model import Candidate, PredictDeck, Prediction
+from archetype_classifier.evaluation.reference_decks import GROUPS, HAND_MADE_ID, REFERENCE_DECKS, Kind, ReferenceDeck, ReferenceResult, build_hand_made_deck, build_reference_result
 
 # The list matches the scenarios.
 
@@ -43,3 +46,50 @@ def test_the_hand_made_deck_is_a_legal_60_card_list_with_24_lands() -> None:
 def test_the_hand_made_deck_is_the_extremes_maindeck() -> None:
     [extreme] = [d for d in REFERENCE_DECKS if d.kind == Kind.EXTREME]
     assert build_hand_made_deck() == PredictDeck(HAND_MADE_ID, 'League', extreme.maindeck or (), ())
+
+
+# Scoring one deck: the label's rank among the candidates, or the guess for a model without them.
+
+RED_DECK_WINS, MONO_RED_SWARM, AZORIUS_CONTROL, IZZET_MADCAP = 16, 164, 49, 642
+IDS = {'Red Deck Wins': RED_DECK_WINS, 'Mono Red Swarm': MONO_RED_SWARM, 'Azorius Control': AZORIUS_CONTROL, 'Izzet Madcap': IZZET_MADCAP}
+GUARD = ReferenceDeck(101, 'Red Deck Wins', Kind.GUARD, 1, 'a guard')
+NEW = ReferenceDeck(102, 'Izzet Madcap', Kind.HARD, 5, 'a new archetype')
+EXTREME = ReferenceDeck(HAND_MADE_ID, None, Kind.EXTREME, 0, 'an extreme')
+
+def ranked(deck_id: int, *ids: int) -> Prediction:
+    return Prediction(deck_id, ids[0] if ids else None, {}, tuple(Candidate(i, 1.0 - k / 10) for k, i in enumerate(ids)))
+
+@pytest.mark.parametrize(('deck', 'prediction', 'rank', 'passed'), [
+    (GUARD, ranked(101, RED_DECK_WINS, MONO_RED_SWARM), 1, True),
+    (GUARD, ranked(101, MONO_RED_SWARM, RED_DECK_WINS), 2, False),  # Candidate 2 misses a top-1 mark.
+    (NEW, ranked(102, 1, 2, 3, IZZET_MADCAP, 5, 6), 4, True),  # Within the top 5.
+    (NEW, ranked(102, 1, 2, 3, 4, 5, IZZET_MADCAP), 6, False),  # Just outside it.
+    (GUARD, ranked(101, MONO_RED_SWARM, AZORIUS_CONTROL), None, False),  # Not in the list.
+    (GUARD, ranked(101), None, False),  # An empty list misses.
+])
+def test_the_rank_and_pass_come_from_the_candidates(deck: ReferenceDeck, prediction: Prediction, rank: int | None, passed: bool) -> None:
+    result = build_reference_result(deck, prediction, IDS)
+    assert (result.rank, result.passed, result.missing_label) == (rank, passed, False)
+
+@pytest.mark.parametrize(('guess', 'rank', 'passed'), [(RED_DECK_WINS, 1, True), (MONO_RED_SWARM, None, False), (None, None, False)])
+def test_a_model_without_candidates_is_judged_on_its_guess(guess: int | None, rank: int | None, passed: bool) -> None:
+    result = build_reference_result(GUARD, Prediction(101, guess, {}), IDS)
+    assert (result.rank, result.passed, result.top_five) == (rank, passed, ())
+
+def test_the_result_records_the_guess_and_the_first_five_candidates() -> None:
+    result = build_reference_result(GUARD, ranked(101, MONO_RED_SWARM, RED_DECK_WINS, 3, 4, 5, 6, 7), IDS)
+    assert result == ReferenceResult(101, 2, False, MONO_RED_SWARM, (MONO_RED_SWARM, RED_DECK_WINS, 3, 4, 5), False)
+
+def test_an_extreme_has_no_rank_and_no_pass_mark() -> None:
+    result = build_reference_result(EXTREME, ranked(HAND_MADE_ID, AZORIUS_CONTROL, MONO_RED_SWARM), IDS)
+    assert result == ReferenceResult(HAND_MADE_ID, None, None, AZORIUS_CONTROL, (AZORIUS_CONTROL, MONO_RED_SWARM), False)
+
+def test_a_group_deck_is_scored_against_its_hard_cases_label() -> None:
+    result = build_reference_result(GUARD, ranked(105, RED_DECK_WINS), IDS)  # Another deck of the group, with the reference deck's label and mark.
+    assert (result.deck_id, result.rank, result.passed) == (105, 1, True)
+
+def test_a_label_missing_from_the_snapshot_warns_and_is_recorded(caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.WARNING):
+        result = build_reference_result(ReferenceDeck(103, 'Boros Engineers', Kind.HARD, 1, 'not in this snapshot'), ranked(103, RED_DECK_WINS), IDS)
+    assert (result.rank, result.passed, result.missing_label) == (None, None, True)
+    assert "No archetype named 'Boros Engineers' for reference deck 103" in caplog.text

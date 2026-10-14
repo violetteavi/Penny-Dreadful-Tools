@@ -1586,6 +1586,31 @@ Deck 269508, the season 39 "Oops All Lands" deck of the nearest-deck scenarios, 
 - **Why it matters:** a better representation must not lose what exact matches already get right.
 - **Check:** fit each of the three models and predict the deck.
 
+### A deck of only newly legal cards (real data)
+
+A hand-made Simic deck for season 39. It isn't a real submission, so it gets made-up deck id 900001. Every card in it, lands included, is legal in season 39 and in no season before (checked against `card_legality`). No deck from seasons 1–38 plays any of them, and all of them are in run 8's embedding.
+
+| Count | Card | Count | Card |
+|---|---|---|---|
+| 4 | Botanical Sanctum | 4 | Genemorph Imago |
+| 4 | Breeding Pool | 4 | Mysterio's Phantasm |
+| 4 | Waterlogged Grove | 4 | Guy in the Chair |
+| 4 | Daily Bugle Building | 4 | Professional Wrestler |
+| 4 | Zanarkand, Ancient Metropolis | 2 | The Wandering Minstrel |
+| 4 | Jidoor, Aristocratic Capital | 2 | Spider-Byte, Web Warden |
+| 4 | Whoosh! | 2 | Tributary Instructor |
+| 4 | Kapow! | 2 | Oko, the Ringleader |
+| 3 | Amazing Acrobatics | 1 | School Daze |
+
+That's 24 lands and 36 spells, 60 cards: a green-blue deck of fliers, bounce and fight spells, with no basic lands.
+
+- **Expect:**
+  - Every card has the never-legal card weight, **9.3634**.
+  - **Bag of cards (run 10's model):** **no guess** (scored as the root) and an empty candidate list. The evidence records 0 known and 60 unseen copies. The bag can't place a deck of entirely new cards.
+  - **Embedding average (run 8's model and runs 11 and 12's models):** a guess, with 60 embedded and 0 skipped copies. With every weight equal, IDF changes nothing in the vector's direction. So runs 11 and 12 give it the same vector as √copies-only and linear copies would, and run 12's vector equals run 8's. Which archetypes come out on top isn't asserted. It's recorded in the write-up as a qualitative check (a green-blue archetype would be sensible).
+- **Why it matters:** this is the extreme case for new cards, and it's possible: a season's new cards include enough lands to build a deck with no older card. It shows the two representations' different limits most clearly. The bag sees nothing, while rules text still places the deck.
+- **Check:** in `representation_local_test.py`, predict the deck with each fitted model. Assert the weights, the bag's lack of a guess with its counts, and that (b) makes a guess with the same vector under runs 8 and 12. Print each model's top five candidates.
+
 ### Hard cases (real data, recorded, not asserted)
 
 Four season 39 decks that no current model gets right. Each stands for a group of decks that run 8 ranks the same way, with the same top guess. Each run records pass or fail; none gates the PR.

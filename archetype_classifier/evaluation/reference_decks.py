@@ -12,7 +12,7 @@ The extreme, HAND_MADE_ID, isn't a real submission: its maindeck is written out 
 negative so it can never collide with a real deck.
 """
 import logging
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
 
@@ -106,3 +106,34 @@ def build_reference_result(deck: ReferenceDeck, prediction: Prediction, archetyp
     else:
         rank = next((k for k, c in enumerate(prediction.candidates, start=1) if c.archetype_id == label_id), None)
     return ReferenceResult(prediction.deck_id, rank, rank is not None and rank <= deck.top, prediction.guess_id, top_five, False)
+
+def build_reference_table(results: Mapping[str, Mapping[int, ReferenceResult]], names: Mapping[int, str], decks: Sequence[ReferenceDeck] = REFERENCE_DECKS,
+                          groups: Mapping[int, tuple[int, ...]] = GROUPS) -> str:
+    """The Markdown a write-up carries: each model's result for each reference deck, then each group's pass rate. Results are by model, then deck id."""
+    models = list(results)
+    out = [f'| Deck | Kind | Label | Pass if | {" | ".join(models)} |', '|---|---|---|---|' + '---|' * len(models)]
+    for deck in decks:
+        mark = '—' if deck.kind == Kind.EXTREME else 'candidate 1' if deck.top == 1 else f'top {deck.top}'
+        cells = [result_cell(results[m].get(deck.deck_id), names) for m in models]
+        out.append(f'| {deck.deck_id} | {deck.kind.value} | {deck.label or "—"} | {mark} | {" | ".join(cells)} |')
+    by_id = {d.deck_id: d for d in decks}
+    if groups:
+        out += ['', f'| Group of | Label | Decks | {" | ".join(models)} |', '|---|---|---|' + '---|' * len(models)]
+        for deck_id, group in groups.items():
+            rates = []
+            for m in models:
+                scored = [results[m][i] for i in group if i in results[m]]
+                rates.append(f'{sum(1 for r in scored if r.passed)} / {len(scored)}')
+            out.append(f'| {deck_id} | {by_id[deck_id].label} | {len(group)} | {" | ".join(rates)} |')
+    return '\n'.join(out) + '\n'
+
+def result_cell(result: ReferenceResult | None, names: Mapping[int, str]) -> str:
+    if result is None:
+        return 'not predicted'
+    if result.missing_label:
+        return 'label missing'
+    if result.passed is None:  # An extreme: what the model did, with no mark.
+        guess = 'no guess' if result.guess_id is None else f'guess {names.get(result.guess_id, str(result.guess_id))}'
+        top = f'top 5: {", ".join(names.get(i, str(i)) for i in result.top_five)}' if result.top_five else 'no candidates'
+        return f'{guess}; {top}'
+    return f'{result.rank if result.rank is not None else "not ranked"}, {"pass" if result.passed else "fail"}'

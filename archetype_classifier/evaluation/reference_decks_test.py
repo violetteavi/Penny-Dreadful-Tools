@@ -5,7 +5,7 @@ from collections import Counter
 import pytest
 
 from archetype_classifier.evaluation.model import Candidate, PredictDeck, Prediction
-from archetype_classifier.evaluation.reference_decks import GROUPS, HAND_MADE_ID, REFERENCE_DECKS, Kind, ReferenceDeck, ReferenceResult, build_hand_made_deck, build_reference_result
+from archetype_classifier.evaluation.reference_decks import GROUPS, HAND_MADE_ID, REFERENCE_DECKS, Kind, ReferenceDeck, ReferenceResult, build_hand_made_deck, build_reference_result, build_reference_table
 
 # The list matches the scenarios.
 
@@ -93,3 +93,36 @@ def test_a_label_missing_from_the_snapshot_warns_and_is_recorded(caplog: pytest.
         result = build_reference_result(ReferenceDeck(103, 'Boros Engineers', Kind.HARD, 1, 'not in this snapshot'), ranked(103, RED_DECK_WINS), IDS)
     assert (result.rank, result.passed, result.missing_label) == (None, None, True)
     assert "No archetype named 'Boros Engineers' for reference deck 103" in caplog.text
+
+
+# The table a write-up carries: one rank column per model, then each group's pass rate.
+
+NAMES = {RED_DECK_WINS: 'Red Deck Wins', MONO_RED_SWARM: 'Mono Red Swarm', AZORIUS_CONTROL: 'Azorius Control', IZZET_MADCAP: 'Izzet Madcap'}
+MISSING = ReferenceDeck(103, 'Boros Engineers', Kind.HARD, 1, 'not in this snapshot')
+
+def test_the_table_has_a_column_per_model_and_a_row_per_deck() -> None:
+    decks = (GUARD, NEW, MISSING, EXTREME)
+    results = {
+        'nearest deck': {r.deck_id: r for r in [build_reference_result(GUARD, ranked(101, RED_DECK_WINS), IDS), build_reference_result(NEW, ranked(102, 1, IZZET_MADCAP), IDS),
+                                                build_reference_result(MISSING, ranked(103, RED_DECK_WINS), IDS),
+                                                build_reference_result(EXTREME, ranked(HAND_MADE_ID, AZORIUS_CONTROL, MONO_RED_SWARM), IDS),
+                                                build_reference_result(NEW, ranked(104, IZZET_MADCAP), IDS)]},
+        "site's guesser": {r.deck_id: r for r in [build_reference_result(GUARD, Prediction(101, MONO_RED_SWARM, {}), IDS),
+                                                  build_reference_result(EXTREME, Prediction(HAND_MADE_ID, None, {}, ()), IDS),
+                                                  build_reference_result(NEW, ranked(104, 1, 2, 3, 4, 5, IZZET_MADCAP), IDS)]},
+    }
+    assert build_reference_table(results, NAMES, decks, {102: (102, 104, 106)}) == """| Deck | Kind | Label | Pass if | nearest deck | site's guesser |
+|---|---|---|---|---|---|
+| 101 | guard | Red Deck Wins | candidate 1 | 1, pass | not ranked, fail |
+| 102 | hard case | Izzet Madcap | top 5 | 2, pass | not predicted |
+| 103 | hard case | Boros Engineers | candidate 1 | label missing | not predicted |
+| -1 | extreme | — | — | guess Azorius Control; top 5: Azorius Control, Mono Red Swarm | no guess; no candidates |
+
+| Group of | Label | Decks | nearest deck | site's guesser |
+|---|---|---|---|---|
+| 102 | Izzet Madcap | 3 | 2 / 2 | 0 / 1 |
+"""
+
+def test_a_guess_outside_the_names_is_shown_by_id() -> None:
+    results = {'m': {HAND_MADE_ID: build_reference_result(EXTREME, ranked(HAND_MADE_ID, 999), IDS)}}
+    assert '| guess 999; top 5: 999 |' in build_reference_table(results, NAMES, (EXTREME,), {})

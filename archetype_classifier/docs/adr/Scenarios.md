@@ -959,6 +959,70 @@ A run whose scope is {TEST}.
 - **Expect:** the metrics module has a version number, 1. Any change to how a metric is computed bumps it, and every report records it.
 - **Check:** the version is exposed beside the scoring functions.
 
+## Reference decks for every model
+
+Real season 39 decks that every model is checked on, whatever its method, plus one hand-made deck. They're kept in one place (`evaluation/reference_decks.py`) so each model's real-data test and write-up use the same decks. A model that makes candidates is judged on its candidate list. A model that doesn't is judged on its guess alone. `PD_LOCAL_DATA=1`.
+
+There are three kinds:
+- **Guards** are asserted. They're decks every current model gets right, and they must stay right.
+- **Hard cases** are recorded, not asserted. They're decks no current model gets right. Each run records pass or fail, and its write-up carries the table. None gates a PR: a model can be better overall and still fail some, and recording rather than asserting keeps that visible.
+- **Extremes** are recorded with no pass mark. They're decks too far outside the data for "right" to be clear.
+
+Proposed 2026-10-14, gathering decks first used in the similarity baseline (#6), the nearest deck (#44) and the ranked-candidates analysis (#14). Those sections keep their model-specific numbers: scores, similarities, weights and ties.
+
+### Decks every current model gets right (guards)
+
+- **Expect:** each deck's label is candidate 1 (or the guess, for a model without candidates). Today that holds under runs 7, 8 and 9.
+
+  | Deck | Label | What it guards |
+  |---|---|---|
+  | 269508 | Oops All Lands | an exact match: its maindeck is identical to training decks 264496 and 264554 (season 37) |
+  | 269539 | Mono Green Stompy | a small drift: 4 cards off its closest training deck, 269464 |
+  | 269503 | Selesnya Heroic | a larger drift: 12 cards off its closest training deck, 269180 |
+  | 269833 | Azorius Legends Aggro | a few new cards: 5 unseen copies (1 Jill, Shiva's Dominant, 4 Seachrome Coast) |
+  | 269466 | Hardened Scales Affinity | many new cards: 12 unseen copies (4 Marketback Walker, 4 Rust Harvester, 4 Stomping Ground) |
+
+- **Why it matters:** however a model represents decks, it must not lose what simple matching already gets right, from exact copies through moderate drift and new cards.
+- **Check:** fit the model on its TRAIN decks and predict each deck.
+
+### Decks no current model gets right (hard cases)
+
+| Deck | Label | Pass if | Run 7 / 8 / 9 rank | Run 8's guess | Why it's hard |
+|---|---|---|---|---|---|
+| 269484 | Blink | Blink is candidate 1 | 2 / 2 / 4 | Nadu Combo | **dilution:** the Nadu Combo lists share its enter-the-battlefield shell, and their key card, Nadu, Winged Wisdom, is only 4 of 80 cards |
+| 269637 | Equipment Aggro | Equipment Aggro is candidate 1 | 4 / 2 / 28 | Red Deck Wins | **a shared shell** with Red Deck Wins |
+| 271375 | Enchantments Matter | Enchantments Matter is candidate 1 | 3 / 5 / 9 | Enchantress | **overlapping labels:** enchantment decks split three ways, with Enchantress and Zur the Enchanter |
+| 269591 | Izzet Madcap (new: 3 training decks) | Izzet Madcap is in the top 5 | 31 / 48 / 4 | Izzet Control | **a new archetype:** only the site's rarity-weighted matching reaches the top 5 |
+| 269653 | Izzet Madcap (new) | Izzet Madcap is in the top 5 | 75 / 34 / 102 | Izzet Control | **a new archetype with new cards:** 5 unseen copies (4 Archmage's Charm, 1 Shark Typhoon); the site's guesser fails too |
+| 269940 | Midrange | Midrange is candidate 1 | 4 / 2 / 16 | Field Ramp | **many new cards:** 27 unseen copies, the most in season 39 |
+| 270398 | Orzhov Midrange | Orzhov Midrange is candidate 1 | 9 / 2 / 13 | Orzhov Blink | **drift:** 20 cards off its closest list, and its rare cards line up with no single training deck |
+
+- **Groups:** the first four decks each stand for a group of season 39 decks that run 8 ranks the same way, with the same top guess. They are 5 Blink decks at rank 2, 66 Equipment Aggro at rank 2, 6 Enchantments Matter at rank 5 and 23 Izzet Madcap at rank 48. The write-up gives each group's pass rate as well as the deck's result.
+- **Why it matters:** these are the failures better models are meant to fix. Tracking the same decks across tickets shows which fix moves which failure.
+- **Check:** after a model's runs, print each deck's rank and pass or fail, and each group's pass rate. Add the table to the write-up.
+
+### A deck of only newly legal cards (extreme)
+
+Deck 900001, a hand-made season 39 Simic deck. It isn't a real submission. Every card in it, lands included, is legal in season 39 and in no season before (checked against `card_legality`), and no deck from seasons 1–38 plays any of them. All of them are in run 8's embedding.
+
+| Count | Card | Count | Card |
+|---|---|---|---|
+| 4 | Botanical Sanctum | 4 | Genemorph Imago |
+| 4 | Breeding Pool | 4 | Mysterio's Phantasm |
+| 4 | Waterlogged Grove | 4 | Guy in the Chair |
+| 4 | Daily Bugle Building | 4 | Professional Wrestler |
+| 4 | Zanarkand, Ancient Metropolis | 2 | The Wandering Minstrel |
+| 4 | Jidoor, Aristocratic Capital | 2 | Spider-Byte, Web Warden |
+| 4 | Whoosh! | 2 | Tributary Instructor |
+| 4 | Kapow! | 2 | Oko, the Ringleader |
+| 3 | Amazing Acrobatics | 1 | School Daze |
+
+That's 24 lands and 36 spells, 60 cards: a green-blue deck of fliers, bounce and fight spells, with no basic lands.
+
+- **Expect:** each model's guess (or no guess) and top five candidates are recorded. A green-blue archetype would be sensible, but no answer is required. Model-specific expectations live in each model's section.
+- **Why it matters:** this is the extreme case for new cards, and it's possible: a season's new cards include enough lands to build a deck with no older card. It shows most clearly which models can read new cards at all.
+- **Check:** predict the deck with each fitted model and print the result.
+
 ## The similarity baseline
 
 These scenarios belong to the similarity baseline (#6). It's today's guesser, reimplemented with sparse matrices so it can guess for tens of thousands of decks:
@@ -995,6 +1059,8 @@ All scenarios here were proposed 2026-10-02 and revised the same day to use real
 
 ### A deck identical to training decks matches at 100%, and ties go to the higher id
 
+Deck 269508 is also a guard in "Reference decks for every model".
+
 Deck 269508, a season 39 League "Oops All Lands" deck with 0 unseen copies (21 distinct cards, total weight 2,106). Its maindeck is identical to two training decks, 264496 and 264554.
 
 - **Expect:**
@@ -1018,6 +1084,8 @@ Deck 269508 again, against training deck 262588, another Oops All Lands deck.
 - **Check:** score 269508 against 262588.
 
 ### Unseen cards lower the chance of a usable match
+
+Decks 269833 and 269466 are also guards, and 269653 and 269940 are hard cases, in "Reference decks for every model".
 
 Real season 39 League decks. No season 39 deck has more than 27 unseen copies, since basic lands are always seen.
 
@@ -1043,6 +1111,8 @@ Real season 39 League decks. No season 39 deck has more than 27 unseen copies, s
 - **Check:** predict these five decks at threshold 20, and score each against its best match.
 
 ### Decks with no unseen cards but no exact match
+
+Decks 269539 and 269503 are also guards, and 270398 is a hard case, in "Reference decks for every model".
 
 Real season 39 League decks with 0 unseen copies whose maindeck repeats no training deck. "Off by N" is how many maindeck cards would have to change to turn the deck into its closest training deck: 60 minus the copies they share, same card and quantity.
 
@@ -1196,6 +1266,8 @@ A season 43 deck of 4 Shock, 52 Mountain and 4 Smaug's Fury. Smaug's Fury (a red
 - **Check:** save and load a fitted model; change the embedding file and load again.
 
 ### A deck identical to training decks copies their label (real data)
+
+Deck 269508 is also a guard in "Reference decks for every model".
 
 Deck 269508, a season 39 League "Oops All Lands" deck. Its maindeck is identical to training decks 264496 and 264554, both VERIFIED Oops All Lands from season 37.
 

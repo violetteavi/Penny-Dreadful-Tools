@@ -965,7 +965,7 @@ Real season 39 decks that every model is checked on, whatever its method, plus o
 
 There are three kinds:
 - **Guards** are asserted. They're decks every current model gets right, and they must stay right.
-- **Hard cases** are recorded, not asserted. They're decks no current model gets right. Each run records pass or fail, and its write-up carries the table. None gates a PR: a model can be better overall and still fail some, and recording rather than asserting keeps that visible.
+- **Hard cases** are recorded, not asserted. They're decks the current models get wrong. The one exception is 269591: only the site's guesser gets it into the top 5. Each run records pass or fail, and its write-up carries the table. None gates a PR: a model can be better overall and still fail some, and recording rather than asserting keeps that visible.
 - **Extremes** are recorded with no pass mark. They're decks too far outside the data for "right" to be clear.
 
 Proposed 2026-10-14, gathering decks first used in the similarity baseline (#6), the nearest deck (#44) and the ranked-candidates analysis (#14). Those sections keep their model-specific numbers: scores, similarities, weights and ties.
@@ -985,7 +985,7 @@ Proposed 2026-10-14, gathering decks first used in the similarity baseline (#6),
 - **Why it matters:** however a model represents decks, it must not lose what simple matching already gets right, from exact copies through moderate drift and new cards.
 - **Check:** fit the model on its TRAIN decks and predict each deck.
 
-### Decks no current model gets right (hard cases)
+### Decks the current models get wrong (hard cases)
 
 | Deck | Label | Pass if | Run 7 / 8 / 9 rank | Run 8's guess | Why it's hard |
 |---|---|---|---|---|---|

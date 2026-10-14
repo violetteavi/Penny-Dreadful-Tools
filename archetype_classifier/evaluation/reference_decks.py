@@ -2,7 +2,8 @@
 checked on, whatever its method.
 
 - Guards are decks every current model gets right. A model must keep them right, so tests assert them.
-- Hard cases are decks no current model gets right. They're recorded, never required: a model can be better overall and still fail some.
+- Hard cases are decks the current models get wrong (only the site's guesser passes one, 269591). They're recorded, never required: a model can be
+  better overall and still fail some.
 - Extremes are too far outside the data for "right" to be clear, so they're only recorded.
 
 The four hard cases that stand for a group carry its decks in GROUPS: the season 39 decks that run 8 ranked the same way, with the same top guess. They

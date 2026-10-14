@@ -209,7 +209,7 @@ One distinct maindeck with one label, standing for every **Train set** deck that
 _Avoid_: Training deck (one row can stand for many decks)
 
 **Reference deck**:
-A deck every model is checked on, whatever its method, listed once for all models. A **guard** is one every current model gets right, and a model must keep it right. A **hard case** is one no current model gets right, recorded but never required. An **extreme** is too far outside the data for "right" to be clear, so it's only recorded.
+A deck every model is checked on, whatever its method, listed once for all models. A **guard** is one every current model gets right, and a model must keep it right. A **hard case** is one the current models get wrong, recorded but never required. An **extreme** is too far outside the data for "right" to be clear, so it's only recorded.
 _Avoid_: Test deck (the test seasons are something else), benchmark
 
 **Top-k match**:

@@ -997,7 +997,7 @@ Proposed 2026-10-14, gathering decks first used in the similarity baseline (#6),
 | 269940 | Midrange | Midrange is candidate 1 | 4 / 2 / 16 | Field Ramp | **many new cards:** 27 unseen copies, the most in season 39 |
 | 270398 | Orzhov Midrange | Orzhov Midrange is candidate 1 | 9 / 2 / 13 | Orzhov Blink | **drift:** 20 cards off its closest list, and its rare cards line up with no single training deck |
 
-- **Groups:** the first four decks each stand for a group of season 39 decks that run 8 ranks the same way, with the same top guess. They are 5 Blink decks at rank 2, 66 Equipment Aggro at rank 2, 6 Enchantments Matter at rank 5 and 23 Izzet Madcap at rank 48. The write-up gives each group's pass rate as well as the deck's result.
+- **Groups:** the first four decks each stand for a group of season 39 decks that run 8 ranks the same way, with the same top guess. They are 5 Blink decks at rank 2, 66 Equipment Aggro at rank 2, 7 Enchantments Matter at rank 5 and 24 Izzet Madcap at rank 48. The write-up gives each group's pass rate as well as the deck's result.
 - **Why it matters:** these are the failures better models are meant to fix. Tracking the same decks across tickets shows which fix moves which failure.
 - **Check:** after a model's runs, print each deck's rank and pass or fail, and each group's pass rate. Add the table to the write-up.
 

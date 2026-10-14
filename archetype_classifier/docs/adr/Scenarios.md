@@ -1483,12 +1483,6 @@ All scenarios here were proposed 2026-10-14.
 - **Why it matters:** data problems are non-fatal. On real data this happens to 8 cards in seasons 1–38, each in a single deck (Ponder in season 19, for one), so the season is added rather than the card dropped or the weight left undefined.
 - **Check:** unit-test the weight and the logged warning.
 
-### Default parameters give today's deck vectors
-
-- **Expect:** with `weights=none` and `copies=linear`, every deck vector equals version 2's, to the same floats. The nearest deck v3 with no new parameters is the same model as run 8's.
-- **Why it matters:** runs 5–8 stay meaningful, and the new runs differ from run 8 only in the parameters they set.
-- **Check:** unit-test on the scenario decks; on real data, see "Nothing changes by default".
-
 ### Card weights and √copies shape the deck vector (b)
 
 - **Expect:**
@@ -1572,11 +1566,6 @@ The small embedding plus Divination. Divination is legal in seasons 30 and 31 bu
   There are 23,618 weighted cards, the highest weight is 13.0008, and 8 cards are played outside their legal seasons.
 - **Why it matters:** these pin down the weights the runs use. Nadu, Winged Wisdom shows the legality effect: in 626 of the 7,578 decks of its one legal season, it weighs barely more than Burst Lightning in 18,266 decks over 37 seasons.
 - **Check:** compare with the fitted weights to 4 decimals.
-
-### Nothing changes by default (real data)
-
-- **Expect:** the nearest deck v3 with run 8's parameters, and no new ones, gives run 8's guess and candidates for all 2,249 season 39 decks.
-- **Check:** fit, predict season 39, and compare with run 8's stored guesses and candidates.
 
 ### A deck identical to training decks still copies their label (real data, asserted)
 

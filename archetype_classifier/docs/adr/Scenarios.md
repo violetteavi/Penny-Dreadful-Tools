@@ -1452,7 +1452,7 @@ These scenarios belong to #50: two new ways to represent a maindeck for the near
 
 **Scheme** is scheme 1, "default", as for runs 7 and 8. Nothing is tuned: IDF has no parameter.
 
-**Rule-level decks.** Eight 60-card League decks from seasons 30 and 31, in real cards with their real legality: Negate is legal in season 30 but not 31; Shock, Burst Lightning, Essence Scatter, Divination, Mountain and Island are legal in both; Smaug's Fury is legal only in season 43. The (b) checks use the small embedding of the nearest-deck scenarios, which lacks Divination and Smaug's Fury.
+**Rule-level decks.** Eight 60-card League decks from seasons 30 and 31, in real cards with their real legality: Negate is legal in season 30 but not 31; Shock, Burst Lightning, Essence Scatter, Divination, Mountain and Island are legal in both; Smaug's Fury is legal only in season 43. The (b) checks use the small embedding of the nearest-deck scenarios, which lacks Divination and Smaug's Fury, except where a scenario adds Divination ({2}{U} Sorcery, "Draw two cards.") to it.
 
 | Season | Decks |
 |---|---|
@@ -1516,14 +1516,28 @@ Training rows R1 = "4 Shock, 56 Mountain" (Red Deck Wins) and R2 = "4 Burst Ligh
 - **Why it matters:** the bag shows how far exact cards go with good weights, and it's the sparse half of a later hybrid (c).
 - **Check:** unit-test the similarities and the guess.
 
-### An unseen card lowers every similarity alike; a deck with no known card gets no guess
+### In the bag of cards, an unseen card lowers every similarity alike; a deck with no known card gets no guess
+
+This is the bag's limit, not a rule for every representation: the next scenario shows the opposite for the embedding average (b).
 
 - **Expect:**
   - Q plus 4 Smaug's Fury scores **0.8566** against R1 and **0.8914** against R2: both drop by the same factor, so the ranking is unchanged and Mono Red Swarm is still the guess. The stored scores are true cosines, counting Smaug's Fury in the deck's own length.
   - The evidence records 60 known and 4 unseen copies.
   - A deck made only of cards that no training row has, such as "4 Smaug's Fury, 4 Divination" (a rule-level check, not a legal deck), gets **no guess** (scored as the root) and an empty candidate list.
-- **Why it matters:** a bag has no position for a card it never saw, so it can't use new cards, only be diluted by them. The embedding average (b) can.
+- **Why it matters:** a bag has no position for a card it never saw, so it can't use new cards, only be diluted by them.
 - **Check:** unit-test with the rows above.
+
+### In the embedding average, an unseen card counts through its rules text (b)
+
+The small embedding plus Divination. Divination is legal in seasons 30 and 31 but no training deck plays it, so it's an unseen card that the embedding knows, with card weight 3.1972. Training rows R_blue = "4 Essence Scatter, 56 Island" (Azorius Control) and R_red = "4 Shock, 56 Mountain" (Red Deck Wins). The deck is D = "4 Divination, 4 Essence Scatter, 52 Island".
+
+- **Expect:**
+  - D's vector, with card weights and √copies, is the unit-length 2 × 3.1972 × Divination + 2 × 1.8109 × Essence Scatter + √52 × 1.5878 × Island. Divination is in it, at the weight of an unseen card.
+  - Unlike in the bag, Divination doesn't scale every similarity by one factor. The ratio of D's cosine with Divination to its cosine without it differs between R_blue and R_red, so it can change the ranking. That's the point of using rules text.
+  - The evidence records 60 embedded and 0 skipped copies: an unseen card is not a skipped card.
+  - Only a card the embedding lacks is skipped and counted, as in "A card missing from the embedding is skipped and counted". Only a deck with no embedded card gets no guess. On real data, the saved embedding covers every card legal in seasons 1–39, so a season 39 card that no training deck plays is embedded and weighted. Only cards from later seasons, such as Smaug's Fury, are skipped.
+- **Why it matters:** new cards are the main reason to read rules text. The card weight must not shut them out: an unseen card gets a high weight (9.36 on real data for a card never legal in training) and contributes its vector like any other card.
+- **Check:** unit-test on the small embedding plus Divination, comparing the two ratios.
 
 ### Candidates and ties follow the nearest-deck rules
 

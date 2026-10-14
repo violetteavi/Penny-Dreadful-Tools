@@ -4,8 +4,13 @@ from collections import Counter
 
 import pytest
 
+from archetype_classifier.data_loading import loader
+from archetype_classifier.data_loading.dataset import CardCount, DeckContents
+from archetype_classifier.data_loading.labels import LabelStatus
+from archetype_classifier.data_loading.splits import Split
 from archetype_classifier.evaluation.model import Candidate, PredictDeck, Prediction
-from archetype_classifier.evaluation.reference_decks import GROUPS, HAND_MADE_ID, REFERENCE_DECKS, Kind, ReferenceDeck, ReferenceResult, build_hand_made_deck, build_reference_result, build_reference_table
+from archetype_classifier.evaluation.model_test import snapshot, snapshot_deck
+from archetype_classifier.evaluation.reference_decks import GROUPS, HAND_MADE_ID, REFERENCE_DECKS, Kind, ReferenceDeck, ReferenceResult, build_hand_made_deck, build_reference_result, build_reference_table, load_reference_decks
 
 # The list matches the scenarios.
 
@@ -126,3 +131,32 @@ def test_the_table_has_a_column_per_model_and_a_row_per_deck() -> None:
 def test_a_guess_outside_the_names_is_shown_by_id() -> None:
     results = {'m': {HAND_MADE_ID: build_reference_result(EXTREME, ranked(HAND_MADE_ID, 999), IDS)}}
     assert '| guess 999; top 5: 999 |' in build_reference_table(results, NAMES, (EXTREME,), {})
+
+
+# Loading: real decks from the snapshot and the site database, the hand-made deck from its maindeck.
+
+def test_real_decks_load_with_their_groups_and_the_hand_made_deck_is_built(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+    red = (CardCount('Mountain', 56), CardCount('Shock', 4))
+    contents = {101: DeckContents(red, (CardCount('Negate', 2),)), 102: DeckContents(red, ()), 104: DeckContents(red, ()), 106: DeckContents((), ())}
+    requested: list[list[int]] = []
+    def load_contents(ids: list[int]) -> dict[int, DeckContents]:
+        requested.append(sorted(ids))
+        return {i: contents[i] for i in ids}
+    monkeypatch.setattr(loader, 'load_contents', load_contents)
+    decks = snapshot(*(snapshot_deck(i, 39, Split.VALIDATION, LabelStatus.VERIFIED, RED_DECK_WINS) for i in (101, 102, 104, 106)))
+    hand_made = ReferenceDeck(HAND_MADE_ID, None, Kind.EXTREME, 0, 'an extreme', red)
+    with caplog.at_level(logging.WARNING):
+        loaded = load_reference_decks(decks, (GUARD, NEW, MISSING, hand_made), {102: (102, 104, 106, 108)})
+    assert requested == [[101, 102, 104, 106]]  # Never the hand-made deck, nor decks the snapshot lacks.
+    assert loaded == {101: PredictDeck(101, 'League', red, (CardCount('Negate', 2),)), 102: PredictDeck(102, 'League', red, ()), 104: PredictDeck(104, 'League', red, ()),
+                      HAND_MADE_ID: PredictDeck(HAND_MADE_ID, 'League', red, ())}
+    assert 'Skipped 2 reference decks the snapshot lacks: [103, 108]' in caplog.text
+    assert 'Skipped 1 reference deck with no cards: [106]' in caplog.text
+
+def test_nothing_is_warned_when_every_deck_loads(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+    red = (CardCount('Mountain', 56), CardCount('Shock', 4))
+    monkeypatch.setattr(loader, 'load_contents', lambda ids: {i: DeckContents(red, ()) for i in ids})
+    with caplog.at_level(logging.WARNING):
+        loaded = load_reference_decks(snapshot(snapshot_deck(101, 39, Split.VALIDATION, LabelStatus.VERIFIED, RED_DECK_WINS)), (GUARD,), {})
+    assert loaded == {101: PredictDeck(101, 'League', red, ())}
+    assert caplog.text == ''

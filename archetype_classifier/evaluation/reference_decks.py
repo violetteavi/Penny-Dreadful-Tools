@@ -16,8 +16,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
 
+from archetype_classifier.data_loading import loader
 from archetype_classifier.data_loading.dataset import CardCount
-from archetype_classifier.evaluation.model import PredictDeck, Prediction, sorted_lines
+from archetype_classifier.data_loading.slices import Snapshot
+from archetype_classifier.evaluation.model import PredictDeck, Prediction, plural, predict_deck, sorted_lines
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +92,19 @@ GROUPS: dict[int, tuple[int, ...]] = {
 
 def build_hand_made_deck() -> PredictDeck:
     return PredictDeck(HAND_MADE_ID, 'League', ALL_NEW_SIMIC, ())
+
+def load_reference_decks(snapshot: Snapshot, decks: Sequence[ReferenceDeck] = REFERENCE_DECKS, groups: Mapping[int, tuple[int, ...]] = GROUPS) -> dict[int, PredictDeck]:
+    """Every reference deck and every deck of its groups, ready to predict. Real decks come from the snapshot and the site database; a hand-made deck
+    is built from its maindeck and never loaded. A deck the snapshot lacks, or with no cards, is skipped with a warning."""
+    wanted = sorted({d.deck_id for d in decks if d.maindeck is None} | {i for group in groups.values() for i in group})
+    if lacking := [i for i in wanted if i not in snapshot.decks]:
+        logger.warning('Skipped %d reference deck%s the snapshot lacks: %s', len(lacking), plural(lacking), lacking)
+    contents = loader.load_contents([i for i in wanted if i in snapshot.decks])
+    if empty := sorted(i for i, c in contents.items() if not c.maindeck):
+        logger.warning('Skipped %d reference deck%s with no cards: %s', len(empty), plural(empty), empty)
+    loaded = {i: predict_deck(snapshot.decks[i], c) for i, c in sorted(contents.items()) if c.maindeck}
+    loaded.update({d.deck_id: PredictDeck(d.deck_id, 'League', d.maindeck, ()) for d in decks if d.maindeck is not None})
+    return loaded
 
 def build_reference_result(deck: ReferenceDeck, prediction: Prediction, archetype_ids: Mapping[str, int]) -> ReferenceResult:
     """How one model did on one deck: the reference deck itself, or another deck of its group, judged by the reference deck's label and mark.

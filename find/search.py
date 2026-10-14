@@ -183,6 +183,8 @@ def parse_criterion(key: Token, operator: Token, term: Token) -> str:
         return math_where('cmc', operator.value(), term.value())
     if key.value() in ['loy', 'loyalty']:
         return math_where('loyalty', operator.value(), term.value())
+    if key.value() in ['def', 'defense']:
+        return math_where('defense', operator.value(), term.value())
     if key.value() == 'supertype' or key.value() == 'super':
         return subtable_where('supertype', term.value())
     if key.value() == 'subtype' or key.value() == 'sub':

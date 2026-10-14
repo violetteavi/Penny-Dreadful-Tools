@@ -12,6 +12,7 @@ class CardDescription(TypedDict, total=False):
     collector_number: str
     color_identity: list[str]
     colors: list[str]
+    defense: str
     flavor_text: str
     hand_modifier: str
     id: str

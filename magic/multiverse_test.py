@@ -117,6 +117,19 @@ def test_apply_meld_result_printings_attaches_the_result_id_to_both_fronts() -> 
     assert cards[1]['meld_result_printing_system_id'] == 'printing-brisela'
     assert cards[2]['meld_result_printing_system_id'] is None
 
+def test_multiple_faces_values_keeps_battle_defense() -> None:
+    card: CardDescription = {
+        'name': 'Invasion of Tarkir // Defiant Thundermaw',
+        'layout': 'transform',
+        'card_faces': [
+            {'name': 'Invasion of Tarkir', 'mana_cost': '{1}{R}', 'type_line': 'Battle — Siege', 'defense': '5'},
+            {'name': 'Defiant Thundermaw', 'mana_cost': '', 'type_line': 'Creature — Dragon', 'power': '4', 'toughness': '4'},
+        ],
+    }
+    battle, creature = multiverse.multiple_faces_values(card, 1)
+    assert (battle['defense'], battle['power'], battle['toughness']) == ('5', None, None)
+    assert (creature['defense'], creature['power'], creature['toughness']) == (None, '4', '4')
+
 def test_card_aliases_include_english_printed_name() -> None:
     card: CardDescription = {
         'name': 'Spider-Man Noir',

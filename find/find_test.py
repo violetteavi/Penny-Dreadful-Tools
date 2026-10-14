@@ -15,6 +15,8 @@ def test_match() -> None:
     assert not search.Key.match(' ')
     assert not search.Criterion.match('magic:2uu')
     assert search.Criterion.match('tou>2')
+    assert search.Criterion.match('def>2')
+    assert not search.Criterion.match('defender')
 
 # START Tests from https://scryfall.com/docs/syntax
 
@@ -586,6 +588,15 @@ def test_toughness_functional() -> None:
 
 def test_toughness() -> None:
     do_test('c:r tou>2', '((c.id IN (SELECT card_id FROM card_color WHERE color_id = 4))) AND (toughness IS NOT NULL AND toughness > 2)')
+
+@pytest.mark.functional
+def test_defense_functional() -> None:
+    do_functional_test('def=5', ['Invasion of Tarkir'], ['Invasion of Ikoria', 'Invasion of Zendikar', 'Wurmcoil Engine'])
+    do_functional_test('t:battle defense>=6', ['Invasion of Ikoria'], ['Invasion of Tarkir', 'Invasion of Zendikar'])
+
+def test_defense() -> None:
+    do_test('def>4', '(defense IS NOT NULL AND defense > 4)')
+    do_test('t:battle defense:3', "(type_line LIKE '%%battle%%') AND (defense IS NOT NULL AND defense = 3)")
 
 def test_type() -> None:
     do_test('t:"human wizard"', "(type_line LIKE '%%human wizard%%')")

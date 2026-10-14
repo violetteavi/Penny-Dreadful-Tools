@@ -101,7 +101,7 @@ def face_properties() -> TableDescription:
     props = {}
     base = copy.deepcopy(BASE)
     base['query'] = "GROUP_CONCAT(CASE WHEN `{table}`.position = 1 THEN `{table}`.`{column}` ELSE '' END SEPARATOR '') AS `{column}`"
-    for k in ['id', 'name', 'mana_cost', 'cmc', 'power', 'toughness', 'power', 'toughness', 'loyalty', 'type_line', 'oracle_text', 'hand', 'life', 'position', 'card_id']:
+    for k in ['id', 'name', 'mana_cost', 'cmc', 'power', 'toughness', 'power', 'toughness', 'loyalty', 'defense', 'type_line', 'oracle_text', 'hand', 'life', 'position', 'card_id']:
         props[k] = copy.deepcopy(base)
     for k in ['id', 'position', 'card_id']:
         props[k]['scryfall'] = False

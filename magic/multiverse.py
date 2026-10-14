@@ -455,6 +455,7 @@ def single_face_value(p: CardDescription, card_id: int, position: int = 1) -> di
     result['power'] = p.get('power')
     result['toughness'] = p.get('toughness')
     result['loyalty'] = p.get('loyalty')
+    result['defense'] = p.get('defense')
     result['type_line'] = p.get('type_line', '')
     result['oracle_text'] = p.get('oracle_text', '')
     result['hand'] = p.get('hand_modifier')

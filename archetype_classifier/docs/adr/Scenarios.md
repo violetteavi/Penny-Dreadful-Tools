@@ -1440,3 +1440,148 @@ The training rows from "Repeated maindecks are one training row", plus a fourth:
   - **New archetypes, season 39:** about 0.4% at every k, for both.
 - **Why it matters:** these runs give the first Top 5 numbers for today's guesser and for the nearest deck. Matching the old guesses proves that adding candidates changed nothing else.
 - **Check:** run the three, compare each with its old run (every difference 0.00), and read the Candidates table.
+
+## Deck representations
+
+These scenarios belong to #50: two new ways to represent a maindeck for the nearest deck, decided in the grilling on #50 (rounds 1–4, 2026-10-13 and 2026-10-14) and specified in `20261014_Deck_Representation_Architecture.pdf`. Both weight each card by its **card weight**, a legality-aware IDF, so cards that few decks play count for more than staples:
+- **Card weight:** IDF(c) = ln((1 + N_c) / (1 + df_c)) + 1. N_c is the number of TRAIN decks in the training seasons where card c is legal; df_c is how many of those decks play c in their maindeck, once per deck whatever its copies. Every TRAIN deck counts, repeats included. Sideboards don't count. A card never legal in a training season weighs as an unplayed card from one average season: ln(1 + TRAIN decks ÷ training seasons) + 1.
+- **Copies:** each maindeck line contributes copies(n) × weight, where copies(n) is √n or n (linear).
+- **(b) Weighted embedding average,** `EmbeddingNearestDeck` v3: the deck vector is the unit-length Σ copies(n) × weight × the card's combined embedding row. Its new parameters `weights` (`none` or `idf`) and `copies` (`linear` or `sqrt`) default to `none` and `linear`, which is version 2's vector.
+- **(a) Bag of cards,** `BagNearestDeck` v1: the deck is a sparse vector with copies(n) × weight at each card it plays, compared by cosine. Its weights are always IDF; its one parameter is `copies`.
+- **Ranking is unchanged:** training rows, the pick rule, ties and candidates are those of "The nearest deck on the combined embedding" and "Ranked candidates".
+
+**Scheme** is scheme 1, "default", as for runs 7 and 8. Nothing is tuned: IDF has no parameter.
+
+**Rule-level decks.** Eight 60-card League decks from seasons 30 and 31, in real cards with their real legality: Negate is legal in season 30 but not 31; Shock, Burst Lightning, Essence Scatter, Divination, Mountain and Island are legal in both; Smaug's Fury is legal only in season 43. The (b) checks use the small embedding of the nearest-deck scenarios, which lacks Divination and Smaug's Fury.
+
+| Season | Decks |
+|---|---|
+| 30 | 2 × "4 Shock, 56 Mountain", one of them with a sideboard of 4 Negate · 1 × "4 Negate, 56 Island" · 1 × "4 Essence Scatter, 56 Island" |
+| 31 | 1 × "4 Shock, 56 Mountain" · 1 × "4 Burst Lightning, 56 Mountain" · 2 × "4 Essence Scatter, 56 Island" |
+
+All scenarios here were proposed 2026-10-14.
+
+### Card weights follow the legality-aware IDF
+
+- **Expect:**
+
+  | Card | N (decks while legal) | df | Card weight | What it shows |
+  |---|---|---|---|---|
+  | Mountain, Island | 8 | 4 | 1.5878 | the most played: the lowest weight |
+  | Shock, Essence Scatter | 8 | 3 | 1.8109 | the repeated "4 Shock, 56 Mountain" counts twice |
+  | Negate | 4 | 1 | 1.9163 | legal in season 30 only; its sideboard copies don't count |
+  | Burst Lightning | 8 | 1 | 2.5041 | played as often as Negate but legal for longer, so it weighs more |
+  | Smaug's Fury | never legal | — | 2.6094 | one average season (8 decks ÷ 2 seasons = 4), unplayed: ln 5 + 1 |
+  | Divination | 8 | 0 | 3.1972 | legal and never played: the highest weight here |
+
+- **Why it matters:** a card's weight should say how rare it is given how much chance it had to be played. A card from a short legal window isn't rare just because fewer decks existed then. The log keeps the range narrow (about 1 to 13 on real data), so staples still count for something.
+- **Check:** unit-test the weights on these decks and the real legality of the eight cards, written into the test as a hand-made map.
+
+### A card played outside its legal seasons counts that season, with a warning
+
+- **Expect:** if one season 31 "4 Essence Scatter, 56 Island" deck also plays 1 Negate, Negate counts season 31 as legal: N 8, df 2, weight **2.0986**. Fitting logs one warning, naming how many cards this happened to and the five played most often, and carries on.
+- **Why it matters:** data problems are non-fatal. On real data this happens to 8 cards in seasons 1–38, each in a single deck (Ponder in season 19, for one), so the season is added rather than the card dropped or the weight left undefined.
+- **Check:** unit-test the weight and the logged warning.
+
+### Default parameters give today's deck vectors
+
+- **Expect:** with `weights=none` and `copies=linear`, every deck vector equals version 2's, to the same floats. The nearest deck v3 with no new parameters is the same model as run 8's.
+- **Why it matters:** runs 5–8 stay meaningful, and the new runs differ from run 8 only in the parameters they set.
+- **Check:** unit-test on the scenario decks; on real data, see "Nothing changes by default".
+
+### Card weights and √copies shape the deck vector (b)
+
+- **Expect:**
+  - With `weights=idf` and `copies=sqrt`, "4 Shock, 56 Mountain" is the unit-length 2 × 1.8109 × Shock + √56 × 1.5878 × Mountain.
+  - With `copies=linear`, it's the unit-length 4 × 1.8109 × Shock + 56 × 1.5878 × Mountain.
+  - Doubling every count no longer gives the same vector under √copies: that's intended.
+  - The sideboard still never changes the vector, and a card the embedding lacks is still skipped and counted.
+- **Why it matters:** the weighted average is the fix the #44 error analysis points to: a few archetype-defining cards diluted among staples and basics.
+- **Check:** unit-test on the small embedding.
+
+### The bag of cards: rarer shared cards decide
+
+Training rows R1 = "4 Shock, 56 Mountain" (Red Deck Wins) and R2 = "4 Burst Lightning, 56 Mountain" (Mono Red Swarm), with the card weights above. The deck to place is Q = "4 Burst Lightning, 4 Shock, 52 Mountain".
+
+- **Expect:**
+
+  | Representation | cos(Q, R1) | cos(Q, R2) | Guess |
+  |---|---|---|---|
+  | Bag with every weight 1, linear copies (for comparison) | 0.99706 | 0.99706 | a tie, decided by popularity |
+  | Bag, card weights, linear copies | 0.9928 | 0.9962 | Mono Red Swarm |
+  | Bag, card weights, √copies (run 10's) | **0.9229** | **0.9604** | **Mono Red Swarm**: Burst Lightning is rarer than Shock |
+
+  - Quantity near-misses count partly. Against "4 Shock, 56 Mountain", with card weights and √copies, "1 Shock, 59 Mountain" scores **0.9890** and "60 Mountain" **0.9565**.
+  - Two different cards never match, however alike their text: Shock and Burst Lightning share nothing in the bag.
+- **Why it matters:** the bag shows how far exact cards go with good weights, and it's the sparse half of a later hybrid (c).
+- **Check:** unit-test the similarities and the guess.
+
+### An unseen card lowers every similarity alike; a deck with no known card gets no guess
+
+- **Expect:**
+  - Q plus 4 Smaug's Fury scores **0.8566** against R1 and **0.8914** against R2: both drop by the same factor, so the ranking is unchanged and Mono Red Swarm is still the guess. The stored scores are true cosines, counting Smaug's Fury in the deck's own length.
+  - The evidence records 60 known and 4 unseen copies.
+  - A deck made only of cards that no training row has, such as "4 Smaug's Fury, 4 Divination" (a rule-level check, not a legal deck), gets **no guess** (scored as the root) and an empty candidate list.
+- **Why it matters:** a bag has no position for a card it never saw, so it can't use new cards, only be diluted by them. The embedding average (b) can.
+- **Check:** unit-test with the rows above.
+
+### Candidates and ties follow the nearest-deck rules
+
+- **Expect:** the bag model ranks every label by its best row's cosine, with the same tolerance and tie-breaks as the nearest deck, so candidate 1 is always the guess. On the rows of "A tie goes to the label with more decks, then to the newer deck", an identical maindeck labelled twice ties, and the label with more decks wins.
+- **Why it matters:** only the representation varies (Q2), so any change in Top 1, Top 5 or MRR comes from it.
+- **Check:** unit-test through `predict`.
+
+### Fitted models load back, and refuse changed weights
+
+- **Expect:**
+  - Both models' state holds a summary of their card weights (the number of cards, the never-legal weight, the five basic lands' weights, the cards played outside their legal seasons) and `card_weights_hash`, a SHA-1 of the sorted weights to 6 decimals. It never holds the full table.
+  - Rebuilt from state, the same training decks and the same legality, each model guesses identically.
+  - If the legality given at load differs (Negate dropped from season 30, say), loading refuses, naming both hashes. The nearest deck still refuses a changed embedding too.
+- **Why it matters:** legality comes from the cards database, which changes when the list files do. A stored run must not be silently replayed on different weights.
+- **Check:** save and load each model; change the legality and load again.
+
+### Real card weights (real data)
+
+`PD_LOCAL_DATA=1`. Scheme 1's TRAIN decks: 162,878 decks over 38 seasons.
+
+- **Expect:**
+
+  | Card | Decks playing it | N | Card weight |
+  |---|---|---|---|
+  | Island | 60,975 | 162,878 | 1.9825 (the lowest) |
+  | Mountain | 50,579 | 162,878 | 2.1695 |
+  | Burst Lightning | 18,266 | 162,632 | 3.1864 |
+  | Nadu, Winged Wisdom | 626 | 7,578 | 3.4922 |
+  | Make Disappear | 91 | 52,981 | 7.3559 |
+  | a card never legal in seasons 1–38 | — | — | 9.3634 |
+
+  There are 23,618 weighted cards, the highest weight is 13.0008, and 8 cards are played outside their legal seasons.
+- **Why it matters:** these pin down the weights the runs use. Nadu, Winged Wisdom shows the legality effect: in 626 of the 7,578 decks of its one legal season, it weighs barely more than Burst Lightning in 18,266 decks over 37 seasons.
+- **Check:** compare with the fitted weights to 4 decimals.
+
+### Nothing changes by default (real data)
+
+- **Expect:** the nearest deck v3 with run 8's parameters, and no new ones, gives run 8's guess and candidates for all 2,249 season 39 decks.
+- **Check:** fit, predict season 39, and compare with run 8's stored guesses and candidates.
+
+### A deck identical to training decks still copies their label (real data, asserted)
+
+Deck 269508, the season 39 "Oops All Lands" deck of the nearest-deck scenarios, identical to training decks 264496 and 264554.
+
+- **Expect:** Oops All Lands is candidate 1 under runs 10, 11 and 12.
+- **Why it matters:** a better representation must not lose what exact matches already get right.
+- **Check:** fit each of the three models and predict the deck.
+
+### Hard cases (real data, recorded, not asserted)
+
+Four season 39 decks that no current model gets right. Each stands for a group of decks that run 8 ranks the same way, with the same top guess. Each run records pass or fail; none gates the PR.
+
+| Deck | Label | Pass if | Run 8 rank | Run 9 rank | Run 8's guess | Group under run 8 |
+|---|---|---|---|---|---|---|
+| 269484 | Blink | Blink is candidate 1 | 2 | 4 | Nadu Combo | 5 decks at rank 2 |
+| 269637 | Equipment Aggro | Equipment Aggro is candidate 1 | 2 | 28 | Red Deck Wins | 66 decks at rank 2 |
+| 271375 | Enchantments Matter | Enchantments Matter is candidate 1 | 5 | 9 | Enchantress | 6 decks at rank 5 |
+| 269591 | Izzet Madcap (new: 3 training decks) | Izzet Madcap is in the top 5 | 48 | 4 | Izzet Control | 23 decks at rank 48 |
+
+- **Why it matters:** these are the failures the representation is meant to fix: a key card (Nadu, Winged Wisdom, 4 of 80 cards) averaged away; a shell shared with Red Deck Wins; enchantment decks split three ways; and a new archetype that only the site's rarity-weighted matching finds. Recording rather than asserting keeps them honest: a representation can be better overall and still fail some.
+- **Check:** print each run's rank for each deck and the pass rate of each group; the write-up carries the table.

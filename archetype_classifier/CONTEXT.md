@@ -201,8 +201,16 @@ A deck an experiment neither learns from nor scores, because of a data problem, 
 The decks in the training split: every deck from the training seasons that isn't held out and whose label status the scheme allows for training.
 _Avoid_: Pool, training pool (a pool is the **Legal card pool**)
 
+**Card weight**:
+How much a card counts in a deck's representation: a legality-aware IDF, ln((1 + N) / (1 + df)) + 1, where N is the number of **Train set** decks in the seasons where the card is legal and df is how many of their maindecks play it. A card never legal in a training season weighs as an unplayed card from one average season. Unlike **Playability**, it counts maindecks only and is on a log scale, so it runs from about 2 to 13 rather than 1 to 1,000.
+_Avoid_: Playability weight, rarity (rarity is a card's printed rarity)
+
 **Deck vector**:
-A deck's maindeck as one vector: the average of its cards' **Combined embedding** rows, weighted by copies, at unit length. Basic lands count; the sideboard doesn't.
+A deck's maindeck as one vector: the sum of its cards' **Combined embedding** rows, each times copies(n) × its **Card weight**, at unit length. copies(n) is n or √n. With linear copies and every weight 1, it's the plain copy-weighted average of #44. Basic lands count; the sideboard doesn't.
+
+**Bag of cards**:
+A deck's maindeck as a sparse vector with one position per card: copies(n) × **Card weight** at each card it plays and 0 elsewhere, compared by cosine. Two different cards never match, however alike their text, and a card no training deck plays has no position.
+_Avoid_: Bag of words
 
 **Training row**:
 One distinct maindeck with one label, standing for every **Train set** deck that has both, with how many decks that is and the newest of them. Repeats of a list count once, so a popular list doesn't outweigh a rare one.

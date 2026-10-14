@@ -1003,7 +1003,7 @@ Proposed 2026-10-14, gathering decks first used in the similarity baseline (#6),
 
 ### A deck of only newly legal cards (extreme)
 
-Deck 900001, a hand-made season 39 Simic deck. It isn't a real submission. Every card in it, lands included, is legal in season 39 and in no season before (checked against `card_legality`), and no deck from seasons 1–38 plays any of them. All of them are in run 8's embedding.
+Deck -1, a hand-made season 39 Simic deck. It isn't a real submission, so its maindeck is written out in code and the deck is built in memory, never loaded from the database or stored in a run. Its id is negative so it can never collide with a real deck. Every card in it, lands included, is legal in season 39 and in no season before (checked against `card_legality`), and no deck from seasons 1–38 plays any of them. All of them are in run 8's embedding.
 
 | Count | Card | Count | Card |
 |---|---|---|---|
@@ -1021,7 +1021,7 @@ That's 24 lands and 36 spells, 60 cards: a green-blue deck of fliers, bounce and
 
 - **Expect:** each model's guess (or no guess) and top five candidates are recorded. A green-blue archetype would be sensible, but no answer is required. Model-specific expectations live in each model's section.
 - **Why it matters:** this is the extreme case for new cards, and it's possible: a season's new cards include enough lands to build a deck with no older card. It shows most clearly which models can read new cards at all.
-- **Check:** predict the deck with each fitted model and print the result.
+- **Check:** predict the deck with each fitted model and print the result. Also assert that every card is still legal in season 39 and in no earlier season, and that no TRAIN deck plays any of them, so a change in the legality data can't silently change what the deck is.
 
 ## The similarity baseline
 

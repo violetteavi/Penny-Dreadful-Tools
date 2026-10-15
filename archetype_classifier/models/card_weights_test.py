@@ -1,4 +1,5 @@
 """Card weights on rule-level decks (Scenarios.md, "Deck representations"). Real weights are checked in representation_local_test.py."""
+import hashlib
 import logging
 import math
 
@@ -87,10 +88,58 @@ def test_the_hash_changes_with_the_weights_but_not_the_order_of_decks() -> None:
 def test_the_summary_names_the_basic_lands_and_never_holds_the_table() -> None:
     summary = build_card_weights(TRAINING, LEGAL).summary()
     assert summary == {'cards': 7, 'never_legal_weight': 2.6094, 'basic_lands': {'Island': 1.5878, 'Mountain': 1.5878}, 'played_outside_legal_seasons': [],
-                       'card_weights_hash': build_card_weights(TRAINING, LEGAL).hash()}
+                       'unseen_weight': 'idf', 'typical_weight': 1.6994, 'card_weights_hash': build_card_weights(TRAINING, LEGAL).hash()}
 
 
 # Copies: each maindeck line counts copies(n) times its weight.
 
 def test_copies_are_linear_or_square_root() -> None:
     assert (COPIES['linear'](4), COPIES['sqrt'](4), COPIES['sqrt'](56)) == (4, 2, math.sqrt(56))
+
+
+# Scenario: with unseen_weight=typical, an unseen card weighs as a typical card.
+
+def test_the_typical_weight_is_the_median_over_training_maindeck_lines() -> None:
+    weights = build_card_weights(TRAINING, LEGAL, unseen='typical')
+    assert round(weights.typical, 4) == 1.6994  # 16 lines: the mean of the 8th (1.5878) and 9th (1.8109).
+    assert weights.typical == (math.log(9 / 5) + 1 + math.log(9 / 4) + 1) / 2
+
+def test_the_median_of_an_odd_number_of_lines_is_the_middle_one() -> None:
+    training = [*TRAINING, deck(9, 31, {'Mountain': 60})]  # 17 lines.
+    weights = build_card_weights(training, LEGAL, unseen='typical')
+    line_weights = sorted(weights.weight(line.card) for d in training for line in d.deck.maindeck)
+    assert len(line_weights) == 17 and weights.typical == line_weights[8]
+
+@pytest.mark.parametrize(('card', 'typical', 'idf'), [
+    ('Divination', 1.6994, 3.1972),  # Legal, never played.
+    ("Smaug's Fury", 1.6994, 2.6094),  # Never legal.
+    ('A card nobody has heard of', 1.6994, 2.6094),
+    ('Burst Lightning', 2.5041, 2.5041),  # Played: unchanged.
+    ('Mountain', 1.5878, 1.5878),
+])
+def test_unseen_cards_weigh_as_a_typical_card(card: str, typical: float, idf: float) -> None:
+    assert round(build_card_weights(TRAINING, LEGAL, unseen='typical').weight(card), 4) == typical
+    assert round(build_card_weights(TRAINING, LEGAL).weight(card), 4) == idf  # The default is today's rule.
+
+def test_an_unknown_unseen_rule_is_refused() -> None:
+    with pytest.raises(ValueError, match="unseen must be one of \\('idf', 'typical'\\), not 'median'"):
+        build_card_weights(TRAINING, LEGAL, unseen='median')
+
+def test_with_no_training_decks_the_typical_weight_is_one() -> None:
+    assert build_card_weights([], LEGAL, unseen='typical').typical == 1.0
+
+
+# Not a scenario: the default rule keeps today's hash, so stored models (runs 10-12) still load.
+
+def test_the_default_hash_is_unchanged_and_the_typical_rule_changes_it() -> None:
+    weights = build_card_weights(TRAINING, LEGAL)
+    text = ';'.join(f'{card}:{w:.6f}' for card, w in sorted(weights.idf.items())) + f';never legal:{weights.never_legal:.6f}'
+    assert weights.hash() == hashlib.sha1(text.encode()).hexdigest()
+    typical = build_card_weights(TRAINING, LEGAL, unseen='typical')
+    assert typical.hash() != weights.hash()
+    assert typical.hash() == hashlib.sha1(f'{text};unseen typical:{typical.typical:.6f}'.encode()).hexdigest()
+
+def test_the_summary_records_the_unseen_rule_and_typical_weight() -> None:
+    summary = build_card_weights(TRAINING, LEGAL, unseen='typical').summary()
+    assert (summary['unseen_weight'], summary['typical_weight']) == ('typical', 1.6994)
+    assert build_card_weights(TRAINING, LEGAL).summary()['unseen_weight'] == 'idf'

@@ -1446,7 +1446,7 @@ The training rows from "Repeated maindecks are one training row", plus a fourth:
 These scenarios belong to #50: two new ways to represent a maindeck for the nearest deck, decided in the grilling on #50 (rounds 1–4, 2026-10-13 and 2026-10-14) and specified in `20261014_Deck_Representation_Architecture.pdf`. Both weight each card by its **card weight**, a legality-aware IDF, so cards that few decks play count for more than staples:
 - **Card weight:** IDF(c) = ln((1 + N_c) / (1 + df_c)) + 1. N_c is the number of TRAIN decks in the training seasons where card c is legal; df_c is how many of those decks play c in their maindeck, once per deck whatever its copies. Every TRAIN deck counts, repeats included. Sideboards don't count. A card never legal in a training season weighs as an unplayed card from one average season: ln(1 + TRAIN decks ÷ training seasons) + 1.
 - **Copies:** each maindeck line contributes copies(n) × weight, where copies(n) is √n or n (linear).
-- **(b) Weighted embedding average,** `EmbeddingNearestDeck` v3: the deck vector is the unit-length Σ copies(n) × weight × the card's combined embedding row. Its new parameters `weights` (`none` or `idf`) and `copies` (`linear` or `sqrt`) default to `none` and `linear`, which is version 2's vector.
+- **(b) Weighted embedding average,** `EmbeddingNearestDeck` v3: the deck vector is the unit-length Σ copies(n) × weight × the card's combined embedding row. Its new parameters `weights` (`none` or `idf`) and `copies` (`linear` or `sqrt`) default to `none` and `linear`, which is version 2's vector. Version 4 adds `unseen_weight` (`idf` or `typical`, default `idf`): see "With `unseen_weight=typical`, an unseen card weighs as a typical card (b)".
 - **(a) Bag of cards,** `BagNearestDeck` v1: the deck is a sparse vector with copies(n) × weight at each card it plays, compared by cosine. Its weights are always IDF; its one parameter is `copies`.
 - **Ranking is unchanged:** training rows, the pick rule, ties and candidates are those of "The nearest deck on the combined embedding" and "Ranked candidates".
 
@@ -1533,6 +1533,19 @@ The small embedding plus Divination. Divination is legal in seasons 30 and 31 bu
 - **Why it matters:** new cards are the main reason to read rules text. The card weight must not shut them out: an unseen card gets a high weight (9.36 on real data for a card never legal in training) and contributes its vector like any other card.
 - **Check:** unit-test on the small embedding plus Divination, comparing the two ratios.
 
+### With `unseen_weight=typical`, an unseen card weighs as a typical card (b)
+
+Proposed 2026-10-14 after runs 10–12 (`20261014_Unseen_Card_Weight_Architecture.pdf`). The eight rule-level decks' 16 maindeck lines have weights 1.5878 (8 lines: the basics), 1.8109 (6: Shock and Essence Scatter), 1.9163 (Negate) and 2.5041 (Burst Lightning).
+
+- **Expect:**
+  - The **typical weight** is the median card weight over every (training deck, maindeck line) pair, each line once whatever its copies: with 16 lines, the mean of the 8th and 9th, (1.5878 + 1.8109) ÷ 2 = **1.6994**.
+  - With `weights=idf` and `unseen_weight=typical`, every unseen card (one no training maindeck plays) weighs 1.6994: Divination, legal and never played, instead of 3.1972, and Smaug's Fury, never legal, instead of 2.6094. Every played card keeps its weight: Burst Lightning is still 2.5041.
+  - For D = "4 Divination, 4 Essence Scatter, 52 Island" with √copies, the vector is the unit-length 2 × 1.6994 × Divination + 2 × 1.8109 × Essence Scatter + √52 × 1.5878 × Island. Divination's share of the deck's weight, Σ copies(n) × weight, falls from **0.2979** to **0.1840**. It still counts through its rules text, and the evidence still records 60 embedded and 0 skipped copies.
+  - With `unseen_weight=idf`, the default, every weight is as in "Card weights follow the legality-aware IDF".
+  - `unseen_weight=typical` without `weights=idf` is refused, naming both parameters.
+- **Why it matters:** an unseen card's rarity is unknown, not extreme. On season 39, most unseen copies are cards that become staples (shock lands, Archmage's Charm), and at the highest weight they steered runs 11 and 12 away from a deck's known cards: with 13 or more unseen copies, they carried about 40% of its weight. The bag of cards doesn't take the parameter: there an unseen card only scales every similarity alike.
+- **Check:** unit-test the weights, the vector and the refusal.
+
 ### Candidates and ties follow the nearest-deck rules
 
 - **Expect:** the bag model ranks every label by its best row's cosine, with the same tolerance and tie-breaks as the nearest deck, so candidate 1 is always the guess. On the rows of "A tie goes to the label with more decks, then to the newer deck", an identical maindeck labelled twice ties, and the label with more decks wins.
@@ -1563,7 +1576,7 @@ The small embedding plus Divination. Divination is legal in seasons 30 and 31 bu
   | Make Disappear | 91 | 52,981 | 7.3559 |
   | a card never legal in seasons 1–38 | — | — | 9.3634 |
 
-  There are 23,618 weighted cards, the highest weight is 13.0008, and 8 cards are played outside their legal seasons.
+  There are 23,618 weighted cards, the highest weight is 13.0008, and 8 cards are played outside their legal seasons. The typical weight, for `unseen_weight=typical`, is **4.9630**.
 - **Why it matters:** these pin down the weights the runs use. Nadu, Winged Wisdom shows the legality effect: in 626 of the 7,578 decks of its one legal season, it weighs barely more than Burst Lightning in 18,266 decks over 37 seasons.
 - **Check:** compare with the fitted weights to 4 decimals.
 

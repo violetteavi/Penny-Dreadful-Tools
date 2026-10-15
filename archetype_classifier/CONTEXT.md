@@ -202,7 +202,7 @@ The decks in the training split: every deck from the training seasons that isn't
 _Avoid_: Pool, training pool (a pool is the **Legal card pool**)
 
 **Card weight**:
-How much a card counts in a deck's representation: a legality-aware IDF, ln((1 + N) / (1 + df)) + 1, where N is the number of **Train set** decks in the seasons where the card is legal and df is how many of their maindecks play it. A card never legal in a training season weighs as an unplayed card from one average season. Unlike **Playability**, it counts maindecks only and is on a log scale, so it runs from about 2 to 13 rather than 1 to 1,000.
+How much a card counts in a deck's representation: a legality-aware IDF, ln((1 + N) / (1 + df)) + 1, where N is the number of **Train set** decks in the seasons where the card is legal and df is how many of their maindecks play it. A card never legal in a training season weighs as an unplayed card from one average season. With `unseen_weight=typical`, every **Unseen card** instead weighs as a typical card: the median card weight over the training maindecks' lines. Unlike **Playability**, it counts maindecks only and is on a log scale, so it runs from about 2 to 13 rather than 1 to 1,000.
 _Avoid_: Playability weight, rarity (rarity is a card's printed rarity)
 
 **Deck vector**:

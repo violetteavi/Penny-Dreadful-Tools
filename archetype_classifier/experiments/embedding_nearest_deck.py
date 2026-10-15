@@ -13,6 +13,7 @@ candidate of two runs, about 4.4 GB for 20,173 decks).
 
     ... --embedding <name> --weights idf --copies sqrt --label idf_sqrt --baseline-run 8 ...
     ... --bag --copies sqrt --label idf_sqrt --baseline-run 8 ...
+    ... --embedding <name> --weights idf --copies sqrt --unseen-weight typical --label idf_sqrt_typical --baseline-run 11 ...
 """
 import argparse
 import os
@@ -39,6 +40,7 @@ def main() -> None:
     parser.add_argument('--embedding', help='the saved combined embedding, by its file name without .npz (not with --bag)')
     parser.add_argument('--bag', action='store_true', help='the bag of cards instead of an embedding (#50)')
     parser.add_argument('--weights', choices=['none', 'idf'], help="the nearest deck's card weights (#50); left out, version 2's model")
+    parser.add_argument('--unseen-weight', choices=['idf', 'typical'], help="with --weights idf, how unseen cards weigh (#50); left out, idf")
     parser.add_argument('--copies', choices=['linear', 'sqrt'], help='how copies count (#50); left out, linear for the embedding and sqrt for the bag')
     parser.add_argument('--label', required=True, help='a short name for the report file, e.g. text_and_numbers')
     parser.add_argument('--baseline-run', type=int, required=True, help='the run to compare with, deck by deck')
@@ -46,8 +48,8 @@ def main() -> None:
     parser.add_argument('--pr', type=int, action='append', default=[], help='a PR that produced the run (repeatable)')
     parser.add_argument('--date', required=True, help='YYYYMMDD, for the report file name')
     args = parser.parse_args()
-    if args.bag == bool(args.embedding) or (args.bag and args.weights):
-        parser.error('give --embedding (with optional --weights) or --bag, not both')
+    if args.bag == bool(args.embedding) or (args.bag and (args.weights or args.unseen_weight)):
+        parser.error('give --embedding (with optional --weights and --unseen-weight) or --bag, not both')
 
     edb = loader.experiments_db()
     scheme_id = int(edb.value('SELECT id FROM split_scheme WHERE name = %s', [SCHEME]))
@@ -58,7 +60,7 @@ def main() -> None:
     context = FitContext(ArchetypeTree(snapshot.archetypes), loader.load_legal_cards({d.season_id for d in train.decks.values()}), seed=0)
     print(f'{len(training)} training decks, {len(predict_decks)} decks to predict')
 
-    options: dict[str, JSON] = {k: v for k, v in (('weights', args.weights), ('copies', args.copies)) if v is not None}
+    options: dict[str, JSON] = {k: v for k, v in (('weights', args.weights), ('copies', args.copies), ('unseen_weight', args.unseen_weight)) if v is not None}
     model: Model = BagNearestDeck(options) if args.bag else EmbeddingNearestDeck({'embedding': args.embedding, **options})
     start = time.perf_counter()
     model.fit(training, [], context)

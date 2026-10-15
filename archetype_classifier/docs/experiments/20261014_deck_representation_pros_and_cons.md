@@ -1,5 +1,7 @@
 # Deck representations: pros and cons
 
+*Revised 2026-10-14, evening: added run 13, unseen cards at a typical weight (spec `20261014_Unseen_Card_Weight_Architecture.pdf`, report [20261014_embedding_nearest_idf_sqrt_typical.md](20261014_embedding_nearest_idf_sqrt_typical.md)).*
+
 Ticket #50, PR #56. Runs 10, 11 and 12 in the experiments database, compared with run 8 (the nearest deck, text and numbers) and run 9 (the site's guesser at 20). The full reports are [20261014_bag_nearest_idf_sqrt.md](20261014_bag_nearest_idf_sqrt.md), [20261014_embedding_nearest_idf_sqrt.md](20261014_embedding_nearest_idf_sqrt.md) and [20261014_embedding_nearest_idf_linear.md](20261014_embedding_nearest_idf_linear.md). The design is `20261014_Deck_Representation_Architecture.pdf`, and the results write-up is `20261014_Deck_Representation_Results.pdf`.
 
 ## What was tested
@@ -89,6 +91,19 @@ The deck of only newly legal cards (deck −1) gets no guess from the bag, Midra
 
 **Basic lands** (Q9, no special case). The median share of a season 39 deck's weight carried by basic lands falls from 17% (run 8) to 7% (run 12, IDF) and 5% (run 11, IDF and √). IDF alone turns them down enough.
 
+**Run 13: unseen cards at a typical weight** (tuned on season 39). Run 11 with `unseen_weight=typical`: every card no training maindeck plays weighs 4.96 (the median card weight over training maindeck lines) instead of 9.36.
+
+| Top 1, existing archetypes | Decks | Run 8 | Run 11 | Run 13 | Run 13 − run 11 | Unseen share of weight (11 → 13) |
+|---|---|---|---|---|---|---|
+| all | 1,966 | 0.66 | **0.69** | 0.66 | −0.03 [−0.10, 0.03] | |
+| 0 unseen copies | 652 | 0.84 | 0.85 | 0.85 | 0.00 (identical guesses) | 0% |
+| 1–4 | 459 | 0.69 | 0.71 | 0.70 | −0.01 [−0.04, 0.02] | 11% → 6% |
+| 5–12 | 683 | 0.53 | **0.58** | 0.49 | −0.09 [−0.25, 0.05] | 25% → 15% |
+| 13+ | 172 | 0.42 | 0.47 | **0.55** | **+0.08 [0.01, 0.17]** | 39% → 25% |
+| Held-out, unseen cards | 230 | 0.64 | 0.57 | 0.59 | +0.02 [−0.01, 0.06] | |
+
+It fixed the 13+ band as predicted, and left decks with no unseen cards exactly as run 11 had them. But it lost the 5–12 band, mostly Equipment Aggro: in season 39 that archetype is built on new cards (Leyline Axe and Raubahn, Bull of Ala Mhigo). At 9.36 they carry 28% of deck 269637's weight and pull it to Equipment Aggro. At 4.96 they carry 17%, and all 67 Equipment Aggro decks go back to Red Deck Wins. Overall run 13 is back at run 8's level. One weight for every unseen card can't separate a new staple from a new archetype-defining card.
+
 ## Pros and cons
 
 ### (a) Bag of cards, IDF, √copies (run 10)
@@ -110,8 +125,12 @@ The deck of only newly legal cards (deck −1) gets no guess from the bag, Midra
 ### (b) Weighted embedding average, IDF, linear copies (run 12)
 - ❌ Dominated by run 11: lower Top 1, Top 5 and MRR, and the worst run at 13+ unseen copies (0.36).
 
+### (b) Weighted embedding average, IDF, √copies, unseen cards at the typical weight (run 13; tuned on season 39)
+- ✅ The best average with 13+ unseen copies (0.55, level with the bag); undoes most of run 11's new confusions.
+- ❌ Loses Equipment Aggro again, whose defining cards are new, and falls back to run 8's level overall (0.66).
+
 ## What next
 
-- **The never-legal weight is the clearest fix.** In the average, a new card should probably weigh like a typical card, not like the rarest one. This is a weight choice, so trying it on season 39 is tuning and has to be flagged. It also bears on the live-evaluation note in #17.
+- **The unseen-card weight is a knob, not a fix.** Run 13 moved decks between the 5–12 and 13+ bands with no net gain. Keep run 11 as the weighted average to carry forward. Telling new staples from new defining cards needs evidence about each card, such as a new season's labelled decks on a live feed (#17).
 - **A hybrid (c) has room to work.** The bag and the average fail on different decks: an oracle choosing among runs 8, 10 and 11 reaches 0.82 Top 1 and 0.96 Top 5. The bag's rare-card ranking and the average's text are complementary.
-- **#55, the first look at the test seasons,** needs a choice of model to carry forward.
+- **#55, the first look at the test seasons,** needs a choice of model to carry forward: run 8 as the control, and run 10 or run 11 (or both). Run 13 is tuned on season 39 and adds nothing overall.

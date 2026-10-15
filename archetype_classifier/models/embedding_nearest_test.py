@@ -2,6 +2,7 @@
 embedding_nearest_local_test.py."""
 import dataclasses
 import math
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
@@ -9,7 +10,7 @@ import pytest
 
 from archetype_classifier.card_embeddings.combined_embedding import load_embedding_hash, save_combined_embedding
 from archetype_classifier.card_embeddings.deck_vectors import build_deck_vectors
-from archetype_classifier.card_embeddings.deck_vectors_test import EMBEDDING, cards
+from archetype_classifier.card_embeddings.deck_vectors_test import EMBEDDING, cards, divination_embedding, unit
 from archetype_classifier.data_loading.dataset import ArchetypeSnapshot, CardCount
 from archetype_classifier.data_loading.labels import LabelStatus
 from archetype_classifier.evaluation.metrics import ArchetypeTree
@@ -177,8 +178,8 @@ def test_candidate_1_is_always_the_guess_on_random_similarities() -> None:
         scores = [c.score for c in candidates]
         assert all(later is not None and earlier is not None and later <= earlier + 1e-9 for earlier, later in zip(scores, scores[1:]))
 
-def test_version_3_weighs_cards() -> None:
-    assert EmbeddingNearestDeck.version == 3
+def test_version_4_can_weigh_unseen_cards_as_typical() -> None:
+    assert EmbeddingNearestDeck.version == 4
 
 
 # Card weights and copies (#50; Scenarios.md, "Deck representations"), on the card-weight scenario's training decks.
@@ -222,3 +223,53 @@ def test_changed_card_weights_are_refused_naming_both_hashes(embedding_path: Pat
     before, after = build_card_weights(WEIGHT_TRAINING, LEGAL).hash(), build_card_weights(WEIGHT_TRAINING, changed).hash()
     with pytest.raises(ValueError, match=f'card weights.*{before}.*{after}'):
         EmbeddingNearestDeck.from_state(model.params, model.state(), WEIGHT_TRAINING, FitContext(TREE, changed, seed=0, embeddings_dir=embedding_path.parent))
+
+
+# Scenario: with unseen_weight=typical, an unseen card weighs as a typical card (b). The small embedding plus Divination, which no training deck plays.
+
+@pytest.fixture
+def divination_path(tmp_path: Path) -> Path:
+    return save_combined_embedding(divination_embedding(), tmp_path)
+
+def test_unknown_or_unweighted_unseen_weights_are_refused() -> None:
+    with pytest.raises(ValueError, match="unseen_weight must be one of \\('idf', 'typical'\\), not 'median'"):
+        EmbeddingNearestDeck({'embedding': 'e', 'weights': 'idf', 'unseen_weight': 'median'})
+    with pytest.raises(ValueError, match="unseen_weight='typical' needs weights='idf', not weights='none'"):
+        EmbeddingNearestDeck({'embedding': 'e', 'unseen_weight': 'typical'})
+
+def test_an_unseen_card_weighs_as_a_typical_card(divination_path: Path) -> None:
+    model = weighted(divination_path, weights='idf', copies='sqrt', unseen_weight='typical')
+    embedding = divination_embedding()
+    row = {name: embedding.vectors[i].astype(np.float64) for i, name in enumerate(embedding.names)}
+    deck = cards(Divination=4, Essence_Scatter=4, Island=52)
+    typical = model.card_weights.typical if model.card_weights else 0.0
+    assert round(typical, 4) == 1.6994
+    expected = unit(2 * typical * row['Divination'] + 2 * build_card_weights(WEIGHT_TRAINING, LEGAL).weight('Essence Scatter') * row['Essence Scatter']
+                    + math.sqrt(52) * build_card_weights(WEIGHT_TRAINING, LEGAL).weight('Island') * row['Island'])
+    assert np.allclose(model.deck_vectors([deck]).matrix[0], expected)
+    [prediction] = model.predict([query(201, deck)])
+    assert (prediction.evidence['embedded_copies'], prediction.evidence['skipped_copies']) == (60, 0)  # It still counts through its rules text.
+    assert model.state()['card_weights'] == build_card_weights(WEIGHT_TRAINING, LEGAL, unseen='typical').summary()
+
+def test_divinations_share_of_the_deck_weight_falls(divination_path: Path) -> None:
+    def share(weight: Callable[[str], float]) -> float:
+        parts = [2 * weight('Divination'), 2 * weight('Essence Scatter'), math.sqrt(52) * weight('Island')]
+        return parts[0] / sum(parts)
+    assert round(share(build_card_weights(WEIGHT_TRAINING, LEGAL).weight), 4) == 0.2979
+    assert round(share(build_card_weights(WEIGHT_TRAINING, LEGAL, unseen='typical').weight), 4) == 0.1840
+
+def test_the_default_unseen_weight_is_idf(divination_path: Path) -> None:
+    default, explicit = weighted(divination_path, weights='idf', copies='sqrt'), weighted(divination_path, weights='idf', copies='sqrt', unseen_weight='idf')
+    decks = [query(201, cards(Divination=4, Essence_Scatter=4, Island=52)), query(202, cards(Shock=4, Mountain=56))]
+    assert explicit.predict(decks) == default.predict(decks)
+    assert default.state() == explicit.state()
+
+def test_a_typical_model_loads_back_and_refuses_the_other_rule(divination_path: Path) -> None:
+    model = weighted(divination_path, weights='idf', copies='sqrt', unseen_weight='typical')
+    decks = [query(201, cards(Divination=4, Essence_Scatter=4, Island=52)), query(202, cards(Shock=4, Mountain=56))]
+    fit_context = FitContext(TREE, LEGAL, seed=0, embeddings_dir=divination_path.parent)
+    loaded = EmbeddingNearestDeck.from_state(model.params, model.state(), WEIGHT_TRAINING, fit_context)
+    assert loaded.predict(decks) == model.predict(decks)
+    other = {**model.params, 'unseen_weight': 'idf'}
+    with pytest.raises(ValueError, match='card weights have changed'):
+        EmbeddingNearestDeck.from_state(other, model.state(), WEIGHT_TRAINING, fit_context)

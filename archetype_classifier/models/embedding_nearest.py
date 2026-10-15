@@ -11,7 +11,8 @@ within TIE_TOLERANCE of the first label of their group are tied, and ordered as 
 deck. So candidate 1 is always the guess. Rows aren't summed: that's #45 and #18.
 
 Version 3 (#50) can weigh each card by its card weight (parameter weights: none or idf) and count copies linearly or by square root (copies: linear or
-sqrt). With neither parameter it's version 2's model: no weights and linear copies.
+sqrt). With neither parameter it's version 2's model: no weights and linear copies. Version 4 (#50) adds unseen_weight, idf (the default, version 3's
+weights) or typical: with weights=idf, every card no training maindeck plays weighs as a typical card instead of by the formula.
 """
 from collections import Counter
 from collections.abc import Sequence
@@ -25,7 +26,7 @@ from archetype_classifier.card_embeddings.deck_vectors import DeckVectors, build
 from archetype_classifier.card_embeddings.text_embedding import EMBEDDINGS_DIR
 from archetype_classifier.data_loading.dataset import CardCount
 from archetype_classifier.evaluation.model import JSON, Candidate, FitContext, LabelledDeck, PredictDeck, Prediction, TrainingDeck, register
-from archetype_classifier.models.card_weights import COPIES, CardWeights, build_card_weights
+from archetype_classifier.models.card_weights import COPIES, UNSEEN_WEIGHTS, CardWeights, build_card_weights
 
 CHUNK = 1000  # Decks compared with every training row at once: a 1,000 x 84,000 float64 block is 670 MB.
 SKIPPED_CARDS_KEPT = 20  # The most-skipped cards the state names.
@@ -113,7 +114,7 @@ def build_candidates(similarities: np.ndarray, rows: TrainingRows) -> tuple[Cand
 @register
 class EmbeddingNearestDeck:
     name: ClassVar[str] = 'embedding nearest deck'
-    version: ClassVar[int] = 3  # 2: ranked candidates (#14). 3: card weights and copies (#50).
+    version: ClassVar[int] = 4  # 2: ranked candidates (#14). 3: card weights and copies (#50). 4: the unseen_weight parameter (#50).
 
     def __init__(self, params: dict[str, JSON]) -> None:
         self.params = params
@@ -123,12 +124,17 @@ class EmbeddingNearestDeck:
             raise ValueError(f'weights must be one of {WEIGHTS}, not {self.weights!r}')
         if self.copies not in COPIES:
             raise ValueError(f'copies must be one of {tuple(COPIES)}, not {self.copies!r}')
+        self.unseen_weight = str(params.get('unseen_weight', 'idf'))
+        if self.unseen_weight not in UNSEEN_WEIGHTS:
+            raise ValueError(f'unseen_weight must be one of {UNSEEN_WEIGHTS}, not {self.unseen_weight!r}')
+        if self.unseen_weight == 'typical' and self.weights != 'idf':
+            raise ValueError(f"unseen_weight='typical' needs weights='idf', not weights={self.weights!r}: with every weight 1 there's nothing to change")
         self.card_weights: CardWeights | None = None
 
     def fit(self, training: Sequence[TrainingDeck], validation: Sequence[LabelledDeck], context: FitContext) -> None:
         """Nothing is tuned, so the validation decks aren't used."""
         if self.weights == 'idf':
-            self.card_weights = build_card_weights(training, context.legal_cards)
+            self.card_weights = build_card_weights(training, context.legal_cards, self.unseen_weight)
         self.load_embedding(context)
         self.build_index(training)
         skipped = [(line.card, line.n * int(n)) for maindeck, n in zip(self.rows.maindecks, self.rows.deck_counts) for line in maindeck if line.card not in self.known]
@@ -189,7 +195,7 @@ class EmbeddingNearestDeck:
         if model.embedding_hash != state['embedding_hash']:
             raise ValueError(f'The embedding {params["embedding"]} has changed since the model was fitted: it was {state["embedding_hash"]}, it is now {model.embedding_hash}')
         if model.weights == 'idf':
-            model.card_weights = build_card_weights(training, context.legal_cards)
+            model.card_weights = build_card_weights(training, context.legal_cards, model.unseen_weight)
             fitted_hash = cast(dict[str, JSON], state['card_weights'])['card_weights_hash']
             if model.card_weights.hash() != fitted_hash:
                 raise ValueError(f'The card weights have changed since the model was fitted: they were {fitted_hash}, they are now {model.card_weights.hash()}')

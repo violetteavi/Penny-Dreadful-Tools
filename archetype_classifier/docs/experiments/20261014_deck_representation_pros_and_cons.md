@@ -1,6 +1,6 @@
 # Deck representations: pros and cons
 
-*Revised 2026-10-14, evening: added run 13, unseen cards at a typical weight (spec `20261014_Unseen_Card_Weight_Architecture.pdf`, report [20261014_embedding_nearest_idf_sqrt_typical.md](20261014_embedding_nearest_idf_sqrt_typical.md)).*
+*Revised 2026-10-14, night: 69 season 39 decks were relabelled from Red Deck Wins to Equipment Aggro after the season; without them, only the bag improves on run 8. See "Labels given after the season". Earlier: added run 13, unseen cards at a typical weight (spec `20261014_Unseen_Card_Weight_Architecture.pdf`, report [20261014_embedding_nearest_idf_sqrt_typical.md](20261014_embedding_nearest_idf_sqrt_typical.md)).*
 
 Ticket #50, PR #56. Runs 10, 11 and 12 in the experiments database, compared with run 8 (the nearest deck, text and numbers) and run 9 (the site's guesser at 20). The full reports are [20261014_bag_nearest_idf_sqrt.md](20261014_bag_nearest_idf_sqrt.md), [20261014_embedding_nearest_idf_sqrt.md](20261014_embedding_nearest_idf_sqrt.md) and [20261014_embedding_nearest_idf_linear.md](20261014_embedding_nearest_idf_linear.md). The design is `20261014_Deck_Representation_Architecture.pdf`, and the results write-up is `20261014_Deck_Representation_Results.pdf`.
 
@@ -33,7 +33,7 @@ Only the representation changed. Each label is still ranked by its best training
 | Top 5 minus run 8 | | | +0.02 [−0.01, 0.04] | −0.01 [−0.03, 0.00] | **−0.02 [−0.03, −0.01]** |
 | Top 1 minus run 9 | | | +0.17 [0.12, 0.22] | +0.17 [0.10, 0.24] | +0.15 [0.08, 0.23] |
 
-- **None is a clear step past run 8.** Run 10 and run 11 each gain 2–3 points of Top 1, and both intervals touch or cross 0. The long-term goal is about 90% Top 1 and 99% Top 5.
+- **None is a clear step past run 8 on these labels.** Run 10 and run 11 each gain 2–3 points of Top 1, and both intervals touch or cross 0. But run 11's lead rests on 69 relabelled decks: see "Labels given after the season" below. The long-term goal is about 90% Top 1 and 99% Top 5.
 - **IDF on its own does little to the average:** run 12 minus run 8 is +0.01 Top 1, and it loses 2 points of Top 5.
 - **√copies helps the average:** run 11 minus run 12 is +0.02 Top 1 [0.00, 0.04].
 - **All three beat the site's guesser** by 15–17 points of Top 1, as run 8 did.
@@ -46,7 +46,7 @@ Only the representation changed. Each label is still ranked by its best training
 | Solemnity Aristocrats (1) | 112 | 0 · 97 | 3 · 9 | 0 · **7** | 0 · 53 | 0 · 51 |
 | Valakut Ramp (0) | 60 | not listed | not listed | not listed | not listed | not listed |
 
-Top 5 on new archetypes is 0.12 for the bag, against 0.00 for runs 8, 11 and 12 and 0.15 for the site's guesser. But the bag's guesses for those decks land further away in the tree: its micro hF there is 0.33, against 0.55 for run 8 and 0.61 for run 11.
+Caveat (#59): both archetypes' training labels were applied during season 39, so a model at its start would have had no training decks for either. Top 5 on new archetypes is 0.12 for the bag, against 0.00 for runs 8, 11 and 12 and 0.15 for the site's guesser. But the bag's guesses for those decks land further away in the tree: its micro hF there is 0.33, against 0.55 for run 8 and 0.61 for run 11.
 
 **Unseen cards.** The weighted average gets worse as a deck's unseen cards pile up; the bag gets better.
 
@@ -102,12 +102,21 @@ The deck of only newly legal cards (deck −1) gets no guess from the bag, Midra
 | 13+ | 172 | 0.42 | 0.47 | **0.55** | **+0.08 [0.01, 0.17]** | 39% → 25% |
 | Held-out, unseen cards | 230 | 0.64 | 0.57 | 0.59 | +0.02 [−0.01, 0.06] | |
 
-It fixed the 13+ band as predicted, and left decks with no unseen cards exactly as run 11 had them. But it lost the 5–12 band, mostly Equipment Aggro: in season 39 that archetype is built on new cards (Leyline Axe and Raubahn, Bull of Ala Mhigo). At 9.36 they carry 28% of deck 269637's weight and pull it to Equipment Aggro. At 4.96 they carry 17%, and all 67 Equipment Aggro decks go back to Red Deck Wins. Overall run 13 is back at run 8's level. One weight for every unseen card can't separate a new staple from a new archetype-defining card.
+**Labels given after the season.** During season 39, reviewers labelled the big red equipment lists Red Deck Wins. After the season, a person moved 69 scored season 39 decks into Equipment Aggro, 65 of them (3 maindecks) on 2026-04-08. Equipment Aggro went from 21 decks in season 38 to 80–100 a season from season 40, after Leyline Axe and Raubahn, Bull of Ala Mhigo arrived. On the 69 decks, runs 8, 10 and 13 guess Red Deck Wins (the label of the time) and runs 11 and 12 guess Equipment Aggro. Without them (1,897 decks, 1,108 maindecks):
+
+| Top 1 / Top 5 / MRR | Run 8 | Run 9 | Run 10 bag | Run 11 | Run 12 | Run 13 |
+|---|---|---|---|---|---|---|
+| Existing archetypes, without the 69 | 0.68 / 0.89 / 0.78 | 0.54 / 0.77 / 0.64 | **0.71 / 0.91 / 0.80** | 0.68 / 0.88 / 0.77 | 0.66 / 0.87 / 0.75 | 0.69 / 0.88 / 0.78 |
+| Top 1 minus run 8 | | | +0.03 [−0.01, 0.06] | −0.01 [−0.03, 0.02] | **−0.03 [−0.04, −0.01]** | 0.00 [−0.03, 0.03] |
+
+The bag minus run 11 is +0.03 on Top 1 [0.00, 0.06], Top 5 [0.01, 0.05] and MRR [0.02, 0.06]. **Only the bag improves on run 8**; weighting the average doesn't. Training labels have the same problem (Izzet Madcap was created during season 39): #59.
+
+It fixed the 13+ band as predicted, and left decks with no unseen cards exactly as run 11 had them. But it lost the 5–12 band, mostly Equipment Aggro: in season 39 that archetype is built on new cards (Leyline Axe and Raubahn, Bull of Ala Mhigo). At 9.36 they carry 28% of deck 269637's weight and pull it to Equipment Aggro. At 4.96 they carry 17%, and all 67 Equipment Aggro decks go back to Red Deck Wins. Overall run 13 is back at run 8's level. But those decks were Red Deck Wins during the season, so by the labels of the time run 13 is right on them; without them, run 13 is level with runs 8 and 11 and better with many unseen cards.
 
 ## Pros and cons
 
 ### (a) Bag of cards, IDF, √copies (run 10)
-- ✅ Best Top 5 (0.91) and MRR (0.78), and Top 1 level with run 11.
+- ✅ The only representation better than run 8: without the relabelled decks, 0.71 Top 1 and 0.80 MRR, clearly ahead of run 11. Best Top 5 (0.91).
 - ✅ Finds new archetypes by their rare cards: Izzet Madcap in the top 5 for 33 of 109 decks (the site's guesser: 39), where every average gets 0.
 - ✅ Robust to unseen cards, which can't change its ranking: best with 13+ unseen copies (0.56 against 0.42) and on held-out decks with unseen cards.
 - ✅ Halves the "average picked the wrong list" misses.
@@ -116,7 +125,8 @@ It fixed the 13+ band as predicted, and left decks with no unseen cards exactly 
 - ❌ Basic lands make the similarity products nearly dense: predicting took about 8 minutes, and it needed a dense-block rewrite to fit in memory.
 
 ### (b) Weighted embedding average, IDF, √copies (run 11)
-- ✅ Best Top 1 (0.69) and hF (0.78) on existing archetypes; fixes the largest confusion, Equipment Aggro → Red Deck Wins.
+- ✅ Best hF (0.78) on existing archetypes.
+- ❌ Its Top 1 lead over run 8 is the 69 decks relabelled into Equipment Aggro after the season; without them it's −0.01.
 - ✅ Still guesses for decks of new cards, through their rules text.
 - ❌ Loses Top 5 against run 8 (−0.01).
 - ❌ Doesn't fix dilution, and doesn't help new archetypes at all.
@@ -127,10 +137,11 @@ It fixed the 13+ band as predicted, and left decks with no unseen cards exactly 
 
 ### (b) Weighted embedding average, IDF, √copies, unseen cards at the typical weight (run 13; tuned on season 39)
 - ✅ The best average with 13+ unseen copies (0.55, level with the bag); undoes most of run 11's new confusions.
-- ❌ Loses Equipment Aggro again, whose defining cards are new, and falls back to run 8's level overall (0.66).
+- ❌ Level with run 8 overall (0.69 against 0.68 without the relabelled decks); its Equipment Aggro "loss" is a return to the labels of the time.
 
 ## What next
 
-- **The unseen-card weight is a knob, not a fix.** Run 13 moved decks between the 5–12 and 13+ bands with no net gain. Keep run 11 as the weighted average to carry forward. Telling new staples from new defining cards needs evidence about each card, such as a new season's labelled decks on a live feed (#17).
+- **Labels as they stood at the time (#59).** Snapshot training labels as of the newest training deck, and score evaluation decks against their label at the end of their season. Re-score runs 8–13 once that exists.
+- **Build on the bag of cards.** The weighted average adds nothing over run 8; if it stays, run 13's typical weight for unseen cards is the better default.
 - **A hybrid (c) has room to work.** The bag and the average fail on different decks: an oracle choosing among runs 8, 10 and 11 reaches 0.82 Top 1 and 0.96 Top 5. The bag's rare-card ranking and the average's text are complementary.
-- **#55, the first look at the test seasons,** needs a choice of model to carry forward: run 8 as the control, and run 10 or run 11 (or both). Run 13 is tuned on season 39 and adds nothing overall.
+- **#55, the first look at the test seasons:** carry run 8 as the control and run 10 (the bag). Runs 11 and 13 are optional; run 13 is tuned on season 39.

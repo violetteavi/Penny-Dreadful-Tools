@@ -1,6 +1,6 @@
 """Deck representations on real data (Scenarios.md, "Deck representations", and "Reference decks for every model"). Skipped unless PD_LOCAL_DATA=1: it
-needs snapshot 1 and scheme 1 in the experiments database, run 8, the real site and cards databases and the saved embedding in embeddings/. It fits the
-nearest deck v3 three ways and the bag of cards, which takes a few minutes.
+needs snapshot 1 and scheme 1 in the experiments database, runs 8 and 11, the real site and cards databases and the saved embedding in embeddings/. It
+fits the nearest deck five ways and the bag of cards, which takes a few minutes.
 
     PD_LOCAL_DATA=1 uv run --group archetypes pytest -s archetype_classifier/models/representation_local_test.py
 """
@@ -26,7 +26,8 @@ pytestmark = pytest.mark.skipif(os.environ.get('PD_LOCAL_DATA') != '1', reason='
 EMBEDDING = 'potion__masked__average__w0.5-0.1667-0.1667-0.1667__fit1-38__emb1-39'
 NEW_MODELS: dict[str, Model] = {'run 10: bag of cards, idf, sqrt': BagNearestDeck({'copies': 'sqrt'}),
               'run 11: nearest deck, idf, sqrt': EmbeddingNearestDeck({'embedding': EMBEDDING, 'weights': 'idf', 'copies': 'sqrt'}),
-              'run 12: nearest deck, idf, linear': EmbeddingNearestDeck({'embedding': EMBEDDING, 'weights': 'idf', 'copies': 'linear'})}
+              'run 12: nearest deck, idf, linear': EmbeddingNearestDeck({'embedding': EMBEDDING, 'weights': 'idf', 'copies': 'linear'}),
+              'run 13: nearest deck, idf, sqrt, typical': EmbeddingNearestDeck({'embedding': EMBEDDING, 'weights': 'idf', 'copies': 'sqrt', 'unseen_weight': 'typical'})}
 
 
 @pytest.fixture(scope='module')
@@ -62,16 +63,19 @@ def test_real_card_weights(training: list[TrainingDeck], weights: CardWeights) -
                     'A card never legal in seasons 1-38': 9.3634}
     assert (len(weights.idf), round(max(weights.idf.values()), 4), len(weights.outside_legal)) == (23618, 13.0008, 8)
     assert min(weights.idf, key=weights.idf.__getitem__) == 'Island'
+    assert round(weights.typical, 4) == 4.9630  # The weight of every unseen card under unseen_weight=typical.
 
 
-# Not a scenario: the nearest deck v3 with no new parameters is run 8's model.
+# Not scenarios: the nearest deck with no new parameters is run 8's model, and with run 11's parameters it's run 11's.
 
-def test_version_3_with_default_parameters_reproduces_run_8_on_season_39(snapshot: Snapshot, training: list[TrainingDeck], context: FitContext) -> None:
-    model = EmbeddingNearestDeck({'embedding': EMBEDDING})
+@pytest.mark.parametrize(('run', 'params'), [(8, {}), (11, {'weights': 'idf', 'copies': 'sqrt'})])
+def test_the_nearest_deck_reproduces_earlier_runs_on_season_39(snapshot: Snapshot, training: list[TrainingDeck], context: FitContext, run: int,
+                                                               params: dict[str, str]) -> None:
+    model = EmbeddingNearestDeck({'embedding': EMBEDDING, **params})
     model.fit(training, [], context)
     validation = build_deck_set(snapshot, frozenset({Split.VALIDATION}))
     predictions = model.predict(build_predict_decks(validation, loader.load_contents(validation.decks)))
-    stored = load_guesses(loader.experiments_db(), 8)
+    stored = load_guesses(loader.experiments_db(), run)
     assert len(predictions) == 2249
     assert [as_stored(p) for p in predictions] == [as_stored(stored[p.deck_id]) for p in predictions]  # Stored scores have 4 decimals.
 
@@ -85,9 +89,12 @@ def as_stored(p: Prediction) -> tuple[int | None, list[tuple[int, float | None]]
 def test_the_deck_of_only_new_cards_under_each_representation(weights: CardWeights, models: dict[str, Model]) -> None:
     deck = build_hand_made_deck()
     assert {round(weights.weight(line.card), 4) for line in deck.maindeck} == {9.3634}
-    bag, idf_sqrt, idf_linear = (m.predict([deck])[0] for m in models.values())
+    bag, idf_sqrt, idf_linear, typical = (m.predict([deck])[0] for m in models.values())
     assert (bag.guess_id, bag.candidates, bag.evidence) == (None, (), {'known_copies': 0, 'unseen_copies': 60})
-    for prediction in (idf_sqrt, idf_linear):
+    typical_model = models['run 13: nearest deck, idf, sqrt, typical']
+    assert isinstance(typical_model, EmbeddingNearestDeck) and typical_model.card_weights is not None
+    assert {round(typical_model.card_weights.weight(line.card), 4) for line in deck.maindeck} == {4.9630}  # Equal weights again, at the typical weight.
+    for prediction in (idf_sqrt, idf_linear, typical):
         assert prediction.guess_id is not None and (prediction.evidence['embedded_copies'], prediction.evidence['skipped_copies']) == (60, 0)
     nearest = models['run 12: nearest deck, idf, linear']
     assert isinstance(nearest, EmbeddingNearestDeck)

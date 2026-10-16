@@ -1,6 +1,7 @@
 """The #44 and #50 experiments: the nearest deck on a saved combined embedding, or on the bag of cards (--bag), compared with a baseline run.
 
 It's fitted on scheme 1's TRAIN decks ("default": train {VERIFIED}) with no validation decks, since nothing is tuned, so no row is flagged as tuned on.
+--scheme picks another scheme on snapshot 1, such as #59's "default, labels at season 39".
 It's saved, run on {HELD_OUT, VALIDATION} and reported into docs/experiments/. The test seasons aren't used. It composes existing functions only.
 The report is rendered by evaluation.report in place of this process, so the fitted model's memory is freed first (a report holds every
 candidate of two runs, about 4.4 GB for 20,173 decks).
@@ -47,12 +48,13 @@ def main() -> None:
     parser.add_argument('--min-decks', type=int, required=True, help='the fewest decks an archetype needs to count in macro averages')
     parser.add_argument('--pr', type=int, action='append', default=[], help='a PR that produced the run (repeatable)')
     parser.add_argument('--date', required=True, help='YYYYMMDD, for the report file name')
+    parser.add_argument('--scheme', default=SCHEME, help=f"the split scheme, by name (default: '{SCHEME}')")
     args = parser.parse_args()
     if args.bag == bool(args.embedding) or (args.bag and (args.weights or args.unseen_weight)):
         parser.error('give --embedding (with optional --weights and --unseen-weight) or --bag, not both')
 
     edb = loader.experiments_db()
-    scheme_id = int(edb.value('SELECT id FROM split_scheme WHERE name = %s', [SCHEME]))
+    scheme_id = int(edb.value('SELECT id FROM split_scheme WHERE name = %s', [args.scheme]))
     snapshot = loader.load_snapshot(edb, 1, scheme_id)
     train, scored = build_deck_set(snapshot, TRAIN), build_deck_set(snapshot, SCOPE)
     training = build_training_decks(train, loader.load_contents(train.decks))

@@ -642,7 +642,7 @@ A season ends where the next one starts. **Scheme:** the typical scheme with tes
 Snapshot 1 with its history added, under scheme 1 plus the cutoff C.
 
 - **Expect:**
-  - The split report counts **220** TRAIN-role decks with a decision after the cutoff: different label **203**, same label **8**, no label **9**, out of scope **0**. TRAIN has **162,869** decks (162,878 without the cutoff).
+  - The split report counts **222** TRAIN-role decks with a decision after the cutoff: different label **203**, same label **8**, no label **9**, out of scope **2**. TRAIN has **162,869** decks (162,878 without the cutoff). The two out of scope, decks 97 and 633, are from Tapped Out, so they're out of scope with or without a cutoff.
   - Izzet Madcap, Solemnity Aristocrats, Flare Deck Wins and Through the Breach have no training decks.
   - Held-out and validation decks have the same labels and splits as under scheme 1.
   - Season 39's "label changed after its season" row holds **80** decks.

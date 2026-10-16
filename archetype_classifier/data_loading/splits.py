@@ -42,6 +42,7 @@ class SplitScheme:
     train_statuses: frozenset[LabelStatus] = frozenset({LabelStatus.VERIFIED})  # Label statuses a model may train on.
     eval_statuses: frozenset[LabelStatus] = frozenset({LabelStatus.VERIFIED})  # Label statuses that are scored.
     allow_held_out_twins: bool = False  # Hold out single decks rather than maindeck groups, so held-out decks can repeat a training maindeck.
+    label_cutoff: int | None = None  # Unix time. A TRAIN deck with a label decision after it trains on its label as it stood then (#59); None for today's labels.
 
     def to_params(self) -> dict[str, Any]:
         """Every parameter except the name, as JSON-ready values."""

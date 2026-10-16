@@ -114,6 +114,24 @@ Choosing the best of the three for each deck (an oracle) would reach 0.82 Top 1 
     - **The average:** besides Equipment Aggro, midrange decks told apart by plan rather than by signature cards: Dimir Midrange and Orzhov Midrange (7 each) and Golgari Wight (5).
     - **The control alone** wins only 34 decks, so it adds little that the other two lack.
 
+## Decks no model ranks in its top 5
+
+On 93 of the 1,956 decks of existing archetypes (4.8%, 78 maindecks), none of runs 14, 16 and 17 has the label in its top 5. Adding the site's guesser (run 15) rescues only 12.
+
+| | Missed decks | All 1,956 decks |
+|---|---|---|
+| Labelled with an archetype that has children | 57 (61%) | |
+| Labelled with a top-level archetype (Combo, Midrange, Aggro…) | 27 (29%) | 106 (5%) |
+| Median unseen maindeck copies | 8 | 4 |
+| 13 or more unseen copies | 17 (18%) | 172 (9%) |
+| Relabelled after the season | 1 | 71 |
+| Repeating a training maindeck | 0 | |
+
+- **Mostly broad parent labels.** Combo (14 of its 37 season 39 decks) and Midrange (9 of 37) lead. These are decks a reviewer couldn't place in a leaf, and their nearest training decks carry specific leaf labels, so the broad label ranks low. Ranking by single nearest decks can't say "this deck is generic": that's parent fallback's job (#45).
+- **A few young, fast-changing archetypes.** Kinnan Combo misses 15 of its 18 decks: all 27 of its training decks are from season 38, and its lists changed with season 39's cards. Squirrel Aristocrats (training decks from season 36 on) misses 6 of 17.
+- **Not noise and not tiny archetypes.** Only 1 was relabelled after the season, none repeats a training maindeck, and the label's median training count is 210 decks.
+- **Often near misses.** The best rank any model gives the label has a median of 10, and 48 of the 93 have it in the top 10. About half the models' first candidates are in another top-level branch.
+
 ## Time taken
 
 Fit and prediction time, as stored with each model and run (predicting covers all 20,173 held-out and season 39 decks).

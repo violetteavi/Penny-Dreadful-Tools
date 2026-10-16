@@ -60,7 +60,7 @@ def test_deck_counts_tilt_cohesion() -> None:
 # Ties between typical lists break as the nearest deck breaks them: the most decks, then the newest deck.
 
 def test_a_tie_for_the_typical_list_goes_to_the_row_with_more_decks_then_the_newer_deck() -> None:
-    more = rows_space([(ORZHOV_CONTROL, (1, 0, 0)), (ORZHOV_CONTROL, (1, 0, 0), 2), (ORZHOV_CONTROL, (0, 1, 0))])  # Two lists with the same vector tie exactly.
-    assert build_medoids(more, build_centroids(more, min_rows=1))[ORZHOV_CONTROL] == 1
+    more = rows_space([(ORZHOV_CONTROL, (1, 0, 0), 2), (ORZHOV_CONTROL, (1, 0, 0)), (ORZHOV_CONTROL, (0, 1, 0))])  # Two lists with the same vector tie exactly.
+    assert build_medoids(more, build_centroids(more, min_rows=1))[ORZHOV_CONTROL] == 0  # More decks win, though row 1's deck is newer.
     newer = rows_space([(ORZHOV_CONTROL, (1, 0, 0), 2), (ORZHOV_CONTROL, (1, 0, 0), 2), (ORZHOV_CONTROL, (0, 1, 0))])
     assert build_medoids(newer, build_centroids(newer, min_rows=1))[ORZHOV_CONTROL] == 1  # Equal decks: the newer deck.

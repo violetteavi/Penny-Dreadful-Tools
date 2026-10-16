@@ -194,6 +194,9 @@ _Avoid_: Partition, fold
 **Label status**:
 How far a deck's label can be trusted for training or scoring: verified (a person gave it at some point), unverified (only an automatic guess, or no history), unlabelled, or out of scope (a source or archetype that isn't evaluated, such as Commander).
 
+**Label cutoff**:
+The moment a split scheme takes its training labels at, by default the start of its first validation season. A training deck whose **Label history** has a decision after the cutoff trains on its label as it stood then (a person's label first, else an automatic one); every other deck, and every deck that is scored, keeps the site's label.
+
 **Excluded deck**:
 A deck an experiment neither learns from nor scores, because of a data problem, a reserved season, or a label status the scheme doesn't use. It never changes how any other deck is split or scored.
 
@@ -227,7 +230,7 @@ A deck whose label is among its first k **Candidates**, exactly: a parent or chi
 The average over decks of 1 ÷ the label's rank among the deck's **Candidates**, counting the whole list, or 0 when the label isn't in it. MRR for short.
 
 **New archetype**:
-An archetype with fewer than 5 decks labelled exactly with it in a model's **Train set** (a parent's count doesn't include its children's decks). Those few labels were often given after the fact: a person creates the archetype partway through a season, sometimes relabelling large batches of past decks, so a model on a live feed would have seen even fewer.
+An archetype with fewer than 5 decks labelled exactly with it in a model's **Train set** (a parent's count doesn't include its children's decks). Those few labels were often given after the fact: a person creates the archetype partway through a season, sometimes relabelling large batches of past decks, so a model on a live feed would have seen even fewer. A **Label cutoff** keeps those later labels out of training.
 
 **Eval set**:
 The decks a classifier's predictions are scored on, from any combination of the training, held-out, validation and test splits, each with the label it is scored against.

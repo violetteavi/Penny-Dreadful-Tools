@@ -554,6 +554,100 @@ Scheme 1 was stored before the status rule and twins flag existed. Its stored se
   - load scheme 1's stored parameters
   - once, after the rebuild, compare against the backup database `archetype_experiments_v0`
 
+## Labels at a cutoff
+
+These scenarios belong to #59 (Snapshot labels as they stood when the training data ended). The site's labels are revised long after a season, so a model trained on seasons 1–38 with today's labels learns from decisions nobody had made when season 39 began. A scheme's **label cutoff** fixes that for training decks. The snapshot keeps every deck's label history, and when the splits are built, a TRAIN-role deck with a label decision after the cutoff takes its label as it stood at the cutoff:
+
+1. The latest person's entry at or before the cutoff: VERIFIED, with that archetype.
+2. Otherwise, the latest automatic entry at or before the cutoff: UNVERIFIED, with that archetype.
+3. Otherwise: UNLABELLED.
+
+A deck whose source, or whose label at the cutoff (Unclassified, Commander), the scope rule doesn't evaluate is OUT_OF_SCOPE. Every other deck follows the scheme's label rule against the site label, exactly as without a cutoff. Held-out, validation and test decks always do: they're scored against today's label, the best answer we have, which can't leak anything into a model.
+
+**Cutoff** C: the start of season 39 (1759474800, 2025-10-03 07:00 UTC). "Before" means at or before C. **Scheme**, unless a scenario says otherwise: the typical scheme plus `label_cutoff` = C. Each deck is a League deck from season 30 whose maindeck isn't held out, so its role is TRAIN, unless the scenario says otherwise.
+
+All scenarios here were proposed 2026-10-15.
+
+### A training deck relabelled after the cutoff trains on its label at the cutoff
+
+| Deck | Label history (oldest first) | Site label | Status | Label | Split |
+|---|---|---|---|---|---|
+| A | person: Red Deck Wins (before); person: Flare Deck Wins (after) | Flare Deck Wins | VERIFIED | Red Deck Wins | TRAIN |
+| B | automatic: Red Deck Wins (before); person: Equipment Aggro (after) | Equipment Aggro | UNVERIFIED | Red Deck Wins | EXCLUDED: status not used for training |
+| C | person: Equipment Aggro (after) only | Equipment Aggro | UNLABELLED | nothing | EXCLUDED: status not used for training |
+| D | person: Unclassified (before); person: Burn (after) | Burn | OUT_OF_SCOPE | nothing | EXCLUDED: status not used for training |
+| E | person: Burn (before); automatic: Red Deck Wins (after), which the site refused to apply | Burn | VERIFIED | Burn | TRAIN |
+| F | person: Burn (exactly at C); person: Red Deck Wins (after) | Red Deck Wins | VERIFIED | Burn | TRAIN |
+| G | person: Wildfire (before); a curator later moved the deck to Thryx-Wildfire without history | Thryx-Wildfire | UNVERIFIED (the label rule, as without a cutoff) | Thryx-Wildfire | EXCLUDED: status not used for training |
+
+- **Expect:**
+  - Each deck gets the status, label and split in its row.
+  - Under the same cutoff on a scheme that trains on {VERIFIED, UNVERIFIED}, deck B is TRAIN, labelled Red Deck Wins.
+  - The split report counts the TRAIN-role decks with a decision after the cutoff: same label **2** (E, F), different label **2** (A, B), no label **1** (C), out of scope **1** (D). Deck G has no decision after the cutoff, so it isn't counted.
+- **Why it matters:**
+  - Deck A is the 26 Flare Deck Wins training decks, which were Red Deck Wins when season 39 began.
+  - Deck B: a person's later review doesn't verify an earlier automatic label.
+  - Deck E is the case #19 (Store human and machine labels separately, and let the split scheme choose) found in 1,844 decks: an automatic guess the site refused to apply never beats a person's label.
+  - Deck G is one of the 204 decks curators moved without history. A cutoff leaves it alone.
+- **Check:** compute each deck's label at the cutoff from its history, then split the decks.
+
+### Scored decks keep today's label
+
+Deck A's history, on three more decks: a held-out deck (season 30, maindeck held out), a validation deck (season 39) and a test deck (season 41).
+
+- **Expect:** each is VERIFIED, labelled Flare Deck Wins, in its own split, exactly as without a cutoff, and none of them is counted in the split report.
+- **Why it matters:** the leak is in what a model learns from, not in what it's scored against. Today's label is the best answer we have for these decks.
+- **Check:** split the three decks with and without the cutoff.
+
+### An archetype created after the cutoff has no training decks
+
+Training decks A (above) and A′ (the same history as A, with another maindeck); a validation deck V labelled Flare Deck Wins. For this example a **new archetype** has fewer than 2 training decks, instead of 5, to keep it small.
+
+- **Expect:**
+  - Without the cutoff, Flare Deck Wins has 2 training decks, and V is in the "validation, existing archetypes" row.
+  - With the cutoff, Flare Deck Wins has 0 and Red Deck Wins 2, and V is in the "validation, new archetypes" row.
+- **Why it matters:** judged honestly, Izzet Madcap, Solemnity Aristocrats, Flare Deck Wins and Through the Breach are new archetypes in season 39, with no training decks at all. A run's rows come from its own scheme, so a re-run under the cutoff moves their decks without anything else changing.
+- **Check:** build the rows from training decks split with and without the cutoff.
+
+### The "label changed after its season" row
+
+A season ends where the next one starts. **Scheme:** the typical scheme with test seasons 40–43, so that deck T, from the current season, can be scored. The scored deck set is {VALIDATION, TEST}.
+
+| Deck | Season | Label history | Site label | In the row |
+|---|---|---|---|---|
+| P | 39 | person: Red Deck Wins (in season); person: Equipment Aggro (after season 39 ended) | Equipment Aggro | yes |
+| Q | 39 | person: Red Deck Wins (in season); automatic: Burn (after season 39 ended), which the site refused to apply | Red Deck Wins | no: not a person's entry |
+| R | 39 | person: Red Deck Wins, then person: Equipment Aggro (both in season) | Equipment Aggro | no: changed during the season |
+| S | 39 | person: Burn (in season); person: Burn again (after season 39 ended) | Burn | no: the same label |
+| T | 43 (current) | person: Burn, then person: Equipment Aggro | Equipment Aggro | no: its season hasn't ended |
+
+- **Expect:**
+  - "validation, label changed after its season" holds deck P only. There's a held-out and a test row of the same name, made the same way.
+  - A deck is in it when a person made an entry after its season ended, and its label then (by the rule above, at the season's end) differs from the label it's scored against.
+  - With no such deck, the row is left out, like any empty row.
+- **Why it matters:** run 11's lead over run 8 came from decks like P: 69 season 39 decks moved from Red Deck Wins to Equipment Aggro after the season. The row makes that visible in every report.
+- **Check:** find the decks relabelled after their season, then build the rows.
+
+### Adding history to a snapshot refuses a changed dump
+
+- **Expect:**
+  - Adding the label history to an existing snapshot refuses when the site's latest label change or largest deck id differs from the snapshot's. The error names both values, and nothing is written.
+  - It also refuses a snapshot that already has history.
+  - A scheme with a label cutoff refuses to split a snapshot without history.
+- **Why it matters:** a history from a later dump than the snapshot would carry labels from after the snapshot was taken.
+- **Check:** in the test database.
+
+### Snapshot 1 at season 39's start (real data)
+
+Snapshot 1 with its history added, under scheme 1 plus the cutoff C.
+
+- **Expect:**
+  - The split report counts **220** TRAIN-role decks with a decision after the cutoff: different label **203**, same label **8**, no label **9**, out of scope **0**. TRAIN has **162,869** decks (162,878 without the cutoff).
+  - Izzet Madcap, Solemnity Aristocrats, Flare Deck Wins and Through the Breach have no training decks.
+  - Held-out and validation decks have the same labels and splits as under scheme 1.
+  - Season 39's "label changed after its season" row holds **80** decks.
+- **Check:** opt-in (`PD_LOCAL_DATA=1`), against the materialised scheme.
+
 ## Model inputs
 
 These scenarios belong to the experiment harness (#26). A deck set picks the decks, and conversion functions only change their shape: they attach each deck's cards and keep just the fields a model may see.
@@ -579,15 +673,16 @@ All scenarios here were confirmed 2026-10-01.
 - **Why it matters:** a model tunes on labelled decks and predicts on label-free ones, so the answer can't leak into a prediction.
 - **Check:** convert the VALIDATION deck set both ways and compare.
 
-### Training decks carry the site label and the label status
+### Training decks carry the scheme's label and the label status
 
 **Scheme:** season rule 1–38 / 39 / 40–42 with 10% held out; status rule train {VERIFIED, UNVERIFIED, UNLABELLED}, eval {VERIFIED}; twins off. Decks 3 and 4 are TRAIN. The deck set is TRAIN.
 
 - **Expect:**
-  - **Deck 3:** archetype Red Deck Wins (its site label), status UNVERIFIED, reviewed.
+  - **Deck 3:** archetype Red Deck Wins (the label the scheme gives it: its site label, since no label cutoff applies), status UNVERIFIED, reviewed.
   - **Deck 4:** no archetype, status UNLABELLED, not reviewed.
   - **Both:** season 30.
-- **Why it matters:** a model trained on several statuses needs to tell them apart, and one that mimics the site needs the reviewed flag.
+- **Expect, under a label cutoff:** a training deck's archetype is its label at the cutoff, not its site label (deck A in "A training deck relabelled after the cutoff trains on its label at the cutoff": Red Deck Wins, not Flare Deck Wins).
+- **Why it matters:** a model trained on several statuses needs to tell them apart, and one that mimics the site needs the reviewed flag. The scheme chooses each deck's label (#19); a model reading the site label instead would ignore that choice.
 - **Check:** convert the TRAIN deck set.
 
 ### The same deck always gives the same input

@@ -236,6 +236,33 @@ An archetype with fewer than 5 decks labelled exactly with it in a model's **Tra
 The decks a classifier's predictions are scored on, from any combination of the training, held-out, validation and test splits, each with the label it is scored against.
 _Avoid_: Dataset, test set (the test seasons are only one possible part of it)
 
+**Centroid**:
+An archetype's average position in a space of **Deck vectors**: the sum of its **Training rows**' vectors, each times its deck count, and at unit length where directions are compared. Only rows labelled exactly with the archetype count, not its children's, so a parent's centroid is made of its parent-labelled rows.
+_Avoid_: Prototype, mean deck (it isn't a deck)
+
+**Typical list**:
+An archetype's **Training row** nearest its **Centroid**. It's a real list, and it's also the row with the highest average cosine to the archetype's rows, weighted by deck count.
+_Avoid_: Medoid (in prose), stock list (that's the community's word, with no fixed meaning)
+
+**Cohesion**:
+How tightly an archetype's rows point the same way: the length of its unscaled **Centroid** divided by its total deck count. It's 1 when every list is the same direction, and it's the square root of the mean cosine over every pair of its decks, each deck paired with itself included.
+
+**Sibling**:
+For an archetype, the other archetypes under the same parent, with their own children. A **Defining card** or a **Centroid push** against siblings asks what sets an archetype apart within its family rather than from every deck.
+
+**Defining card**:
+A card an archetype's **Training rows** play far more often than a contrast set's rows (all other rows, or its **Siblings**'). It's ranked by the z-score of the log-odds, with 1 added to every count, so a card seen in only a few rows ranks low without a play-rate floor. It's counted by distinct list, whatever the copies and the deck count.
+_Avoid_: Signature card (that's a card measured by **Card weight** or label concentration alone)
+
+**Centroid push**:
+A card's share of what separates an archetype's average from its **Siblings'** average in the **Deck vector** space: how much more of the archetype's average the card makes up, times how far its embedding points the way the two differ. The pushes add up exactly to the distance between the two averages, so they show which cards the embedding average actually uses to tell the archetype apart.
+
+**Analogy**:
+Four archetypes a : a* :: b : b*, asking whether the difference from a to a* is the same direction as from b to b* (Orzhov Midrange : Orzhov Control :: Mono Black Midrange : Mono Black Control). It's judged by the **Offset cosine** and by the rank of b* near a* − a + b, with a, a* and b left out of the search and the rank near b alone as the baseline.
+
+**Offset cosine**:
+The cosine between an **Analogy**'s two differences, a* − a and b* − b, between unit **Centroids**: 1 when they're the same direction, about 0 when unrelated. Unlike a rank, it doesn't depend on which other archetypes happen to be nearby.
+
 ## Relationships
 
 - A **Set** release triggers a **Rotation**, which starts a new **Season** with a new **Legal card pool**.

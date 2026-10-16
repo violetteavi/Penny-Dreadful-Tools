@@ -1685,3 +1685,201 @@ Deck -1, the all-new Simic deck of "A deck of only newly legal cards (extreme)" 
   - **Embedding average (run 8's model and runs 11 and 12's models):** a guess, with 60 embedded and 0 skipped copies. With every weight equal, IDF doesn't change the vector's direction, so the weighted runs read this deck as an unweighted average would.
 - **Why it matters:** it shows the two representations' limits most clearly. The bag sees nothing, while rules text still places the deck.
 - **Check:** in `representation_local_test.py`, predict the deck with each fitted model. Assert the weights, and the bag's lack of a guess with its counts. Assert that (b) makes a guess.
+
+## Archetype geometry
+
+These scenarios belong to #64 (Archetype geometry: typical lists, defining cards and analogies in the deck-vector space), decided in the #62 grilling on 2026-10-16 and specified in `20261016_Archetype_Geometry_Architecture.pdf`. They describe what the `geometry` package says about the space a nearest-deck model reads decks in: each archetype's **Centroid**, **Typical list**, **Cohesion** and **Defining cards**, where rows sit relative to other archetypes, and **Analogies**. Nothing here guesses a label or is tuned.
+
+- **The space:** a model's **Training rows**, each with its **Deck vector** and its deck count as its weight. On real data that's run 17 (card weights, √copies) and run 14 (no weights, linear copies), labels at season 39's start (scheme 3).
+- **An archetype's rows:** only the rows labelled exactly with it. Its **Siblings** are the other archetypes under the same parent, with their own children.
+- **The floor:** an archetype needs at least 10 training rows for a centroid; the rule-level scenarios set it to 1.
+
+**Rule-level rows.** Unless a scenario says otherwise, a row is given straight by its unit deck vector in three dimensions (a hand-made space, not a real embedding) and has 1 deck. "The unit vector of (1, 1, 0)" means (1, 1, 0) divided by its length. Where cards matter, they're real cards legal in seasons 30 and 39 with a hand-made three-dimensional embedding, and the decks are 60-card lists.
+
+All scenarios here were proposed 2026-10-16.
+
+### The typical list is the row nearest the centroid
+
+Three Mono Black Midrange rows: r1 = (1, 0, 0), r2 = (0.6, 0.8, 0) and r3 = (0.8, 0.6, 0).
+
+- **Expect:**
+
+  | Deck counts (r1, r2, r3) | Average cosine to the archetype's decks (r1, r2, r3) | Cosine to the centroid (r1, r2, r3) | Typical list |
+  |---|---|---|---|
+  | 1, 1, 1 | 0.8000, 0.8533, **0.9200** | 0.8638, 0.9214, **0.9933** | r3 |
+  | 4, 1, 1 | **0.9000**, 0.7267, 0.8600 | **0.9680**, 0.7816, 0.9250 | r1 |
+
+  The average cosine counts each row's own decks too, weighted by deck count. Both columns always pick the same row: for unit vectors, a row's summed cosine to the archetype's decks is its cosine to the unscaled centroid times that centroid's length, which is the same for every row.
+- **Why it matters:** the typical list is a real list a person can read, and the nearest-to-centroid form finds it in one pass over 84,085 rows rather than comparing every pair. A list submitted many times counts as that many decks, so it can become the typical list, as r1 does.
+- **Check:** unit-test both rows of the table, and that the average-cosine form picks the same row.
+
+### Cohesion measures how tightly an archetype's lists point the same way
+
+Orzhov Control's rows in three cases:
+
+- **Expect:**
+
+  | Rows | Deck counts | Cohesion |
+  |---|---|---|
+  | (1, 0, 0) twice | 1, 1 | **1.0000** |
+  | (1, 0, 0) and (0, 1, 0) | 1, 1 | **0.7071** (√½) |
+  | (1, 0, 0) and (0, 1, 0) | 3, 1 | **0.7906** (√(10 ÷ 16)) |
+
+  Each is the square root of the mean cosine over every pair of the archetype's decks, each deck paired with itself included: with deck counts 3 and 1, the 16 pairs are 9 + 1 at cosine 1 and 6 at cosine 0.
+- **Why it matters:** a scattered archetype is one the nearest deck can only match row by row, never as a whole, and cohesion says which archetypes those are without comparing every pair.
+- **Check:** unit-test the three cases.
+
+### Defining cards rank by evidence, not just by how exclusive they are
+
+An archetype with 500 training rows and a contrast set of 84,000 rows. Each card is counted once per row that plays it.
+
+- **Expect:**
+
+  | Card | The archetype's rows playing it | Contrast rows playing it | Log-odds | z |
+  |---|---|---|---|---|
+  | A one-of in a single list | 1 | 0 | 5.8171 | 4.7465 |
+  | A card in 10 lists, nowhere else | 10 | 0 | 7.5400 | 7.2123 |
+  | The archetype's signature card | 400 | 100 | 8.1011 | **54.2397** |
+  | An over-represented staple | 300 | 30,000 | 0.9916 | 10.8518 |
+
+  Log-odds = ln((k_a + 1) ÷ (n_a − k_a + 1)) − ln((k_o + 1) ÷ (n_o − k_o + 1)), and z = log-odds ÷ √(1 ÷ (k_a + 1) + 1 ÷ (n_a − k_a + 1) + 1 ÷ (k_o + 1) + 1 ÷ (n_o − k_o + 1)). Cards rank by z, then by log-odds, then by name, and only cards with log-odds above 0 are listed. Here the order is the signature card, the staple, the 10-list card and the one-of.
+- **Why it matters:** adding 1 to every count still leaves the one-of with 72% of the signature card's log-odds, enough to reach the top 5 of a small archetype. Dividing by the standard error sinks it without a play-rate floor. The cost is that a well-supported staple outranks a rare exclusive card, which the log-odds column beside it shows.
+- **Check:** unit-test the four cards' log-odds, z and order.
+
+### Against its siblings, a card the whole family plays stops being defining
+
+Izzet Control and Azorius Control are siblings under Control; Red Deck Wins is under Aggro. Each has distinct lists that differ only in copies: 10 Izzet Control rows that play Essence Scatter, Shock, Island and Mountain; 10 Azorius Control rows that play Essence Scatter and Island; and 30 Red Deck Wins rows that play Shock and Mountain.
+
+- **Expect:** Izzet Control's defining cards.
+
+  | Card | Against all other rows (40): log-odds, z | Against its siblings (Azorius Control, 10): log-odds, z |
+  |---|---|---|
+  | Essence Scatter | 3.4340, **3.1166** | 0, 0: not listed |
+  | Island | 3.4340, 3.1166 | 0, 0: not listed |
+  | Mountain | 1.3618, 1.2359 | 4.7958, **3.2468** |
+  | Shock | 1.3618, 1.2359 | 4.7958, 3.2468 |
+
+  Against all rows the order is Essence Scatter, Island, Mountain, Shock; against siblings, only Mountain and Shock are listed.
+- **Why it matters:** against every deck, a control deck's defining cards are its counterspells, which every control deck plays. Against its siblings, what makes Izzet Control *Izzet* comes out: the red cards.
+- **Check:** unit-test both contrasts' values and orders.
+
+### Centroid pushes add up to what separates an archetype from its siblings
+
+A hand-made embedding: Island (1, 0, 0), Mountain (0.8, 0, 0.6), Essence Scatter (0, 1, 0), Negate (0, 0.8, 0.6), Shock (0, 0, 1). Deck vectors with no card weights and linear copies, as in run 14. One Izzet Control row, "4 Essence Scatter, 4 Negate, 4 Shock, 24 Island, 24 Mountain", and its one sibling row, Azorius Control's "4 Essence Scatter, 4 Negate, 52 Island".
+
+- **Expect:**
+  - The rows' unscaled vectors have lengths 48.4842 and 52.5509, so the averages are μ_A = (0.8910, 0.1485, 0.4290) and μ_S = (0.9895, 0.1370, 0.0457), and they're **0.3960** apart.
+  - Each card's share of each average is copies ÷ the row's length, and its push is (share in A − share in the siblings) × (its embedding · the unit direction from μ_S to μ_A):
+
+    | Card | Share in Izzet Control | Share in Azorius Control | Embedding · direction | Push |
+    |---|---|---|---|---|
+    | Mountain | 0.4950 | 0 | 0.3819 | **0.1890** |
+    | Island | 0.4950 | 0.9895 | −0.2488 | **0.1230** |
+    | Shock | 0.0825 | 0 | 0.9681 | 0.0799 |
+    | Negate | 0.0825 | 0.0761 | 0.6041 | 0.0039 |
+    | Essence Scatter | 0.0825 | 0.0761 | 0.0290 | 0.0002 |
+
+  - The pushes add up to **0.3960**, the distance between the averages.
+  - Island pushes although Izzet Control plays fewer: playing fewer of a card that points away counts as much as playing more of one that points towards.
+- **Why it matters:** this is what the embedding average actually uses to tell the two apart. Here it's mostly the mana base, while the log-odds of the scenario before rank Mountain and Shock equally. Where the two lists disagree on real data, a defining card is one the average can't see, and that's where the bag of cards should do better.
+- **Check:** unit-test the shares, the pushes, their sum and their order.
+
+### A row nearer another archetype's centroid counts as overlap
+
+Izzet Control rows: the unit vectors of (1, 0, 0), (0.98, 0.2, 0) and (0.6, 0.8, 0). Azorius Control rows: (0, 1, 0) and (0.2, 0.98, 0). Red Deck Wins rows: (0, 0, 1) and (0, 0.2, 0.98).
+
+- **Expect:**
+  - Izzet Control's row (0.6, 0.8, 0) has cosine **0.8486** to its own centroid and **0.8562** to Azorius Control's, so Izzet Control's overlap is **1 of 3 rows**, with Azorius Control as the nearer centroid.
+  - Azorius Control and Red Deck Wins have no overlap.
+- **Why it matters:** a crowded archetype is one whose rows already sit nearer another, and the nearest deck will confuse decks there. Set beside run 17's per-archetype accuracy on season 39, it shows whether misses come from crowding.
+- **Check:** unit-test the overlap and the nearer centroid.
+
+### Where a parent-labelled row sits
+
+Aristocrats is the parent of Orzhov Aristocrats and Rakdos Aristocrats, whose centroids are (1, 0, 0) and (0, 1, 0); Red Deck Wins, outside the family, has its centroid at (0, 0, 1). Three rows are labelled Aristocrats, with the parent's own centroid built from them.
+
+- **Expect:** each row is compared with the children's centroids and with the archetypes outside the parent's subtree. The parent's own centroid isn't a candidate, since it's built from these rows and would always be nearest, but the row's cosine to it is reported.
+
+  | Row (unit vector of) | Orzhov Aristocrats | Rakdos Aristocrats | Red Deck Wins | Aristocrats' own centroid | Position |
+  |---|---|---|---|---|---|
+  | (1, 1, 0.1) | 0.7053 | 0.7053 | 0.0705 | 0.8972 | **between children**: the two nearest are children within 0.02 |
+  | (1, 0.4, 0.3) | 0.8944 | 0.3578 | 0.2683 | 0.9499 | **one child**: Orzhov Aristocrats, by more than 0.02 |
+  | (0.3, 0.3, 1) | 0.2762 | 0.2762 | 0.9206 | 0.7795 | **elsewhere**: an archetype outside the family is nearer than any child |
+
+  Grandchildren, such as Solemnity Aristocrats under Orzhov Aristocrats, are neither children nor outside, so they're left out of the comparison.
+- **Why it matters:** about 37% of decks are labelled at a parent. If they sit between their children, a parent fallback (#45) can read "unsure between children" from the scores; if they sit elsewhere, the parent label means something the children don't cover. The 0.02 margin comes from #14's finding that misses are near-ties within 0.02; it's a starting value, to revisit once we see the data.
+- **Check:** unit-test the three positions and the reported cosines.
+
+### A perfect parallelogram scores perfectly
+
+Centroids: Orzhov Midrange (0.8, 0, 0.6), Orzhov Control (0.8, 0, −0.6), Mono Black Midrange (−0.8, 0, 0.6), Mono Black Control (−0.8, 0, −0.6) and Mono Black Aggro (−0.6, 0.8, 0). The analogy is Orzhov Midrange : Orzhov Control :: Mono Black Midrange : Mono Black Control.
+
+- **Expect:**
+  - Orzhov Control − Orzhov Midrange = Mono Black Control − Mono Black Midrange = (0, 0, −1.2), so the **offset cosine is 1.0000**.
+  - Searching every centroid but the three inputs, Mono Black Control ranks **1** under 3CosAdd (score 1.0000, against Mono Black Aggro's 0.4800) and **1** under 3CosMul.
+  - Near Mono Black Midrange alone, Mono Black Control ranks **2**, behind Mono Black Aggro (cosine 0.4800 against 0.2800): the offset is what found it.
+- **Why it matters:** it's the reference every real analogy falls short of. The inputs are always left out: on real data a* − a + b usually sits nearest b itself (Linzen 2016 found the nearest word was b in 93% of word analogies), though here Mono Black Midrange would score only 0.2800.
+- **Check:** unit-test the offset cosine and the three ranks.
+
+### 3CosMul resists one dominant term
+
+Centroids: Orzhov Midrange (1, 0, 0), Orzhov Control (0, 0, 1), Mono Black Midrange (0, 1, 0), Mono Black Control the unit vector of (−1, 0, 1), and Mono Black Devotion, a child of Mono Black Midrange, the unit vector of (−1, 2, 1). Same analogy.
+
+- **Expect:**
+  - The offset cosine is **0.7071**.
+  - 3CosAdd scores cos(d, Orzhov Control) − cos(d, Orzhov Midrange) + cos(d, Mono Black Midrange): Mono Black Devotion **1.6330**, Mono Black Control 1.4142. Mono Black Control ranks **2**: Devotion wins mostly on its cosine to Mono Black Midrange (0.8165, against Mono Black Control's 0).
+  - 3CosMul rescales each cosine to (cos + 1) ÷ 2 and scores cos'(d, Orzhov Control) × cos'(d, Mono Black Midrange) ÷ (cos'(d, Orzhov Midrange) + 0.001): Mono Black Control **2.8944**, Devotion 2.1542. Mono Black Control ranks **1**.
+- **Why it matters:** a sum lets one large term carry a candidate that moved the wrong way. On real data, an archetype's children may well sit near it, and then the plain sum would keep answering "a child of b". A product punishes a candidate that fails any one term.
+- **Check:** unit-test the scores and ranks under both methods.
+
+### The only-b baseline shows an analogy that needed no offset
+
+Centroids: Orzhov Midrange (1, 0, 0), Orzhov Control (0, 0, 1), Mono Black Midrange (0, 1, 0), Mono Black Control the unit vector of (1, 5, 1), and Mono Black Aggro the unit vector of (1, 1, 0). Same analogy.
+
+- **Expect:** Mono Black Control ranks **1** under 3CosAdd and under 3CosMul, but also **1** near Mono Black Midrange alone (cosine 0.9623), and the **offset cosine is 0.0000**: the two differences are perpendicular.
+- **Why it matters:** the analogy "works" only because Mono Black Control is already Mono Black Midrange's nearest neighbour. Without the baseline and the offset cosine beside the rank, it would read as evidence that "control rather than midrange" is a direction.
+- **Check:** unit-test the three ranks and the offset cosine.
+
+### Analogies are built only from archetypes with centroids
+
+Archetypes with centroids: Orzhov Midrange, Orzhov Control, Mono Black Midrange, Mono Black Control, Mono Black Aggro, Mono Black Devotion and Orzhov Aristocrats. There's no Orzhov Aggro.
+
+- **Expect:**
+  - **Strategy analogies** take every name "X S" with S among Control, Midrange and Aggro, and pair two colours X ≠ Y with two strategies S ≠ T when all four archetypes have centroids. Here that's 4:
+    - Orzhov Midrange : Orzhov Control :: Mono Black Midrange : Mono Black Control
+    - Orzhov Control : Orzhov Midrange :: Mono Black Control : Mono Black Midrange
+    - Mono Black Midrange : Mono Black Control :: Orzhov Midrange : Orzhov Control
+    - Mono Black Control : Mono Black Midrange :: Orzhov Control : Orzhov Midrange
+  - None involve Mono Black Aggro, since Orzhov Aggro doesn't exist. Mono Black Devotion and Orzhov Aristocrats don't end in a strategy, so they're never used. If Mono Black Control were below the floor, there would be none.
+  - **Pair analogies** take (fair, combo) pairs. (Applejacks, Lumbertwin) and (Izzet Control, Izzet Twin) give 4, adding the combo and taking it away, each way:
+    - Applejacks : Lumbertwin :: Izzet Control : Izzet Twin
+    - Izzet Control : Izzet Twin :: Applejacks : Lumbertwin
+    - Lumbertwin : Applejacks :: Izzet Twin : Izzet Control
+    - Izzet Twin : Izzet Control :: Lumbertwin : Applejacks
+- **Why it matters:** the systematic set turns one example into a finding, and only archetypes with enough rows have a centroid worth comparing.
+- **Check:** unit-test both lists, as sets.
+
+### Neighbours kept measures how faithful a map is
+
+Four Izzet Control rows at 0°, 10°, 30° and 90° in one plane, so by cosine each row's nearest neighbour is: 0° → 10°, 10° → 0°, 30° → 10°, 90° → 30°. Two one-dimensional maps place them at:
+
+- **Expect:** with k = 1:
+
+  | Map | Positions (0°, 10°, 30°, 90°) | Nearest neighbours kept |
+  |---|---|---|
+  | Keeps the order | 0, 1, 3, 9 | **1.00** (4 of 4) |
+  | Swaps the first and last | 9, 1, 3, 0 | **0.25** (only 30° → 10°) |
+
+- **Why it matters:** any two-dimensional map of 84,085 rows distorts them. The one illustrative map in the results prints its neighbours kept, so a reader knows how far to trust it.
+- **Check:** unit-test both maps.
+
+### Run 17's space, rebuilt (real data)
+
+`PD_LOCAL_DATA=1`. Run 17, scheme 3.
+
+- **Expect:**
+  - The space has **84,085** training rows, as run 17's model records.
+  - Its deck vectors equal run 17's model's row vectors exactly: the space is built by the same code.
+  - Its card lines times the embedding match the deck vectors to rounding.
+- **Why it matters:** every number in the results describes the space run 17 actually ranked decks in.
+- **Check:** in `geometry/space_local_test.py`, load the space and the model and compare.

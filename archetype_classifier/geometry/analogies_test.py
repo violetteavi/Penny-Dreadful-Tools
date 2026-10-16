@@ -1,14 +1,16 @@
 """Analogies (Scenarios.md, "Archetype geometry")."""
+from collections.abc import Mapping, Sequence
+
 import numpy as np
 
-from archetype_classifier.geometry.analogies import Analogy, build_analogy_scores, build_offset_baseline, build_offset_scores
+from archetype_classifier.geometry.analogies import Analogy, build_analogy_scores, build_offset_baseline, build_offset_scores, build_pair_analogies, build_strategy_analogies
 from archetype_classifier.geometry.centroids import Centroids, build_centroids
 from archetype_classifier.geometry.space_test import rows_space
 
 ORZHOV_MIDRANGE, ORZHOV_CONTROL, MONO_BLACK_MIDRANGE, MONO_BLACK_CONTROL, MONO_BLACK_AGGRO, MONO_BLACK_DEVOTION = 356, 512, 282, 18, 13, 324
 CONTROL_RATHER_THAN_MIDRANGE = Analogy(ORZHOV_MIDRANGE, ORZHOV_CONTROL, MONO_BLACK_MIDRANGE, MONO_BLACK_CONTROL, 'strategy')
 
-def centroids_at(points: dict[int, tuple[float, float, float]]) -> Centroids:
+def centroids_at(points: Mapping[int, Sequence[float]]) -> Centroids:
     """Each archetype one row, so its centroid is that row at unit length."""
     return build_centroids(rows_space([(label, v) for label, v in points.items()]), min_rows=1)
 
@@ -79,3 +81,33 @@ def test_the_offset_percentile_is_the_share_of_random_quadruples_below() -> None
 def test_too_few_centroids_for_a_quadruple_give_no_baseline() -> None:
     three = centroids_at({ORZHOV_MIDRANGE: (1, 0, 0), ORZHOV_CONTROL: (0, 0, 1), MONO_BLACK_MIDRANGE: (0, 1, 0)})
     assert len(build_offset_baseline(three, quadruples=200, seed=0)) == 0
+
+
+# Scenario: analogies test if strategies have a consistent direction. Which analogies are built from which archetypes.
+
+ORZHOV_ARISTOCRATS, APPLEJACKS, LUMBERTWIN, IZZET_CONTROL, IZZET_TWIN = 60, 561, 633, 65, 549
+NAMES = {ORZHOV_MIDRANGE: 'Orzhov Midrange', ORZHOV_CONTROL: 'Orzhov Control', MONO_BLACK_MIDRANGE: 'Mono Black Midrange', MONO_BLACK_CONTROL: 'Mono Black Control',
+         MONO_BLACK_AGGRO: 'Mono Black Aggro', MONO_BLACK_DEVOTION: 'Mono Black Devotion', ORZHOV_ARISTOCRATS: 'Orzhov Aristocrats',
+         APPLEJACKS: 'Applejacks', LUMBERTWIN: 'Lumbertwin', IZZET_CONTROL: 'Izzet Control', IZZET_TWIN: 'Izzet Twin'}
+EVERY_ONE = centroids_at({label: tuple(float(i == j) for j in range(len(NAMES))) for i, label in enumerate(NAMES)})  # Every archetype has a centroid.
+
+def test_strategy_analogies_pair_two_colours_with_two_strategies() -> None:
+    analogies = build_strategy_analogies(NAMES, EVERY_ONE)
+    assert set(analogies) == {Analogy(ORZHOV_MIDRANGE, ORZHOV_CONTROL, MONO_BLACK_MIDRANGE, MONO_BLACK_CONTROL, 'strategy'),
+                              Analogy(ORZHOV_CONTROL, ORZHOV_MIDRANGE, MONO_BLACK_CONTROL, MONO_BLACK_MIDRANGE, 'strategy'),
+                              Analogy(MONO_BLACK_MIDRANGE, MONO_BLACK_CONTROL, ORZHOV_MIDRANGE, ORZHOV_CONTROL, 'strategy'),
+                              Analogy(MONO_BLACK_CONTROL, MONO_BLACK_MIDRANGE, ORZHOV_CONTROL, ORZHOV_MIDRANGE, 'strategy')}
+    assert len(analogies) == 4
+
+def test_pair_analogies_add_the_combo_and_take_it_away_each_way() -> None:
+    analogies, skipped = build_pair_analogies([('Applejacks', 'Lumbertwin'), ('Izzet Control', 'Izzet Twin')], NAMES, EVERY_ONE)
+    assert set(analogies) == {Analogy(APPLEJACKS, LUMBERTWIN, IZZET_CONTROL, IZZET_TWIN, 'pair'), Analogy(IZZET_CONTROL, IZZET_TWIN, APPLEJACKS, LUMBERTWIN, 'pair'),
+                              Analogy(LUMBERTWIN, APPLEJACKS, IZZET_TWIN, IZZET_CONTROL, 'pair'), Analogy(IZZET_TWIN, IZZET_CONTROL, LUMBERTWIN, APPLEJACKS, 'pair')}
+    assert len(analogies) == 4 and skipped == []
+
+def test_without_a_centroid_an_archetype_is_never_in_an_analogy() -> None:
+    without = centroids_at({label: v for label, v in zip(NAMES, np.eye(len(NAMES)).tolist(), strict=True) if label not in (MONO_BLACK_CONTROL, LUMBERTWIN)})
+    assert build_strategy_analogies(NAMES, without) == []
+    analogies, skipped = build_pair_analogies([('Applejacks', 'Lumbertwin'), ('Izzet Control', 'Izzet Twin'), ('Orzhov Midrange', 'Orzhov Aristocrats')], NAMES, without)
+    assert skipped == ['Applejacks -> Lumbertwin']
+    assert len(analogies) == 4  # The two pairs left, each way, adding and taking away.

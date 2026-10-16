@@ -9,7 +9,7 @@ On unit centroids, with a, a* and b left out of every search:
   random quadruples of distinct centroids, drawn with a fixed seed, whose offset cosine is lower.
 A rank is 1 + the candidates scoring strictly higher than b*.
 """
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -17,6 +17,7 @@ import numpy as np
 
 from archetype_classifier.geometry.centroids import Centroids
 
+STRATEGIES = ('Control', 'Midrange', 'Aggro')
 EPSILON = 0.001  # 3CosMul's guard against dividing by 0 (Levy & Goldberg 2014).
 QUADRUPLES = 1000  # Random quadruples in the offset cosine's baseline.
 type Kind = Literal['strategy', 'pair']
@@ -38,6 +39,30 @@ class AnalogyScore:
     rank_only_b: int
     offset_cosine: float
     offset_percentile: float | None  # None with no baseline (fewer than 4 centroids).
+
+
+def build_strategy_analogies(names: Mapping[int, str], centroids: Centroids, strategies: Sequence[str] = STRATEGIES) -> list[Analogy]:
+    """From names "X S" with S a strategy: X S : X T :: Y S : Y T for every two colours X != Y and strategies S != T where all four have centroids.
+    A name that doesn't end in a strategy is never used."""
+    split = {}
+    for label in centroids.label_ids.tolist():
+        for strategy in strategies:
+            if names[label].endswith(f' {strategy}'):
+                split[(names[label].removesuffix(f' {strategy}'), strategy)] = label
+    colours = sorted({colour for colour, _ in split})
+    return [Analogy(split[(x, s)], split[(x, t)], split[(y, s)], split[(y, t)], 'strategy')
+            for x in colours for y in colours if x != y for s in strategies for t in strategies
+            if s != t and all(key in split for key in ((x, s), (x, t), (y, s), (y, t)))]
+
+
+def build_pair_analogies(pairs: Sequence[tuple[str, str]], names: Mapping[int, str], centroids: Centroids) -> tuple[list[Analogy], list[str]]:
+    """From (fair, combo) pairs, for every two pairs: adding the combo (fair1 : combo1 :: fair2 : combo2) and taking it away (combo1 : fair1 ::
+    combo2 : fair2). A pair with an archetype that has no centroid is skipped, and named in the second list."""
+    ids = {names[label]: label for label in centroids.label_ids.tolist()}
+    kept = [(ids[fair], ids[combo]) for fair, combo in pairs if fair in ids and combo in ids]
+    skipped = [f'{fair} -> {combo}' for fair, combo in pairs if fair not in ids or combo not in ids]
+    analogies = [Analogy(f1, c1, f2, c2, 'pair') for f1, c1 in kept for f2, c2 in kept if f1 != f2]
+    return [*analogies, *(Analogy(c1, f1, c2, f2, 'pair') for f1, c1, f2, c2 in ((a.a, a.a_star, a.b, a.b_star) for a in analogies))], skipped
 
 
 def build_offset_scores(centroids: Centroids, analogy: Analogy) -> tuple[np.ndarray, np.ndarray]:

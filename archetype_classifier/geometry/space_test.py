@@ -22,7 +22,7 @@ def unit(v: Sequence[float]) -> np.ndarray:
 def rows_space(rows: Sequence[tuple[int, Sequence[float]] | tuple[int, Sequence[float], int]]) -> DeckSpace:
     """A space given straight by its rows' deck vectors, as the rule-level scenarios give it: (label, vector) or (label, vector, decks), in row order.
     Each row is a distinct list (60 + i Islands, so only its identity matters), its vector is scaled to unit length, and there's no embedding:
-    the lines are the vectors themselves, over three named dimensions."""
+    the lines are the vectors themselves, over named dimensions."""
     training: list[TrainingDeck] = []
     for i, (label, _, *decks) in enumerate(rows):
         for _ in range(decks[0] if decks else 1):
@@ -30,7 +30,7 @@ def rows_space(rows: Sequence[tuple[int, Sequence[float]] | tuple[int, Sequence[
             training.append(TrainingDeck(deck, 30, label, True, LabelStatus.VERIFIED))
     matrix = np.array([unit(vector) for _, vector, *_ in rows])
     vectors = DeckVectors(matrix, np.full(len(rows), 60), np.zeros(len(rows), dtype=np.int64), Counter(), sparse.csr_matrix(matrix))
-    return build_space(build_training_rows(training), vectors, DIMENSIONS, None)
+    return build_space(build_training_rows(training), vectors, tuple(f'dimension {d + 1}' for d in range(matrix.shape[1])), None)
 
 
 # A hand-made card embedding (Scenarios.md, "Centroid pushes add up to what separates an archetype from its siblings"), real cards legal in seasons 30 and 39.

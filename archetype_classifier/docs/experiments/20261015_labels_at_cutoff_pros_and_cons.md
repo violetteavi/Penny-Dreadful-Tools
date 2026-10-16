@@ -77,11 +77,13 @@ The labels barely change the work involved (the training sets differ by 9 decks)
 ## Pros and cons of training on labels at the cutoff
 
 **Pros**
+
 - **Honest about new archetypes.** Today's labels made the site's guesser and the bag look able to rank new archetypes; they can't. Measuring parent fallback (#45) and the hybrid (#60) against labels as they stood keeps that from repeating.
 - **Costs nothing on existing archetypes.** The 203 changed training labels move no headline number.
 - **Cheap to keep.** The history is in the snapshot, so any later scheme can take its own cutoff, and #17's live replay can build on it.
 
 **Cons**
+
 - **One cutoff per scheme.** Decks submitted late in season 39 were judged against labels a model trained at the start of the season couldn't have had, but a model retrained during the season could. #17 covers that.
 - **Curator moves without history** keep today's label, since nothing records when they happened. None of the 220 training decks decided after the cutoff is one of them: each one's site label is its latest history entry.
 

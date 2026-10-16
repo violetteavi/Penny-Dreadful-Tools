@@ -1,10 +1,11 @@
 """The rows of the results table: named, versioned groups of scored decks. Scores are never stored; they're recomputed from a run's guesses (decision F)."""
 import logging
 from collections import Counter
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 
-from archetype_classifier.data_loading.labels import LabelStatus
+from archetype_classifier.data_loading.labels import LabelChange, LabelStatus, label_as_of
 from archetype_classifier.data_loading.slices import DeckSet, SnapshotDeck
 from archetype_classifier.data_loading.splits import Split, SplitScheme
 from archetype_classifier.evaluation import store
@@ -14,7 +15,8 @@ from shared.database import Database
 
 logger = logging.getLogger(__name__)
 
-ROWS_VERSION = 3  # Bump on any change to which rows exist or which decks they hold. 2: validation split by unseen cards (#44). 3: new and existing archetypes (#14).
+ROWS_VERSION = 4  # Bump on any change to which rows exist or which decks they hold. 2: validation split by unseen cards (#44). 3: new and existing archetypes (#14).
+# 4: label changed after its season (#59).
 NEW_ARCHETYPE_DECKS = 5  # An archetype with fewer training decks than this, with exactly its label, is new.
 PREFIXES = {Split.TRAIN: 'train', Split.HELD_OUT: 'held-out', Split.VALIDATION: 'validation', Split.TEST: 'test'}
 UNSEEN_BANDS = [('0', 0, 0), ('1–4', 1, 4), ('5–12', 5, 12), ('13+', 13, None)]  # Unseen maindeck copies: label, lowest, highest.
@@ -27,8 +29,10 @@ class Row:
     splits: frozenset[Split]
     deck_ids: frozenset[int]
 
-def build_rows(scored: DeckSet, training: DeckSet, scheme: SplitScheme) -> list[Row]:
-    """The rows for the splits that were scored. Every row but the unverified one holds VERIFIED decks only."""
+def build_rows(scored: DeckSet, training: DeckSet, scheme: SplitScheme, relabelled: frozenset[int] = frozenset()) -> list[Row]:
+    """The rows for the splits that were scored. Every row but the unverified one holds VERIFIED decks only.
+
+    relabelled: decks whose label a person changed after their season ended (build_relabelled), which get a row in each scored split but TRAIN."""
     training_maindecks = {d.maindeck_hash for d in training.decks.values()}
     training_counts = Counter(d.label_id for d in training.decks.values())  # The label the model trains on, so its count of each archetype.
     def repeated(d: SnapshotDeck) -> bool:
@@ -41,12 +45,29 @@ def build_rows(scored: DeckSet, training: DeckSet, scheme: SplitScheme) -> list[
         verified = [d for d in decks if d.label_status == LabelStatus.VERIFIED]
         for name, keep in split_rows(split, repeated, scheme, training_counts):
             rows.append(Row(name, frozenset({split}), frozenset(d.deck_id for d in verified if keep(d))))
+        if split != Split.TRAIN:
+            rows.append(Row(f'{PREFIXES[split]}, label changed after its season', frozenset({split}), frozenset(d.deck_id for d in verified if d.deck_id in relabelled)))
         allowed = scheme.train_statuses if split == Split.TRAIN else scheme.eval_statuses
         if LabelStatus.UNVERIFIED in allowed:
             rows.append(Row(f'{PREFIXES[split]}, unverified labels', frozenset({split}), frozenset(d.deck_id for d in decks if d.label_status == LabelStatus.UNVERIFIED)))
     for empty in (r for r in rows if not r.deck_ids):
         logger.info("Row '%s' has no decks, so it's left out", empty.name)  # The metrics module can't score an empty set.
     return [r for r in rows if r.deck_ids]
+
+def build_relabelled(decks: Iterable[SnapshotDeck], history: Mapping[int, Sequence[LabelChange]], season_starts: Mapping[int, datetime]) -> frozenset[int]:
+    """Decks whose label a person changed after their season ended (where the next season starts): the label then differs from the one scored."""
+    starts = sorted(season_starts.values())
+    ends = {season_id: next((later for later in starts if later > start), None) for season_id, start in season_starts.items()}
+    relabelled = set()
+    for d in decks:
+        end = ends.get(d.season_id)
+        changes = history.get(d.deck_id, ())
+        if end is None or not any(c.by_person and c.changed_at > end for c in changes):
+            continue
+        then = label_as_of(changes, end)
+        if (then.archetype_id if then else None) != d.label_id:
+            relabelled.add(d.deck_id)
+    return frozenset(relabelled)
 
 def split_rows(split: Split, repeated: Keep, scheme: SplitScheme, training_counts: Mapping[int | None, int]) -> list[tuple[str, Keep]]:
     """Each row a split's scored decks fall into, as its name and which of the split's decks it keeps."""

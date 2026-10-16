@@ -1,7 +1,9 @@
 """Reports rendered from stored runs in a real experiments database."""
 import dataclasses
+import logging
 import re
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import ClassVar
 
@@ -55,9 +57,28 @@ def test_the_header_says_exactly_what_produced_the_numbers(experiments_db: Datab
     assert lines[0] == '# Run 1: most common archetype v1'
     for expected in ['| Run | 1 |', '| Scope | held_out, validation |', '| Decks predicted | 4 |', f'| Prediction hash | {prediction_hash([Prediction(i, g, {}) for i, g in RUN_1.items()])} |',
                      '| Model | 1: most common archetype v1, parameters {}, seed 0 |', '| Snapshot | 1 |', '| Scheme | 1 (typical) |',
-                     '| Trained on | train (2 decks) |', '| Tuned on | validation (2 decks) |', '| Metrics version | 2 |', '| Rows version | 3 |', '| PRs | #6, #31 |']:
+                     '| Trained on | train (2 decks) |', '| Tuned on | validation (2 decks) |', '| Metrics version | 2 |', '| Rows version | 4 |', '| PRs | #6, #31 |']:
         assert expected in lines
     assert any(line.startswith('| Made | ') for line in lines)
+    assert not [line for line in lines if line.startswith('| Label cutoff')]  # Only a scheme with a cutoff shows one.
+
+def test_the_header_shows_the_schemes_label_cutoff(experiments_db: Database, runs: tuple[int, int]) -> None:
+    experiments_db.execute("UPDATE split_scheme SET params = JSON_SET(params, '$.label_cutoff', 1759474800) WHERE id = 1")
+    assert '| Label cutoff | 2025-10-03 07:00 UTC (1759474800) |' in render(experiments_db)
+
+
+# Scenario: the "label changed after its season" row (Scenarios.md, "Labels at a cutoff"). Season starts come from the site: 39 on 2025-10-03, 40 on 2025-11-28.
+
+def test_decks_a_person_relabelled_after_their_season_get_their_own_row(experiments_db: Database, runs: tuple[int, int]) -> None:
+    in_season, after_season = datetime(2025, 10, 20, tzinfo=UTC), datetime(2026, 4, 8, tzinfo=UTC)
+    loader.insert_rows(experiments_db, 'label_change_snapshot', ['snapshot_id', 'deck_id', 'seq', 'archetype_id', 'by_person', 'changed_at'],
+                       [[1, 201, 0, AZORIUS_CONTROL, True, in_season], [1, 201, 1, RED_DECK_WINS, True, after_season], [1, 202, 0, AZORIUS_CONTROL, True, in_season]])
+    assert [line.split(' | ')[:2] for line in render(experiments_db) if 'label changed' in line] == [['| validation, label changed after its season', '1']]
+
+def test_a_snapshot_without_history_gets_no_relabelled_row(experiments_db: Database, runs: tuple[int, int], caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.INFO):
+        assert not [line for line in render(experiments_db) if 'label changed' in line]
+    assert 'Snapshot 1 has no label history' in caplog.text
 
 
 # Scenario: the results table has one line per row, with intervals.

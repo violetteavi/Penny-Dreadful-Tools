@@ -1,6 +1,8 @@
 """Experiment reports: one stored run turned into Markdown, committed in docs/experiments/. Scores are recomputed from the run's stored guesses every time (decision F)."""
+import logging
 import math
 from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
@@ -10,9 +12,11 @@ from archetype_classifier.data_loading.slices import DeckSet, build_deck_set
 from archetype_classifier.data_loading.splits import Split
 from archetype_classifier.evaluation.metrics import METRICS_VERSION, ArchetypeTree, Comparison, Confusion, Interval, Ranking, ScoredDeck, compare, in_tree, score
 from archetype_classifier.evaluation.model import JSON, Prediction
-from archetype_classifier.evaluation.rows import PREFIXES, ROWS_VERSION, Row, RowScores, build_rows, candidate_ids, score_rows
+from archetype_classifier.evaluation.rows import PREFIXES, ROWS_VERSION, Row, RowScores, build_relabelled, build_rows, candidate_ids, score_rows
 from archetype_classifier.evaluation.store import canonical, load_guesses, load_model_record, load_run, splits_text
 from shared.database import Database
+
+logger = logging.getLogger(__name__)
 
 DECK_URL = 'https://pennydreadfulmagic.com/decks/{}/'  # Local deck ids match the public site.
 TOP_CONFUSIONS = 10
@@ -37,6 +41,7 @@ def render_report(edb: Database, run_id: int, min_decks: int, baseline_run_id: i
         f'| Model | {run.model_id}: {record.name} v{record.version}, parameters {canonical(record.params)}, seed {record.seed} |',
         f'| Snapshot | {record.snapshot_id} |',
         f'| Scheme | {record.scheme_id} ({scheme.name}) |',
+        *([f'| Label cutoff | {datetime.fromtimestamp(scheme.label_cutoff, UTC):%Y-%m-%d %H:%M} UTC ({scheme.label_cutoff}) |'] if scheme.label_cutoff is not None else []),
         f'| Trained on | {splits_text(record.training_splits).replace(",", ", ")} ({record.training_count} decks) |',
         f'| Tuned on | {splits_text(record.validation_splits).replace(",", ", ")} ({record.validation_count} decks) |',
         f'| Metrics version | {METRICS_VERSION} |',
@@ -47,7 +52,7 @@ def render_report(edb: Database, run_id: int, min_decks: int, baseline_run_id: i
     tree = ArchetypeTree(snapshot.archetypes)
     scored = build_deck_set(snapshot, run.scope, include_test=include_test)
     training = build_deck_set(snapshot, record.training_splits, include_test=Split.TEST in record.training_splits)
-    rows = build_rows(scored, training, snapshot.scheme)
+    rows = build_rows(scored, training, snapshot.scheme, relabelled_decks(edb, record.snapshot_id, scored))
     results = score_rows(edb, run.id, tree, scored, rows, record.training_splits, record.validation_splits, min_decks, include_test)
     lines += ['', '## Results', '', '| Row | Decks | Maindecks | hF | hP | hR | Exact match | Coverage | Macro hF | Notes |', '|---|---|---|---|---|---|---|---|---|---|']
     lines += [result_line(name, r) for name, r in results.items()]
@@ -62,6 +67,14 @@ def render_report(edb: Database, run_id: int, min_decks: int, baseline_run_id: i
     if baseline_run_id is not None:
         lines += comparison_lines(run.id, baseline_run_id, rows, scored, guesses, load_guesses(edb, baseline_run_id), tree)
     return '\n'.join(lines) + '\n'
+
+def relabelled_decks(edb: Database, snapshot_id: int, scored: DeckSet) -> frozenset[int]:
+    """The scored decks a person relabelled after their season. A snapshot taken without its label history (#59) has none to tell."""
+    history = loader.load_snapshot_history(edb, snapshot_id)
+    if not history:
+        logger.info("Snapshot %d has no label history, so the report has no 'label changed after its season' rows", snapshot_id)
+        return frozenset()
+    return build_relabelled(scored.decks.values(), history, loader.load_season_starts())
 
 def candidate_lines(results: Mapping[str, RowScores]) -> list[str]:
     """How well the run's candidates rank each row's labels (#14). A run whose model doesn't rank candidates gets no table, rather than zeros."""

@@ -73,14 +73,18 @@ def label_at(history: Sequence[LabelChange], cutoff: datetime, source: str, arch
     """A deck's label as it stood at a label cutoff, from its history alone (oldest first; entries at the cutoff count).
 
     A person's latest label is verified; failing that, the latest automatic guess is unverified. Scope is judged on that label, not today's."""
-    known = [c for c in history if c.changed_at <= cutoff]
-    latest = next((c for c in reversed(known) if c.by_person), None) or next((c for c in reversed(known) if not c.by_person), None)
+    latest = label_as_of(history, cutoff)
     name = archetype_names.get(latest.archetype_id) if latest else None
     if not in_scope(source, name, scope_rule):
         return DeckLabel(LabelStatus.OUT_OF_SCOPE, None)
     if latest is None:
         return DeckLabel(LabelStatus.UNLABELLED, None)
     return DeckLabel(LabelStatus.VERIFIED if latest.by_person else LabelStatus.UNVERIFIED, latest.archetype_id)
+
+def label_as_of(history: Sequence[LabelChange], moment: datetime) -> LabelChange | None:
+    """The entry that set a deck's label at a moment: its latest person's entry then, else its latest automatic one. History is oldest first."""
+    known = [c for c in history if c.changed_at <= moment]
+    return next((c for c in reversed(known) if c.by_person), None) or next((c for c in reversed(known) if not c.by_person), None)
 
 def decided_after(history: Sequence[LabelChange], cutoff: datetime) -> bool:
     """Whether any label decision, a person's or automatic, came after a label cutoff."""

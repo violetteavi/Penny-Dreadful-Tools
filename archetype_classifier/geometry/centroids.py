@@ -1,4 +1,4 @@
-"""Centroids and typical lists (#64; Scenarios.md, "Archetype geometry").
+"""Centroids, typical lists and cohesion (#64; Scenarios.md, "Archetype geometry").
 
 An archetype's rows are the training rows labelled exactly with it, not its children's. Its centroid sums their unit vectors, each times its deck
 count. Its typical list is its row nearest the centroid: for unit vectors that's also the row with the highest average cosine to the archetype's decks,
@@ -21,6 +21,12 @@ class Centroids:
     weights: np.ndarray  # Each archetype's decks.
     unit: np.ndarray  # The sums at unit length.
     skipped: dict[int, int]  # Archetype -> rows, for archetypes below the floor.
+
+    @property
+    def cohesion(self) -> np.ndarray:
+        """How tightly each archetype's lists point the same way: 1 when they all do. It's the root of the mean cosine over every pair of its decks,
+        each deck paired with itself included."""
+        return np.linalg.norm(self.sums, axis=1) / self.weights
 
     def index(self) -> dict[int, int]:
         """Archetype -> its position in these arrays."""

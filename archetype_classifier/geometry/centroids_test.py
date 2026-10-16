@@ -39,3 +39,28 @@ def test_an_archetype_below_the_floor_gets_no_centroid_and_is_counted() -> None:
     assert centroids.label_ids.tolist() == [MONO_BLACK_MIDRANGE]
     assert centroids.skipped == {ORZHOV_CONTROL: 1}  # Rows, not decks: its one list was submitted 5 times.
     assert build_medoids(space, centroids) == {MONO_BLACK_MIDRANGE: 2}
+
+
+# Scenario: cohesion measures how tightly an archetype's lists point the same way.
+
+def test_cohesion_is_one_for_identical_lists() -> None:
+    centroids = build_centroids(rows_space([(ORZHOV_CONTROL, (1, 0, 0)), (ORZHOV_CONTROL, (1, 0, 0))]), min_rows=1)
+    assert np.isclose(centroids.cohesion[0], 1.0)
+
+def test_cohesion_of_two_orthogonal_lists_is_the_root_of_a_half() -> None:
+    centroids = build_centroids(rows_space([(ORZHOV_CONTROL, (1, 0, 0)), (ORZHOV_CONTROL, (0, 1, 0))]), min_rows=1)
+    assert np.isclose(centroids.cohesion[0], 0.7071, atol=5e-5)
+
+def test_deck_counts_tilt_cohesion() -> None:
+    centroids = build_centroids(rows_space([(ORZHOV_CONTROL, (1, 0, 0), 3), (ORZHOV_CONTROL, (0, 1, 0))]), min_rows=1)
+    assert np.isclose(centroids.cohesion[0], 0.7906, atol=5e-5)
+    assert np.isclose(centroids.cohesion[0] ** 2, (9 + 1) / 16)  # The mean cosine over the 16 pairs of decks, each with itself included.
+
+
+# Ties between typical lists break as the nearest deck breaks them: the most decks, then the newest deck.
+
+def test_a_tie_for_the_typical_list_goes_to_the_row_with_more_decks_then_the_newer_deck() -> None:
+    more = rows_space([(ORZHOV_CONTROL, (1, 0, 0)), (ORZHOV_CONTROL, (1, 0, 0), 2), (ORZHOV_CONTROL, (0, 1, 0))])  # Two lists with the same vector tie exactly.
+    assert build_medoids(more, build_centroids(more, min_rows=1))[ORZHOV_CONTROL] == 1
+    newer = rows_space([(ORZHOV_CONTROL, (1, 0, 0), 2), (ORZHOV_CONTROL, (1, 0, 0), 2), (ORZHOV_CONTROL, (0, 1, 0))])
+    assert build_medoids(newer, build_centroids(newer, min_rows=1))[ORZHOV_CONTROL] == 1  # Equal decks: the newer deck.

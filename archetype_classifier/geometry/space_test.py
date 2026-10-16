@@ -1,16 +1,20 @@
 """The space a model reads decks in (#64), and helpers the other geometry tests build their spaces with."""
 from collections import Counter
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 
 import numpy as np
 import pytest
 from scipy import sparse
 
+from archetype_classifier.card_embeddings.combined_embedding import save_combined_embedding
 from archetype_classifier.card_embeddings.deck_vectors import DeckVectors
 from archetype_classifier.data_loading.dataset import CardCount, LabelStatus
 from archetype_classifier.evaluation.model import PredictDeck, TrainingDeck
-from archetype_classifier.geometry.space import DeckSpace, build_space
+from archetype_classifier.geometry.space import DeckSpace, build_model_space, build_space
+from archetype_classifier.models.bag_nearest import BagNearestDeck
 from archetype_classifier.models.embedding_nearest import build_training_rows
+from archetype_classifier.models.embedding_nearest_test import EMBEDDING, weighted
 
 DIMENSIONS = ('dimension 1', 'dimension 2', 'dimension 3')
 
@@ -79,3 +83,22 @@ def test_a_space_refuses_an_embedding_that_doesnt_match_its_cards() -> None:
     space = rows_space([(1, (1, 0, 0))])
     with pytest.raises(ValueError, match='3 cards but the embedding has 2 rows'):
         build_space(space.rows, space.vectors, DIMENSIONS, np.eye(2, 3))
+
+
+# A fitted model's space: its own training rows, read the way it reads them.
+
+@pytest.fixture
+def small_embedding(tmp_path: Path) -> Path:
+    return save_combined_embedding(EMBEDDING, tmp_path)
+
+def test_a_models_space_has_exactly_its_row_vectors(small_embedding: Path) -> None:
+    model = weighted(small_embedding, weights='idf', copies='sqrt')  # Run 17's kind of model, on the small embedding.
+    space = build_model_space(model)
+    assert np.array_equal(space.vectors.matrix, model.row_vectors)
+    assert space.rows is model.rows
+    assert space.cards == tuple(model.embedding.names)
+    assert space.embedding is not None and np.allclose(space.vectors.lines @ space.embedding, space.vectors.matrix)
+
+def test_the_bag_of_cards_is_refused_until_its_own_pass() -> None:
+    with pytest.raises(ValueError, match="bag of cards nearest deck"):
+        build_model_space(BagNearestDeck({'copies': 'sqrt'}))

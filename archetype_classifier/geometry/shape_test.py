@@ -6,7 +6,7 @@ import numpy as np
 from archetype_classifier.data_loading.dataset import ArchetypeSnapshot
 from archetype_classifier.evaluation.metrics import ArchetypeTree
 from archetype_classifier.geometry.centroids import build_centroids
-from archetype_classifier.geometry.shape import build_overlap, build_parent_positions
+from archetype_classifier.geometry.shape import build_overlap, build_parent_positions, build_separation
 from archetype_classifier.geometry.space_test import rows_space
 
 IZZET_CONTROL, AZORIUS_CONTROL, RED_DECK_WINS = 65, 49, 16
@@ -67,3 +67,20 @@ def test_a_grandchild_is_never_a_candidate() -> None:
 def test_a_parent_with_fewer_than_two_children_with_centroids_has_no_positions() -> None:
     space = rows_space([(ORZHOV_ARISTOCRATS, (1, 0, 0)), (RED_DECK_WINS, (0, 0, 1)), (ARISTOCRATS, (1, 1, 0.1))])
     assert build_parent_positions(space, build_centroids(space, min_rows=1), TREE) == []
+
+
+# Separation: each archetype's nearest other centroid, and how close its siblings are compared with everything else.
+
+def test_separation_names_the_nearest_other_centroid_and_compares_siblings_with_the_rest() -> None:
+    space = rows_space([(ORZHOV_ARISTOCRATS, (1, 0, 0)), (RAKDOS_ARISTOCRATS, (0.6, 0.8, 0)), (RED_DECK_WINS, (0, 0, 1)), (ARISTOCRATS, (0.8, 0.6, 0))])
+    separation = {s.label_id: s for s in build_separation(build_centroids(space, min_rows=1), TREE)}
+    orzhov = separation[ORZHOV_ARISTOCRATS]
+    assert orzhov.nearest_cosine is not None and orzhov.sibling_mean is not None and orzhov.other_mean is not None
+    assert (orzhov.nearest_id, round(orzhov.nearest_cosine, 4)) == (ARISTOCRATS, 0.8)  # Its parent, ahead of its sibling at 0.6.
+    assert np.isclose(orzhov.sibling_mean, 0.6)  # Rakdos Aristocrats.
+    assert np.isclose(orzhov.other_mean, (0.8 + 0) / 2)  # Aristocrats and Red Deck Wins.
+    assert separation[RED_DECK_WINS].sibling_mean is None  # Aggro has no other child with a centroid.
+
+def test_a_lone_archetype_has_no_nearest_other_centroid() -> None:
+    separation = build_separation(build_centroids(rows_space([(RED_DECK_WINS, (0, 0, 1))]), min_rows=1), TREE)
+    assert [(s.nearest_id, s.nearest_cosine, s.other_mean) for s in separation] == [(None, None, None)]

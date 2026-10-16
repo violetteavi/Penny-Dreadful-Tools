@@ -10,7 +10,7 @@ import numpy as np
 
 from archetype_classifier.evaluation.metrics import ArchetypeTree
 from archetype_classifier.geometry.centroids import Centroids
-from archetype_classifier.geometry.defining import build_subtree
+from archetype_classifier.geometry.defining import build_siblings, build_subtree
 from archetype_classifier.geometry.space import DeckSpace
 
 CHUNK = 10_000  # Rows compared with every centroid at once.
@@ -24,6 +24,14 @@ class Overlap:
     overlapping: int  # Rows whose nearest centroid isn't their own archetype's.
     nearer: Counter[int]  # Which archetypes' centroids those rows are nearest, and how many.
 
+
+@dataclass(frozen=True)
+class Separation:
+    label_id: int
+    nearest_id: int | None  # The nearest other centroid; None when there's no other.
+    nearest_cosine: float | None
+    sibling_mean: float | None  # The mean cosine to its siblings' centroids; None when none has one.
+    other_mean: float | None  # The mean cosine to every other centroid that isn't a sibling's.
 
 @dataclass(frozen=True)
 class ParentPosition:
@@ -48,6 +56,24 @@ def build_overlap(space: DeckSpace, centroids: Centroids) -> dict[int, Overlap]:
         elsewhere = nearest[mine][nearest[mine] != i]
         overlap[label] = Overlap(int(mine.sum()), len(elsewhere), Counter(int(centroids.label_ids[j]) for j in elsewhere))
     return overlap
+
+
+def build_separation(centroids: Centroids, tree: ArchetypeTree) -> list[Separation]:
+    """In label order. Siblings include their own children, as for defining cards; "other" is everything else, the archetype's parent and children too."""
+    cosines = centroids.unit @ centroids.unit.T
+    labels = centroids.label_ids.tolist()
+    separation = []
+    for i, label in enumerate(labels):
+        others = np.array([j for j in range(len(labels)) if j != i], dtype=np.int64)
+        siblings = np.isin(centroids.label_ids[others], list(build_siblings(tree, label)))
+        nearest = int(others[np.argmax(cosines[i, others])]) if len(others) else None
+        separation.append(Separation(label, None if nearest is None else labels[nearest], None if nearest is None else float(cosines[i, nearest]),
+                                     mean_or_none(cosines[i, others[siblings]]), mean_or_none(cosines[i, others[~siblings]])))
+    return separation
+
+
+def mean_or_none(values: np.ndarray) -> float | None:
+    return float(values.mean()) if len(values) else None
 
 
 def build_parent_positions(space: DeckSpace, centroids: Centroids, tree: ArchetypeTree, margin: float = MARGIN) -> list[ParentPosition]:

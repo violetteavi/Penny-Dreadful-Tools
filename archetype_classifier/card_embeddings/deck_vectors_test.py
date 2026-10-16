@@ -3,6 +3,7 @@ import math
 from collections import Counter
 
 import numpy as np
+from scipy import sparse
 
 from archetype_classifier.card_embeddings.combined_embedding import CombinedEmbedding, CombinedEmbeddingSettings, CombinedEmbeddingWeights, build_combined_embedding, build_season_set
 from archetype_classifier.card_embeddings.deck_vectors import build_deck_vectors
@@ -129,3 +130,38 @@ def test_an_unseen_card_the_embedding_knows_moves_the_deck_unevenly() -> None:
     assert (vectors.embedded.tolist()[0], vectors.skipped.tolist()[0]) == (60, 0)  # An unseen card isn't a skipped card.
     blue_ratio, red_ratio = ((vectors.matrix[0] @ vectors.matrix[r]) / (vectors.matrix[1] @ vectors.matrix[r]) for r in (2, 3))
     assert not np.isclose(blue_ratio, red_ratio)  # Unlike in the bag, not one factor for every row.
+
+
+# The lines behind each vector (#64): each line's copies(n) x weight, divided by the deck's unscaled length, so lines @ E gives the vector.
+
+def test_lines_times_the_embedding_give_the_deck_vectors() -> None:
+    decks = [cards(Shock=4, Mountain=56), cards(Essence_Scatter=4, Island=56), cards(Shock=4, Mountain=52, Smaug_s_Fury=4)]
+    vectors = build_deck_vectors(decks, EMBEDDING, WEIGHTS.__getitem__, math.sqrt)
+    assert np.allclose(vectors.lines @ EMBEDDING.vectors.astype(np.float64), vectors.matrix)
+
+def test_each_line_is_its_copies_and_weight_over_the_decks_length() -> None:
+    vectors = build_deck_vectors([cards(Shock=4, Mountain=56)], EMBEDDING, WEIGHTS.__getitem__, math.sqrt)
+    length = np.linalg.norm(2 * 1.8109 * ROW['Shock'] + math.sqrt(56) * 1.5878 * ROW['Mountain'])
+    column = {name: i for i, name in enumerate(EMBEDDING.names)}
+    row = vectors.lines.toarray()[0]
+    assert np.isclose(row[column['Shock']], 2 * 1.8109 / length)
+    assert np.isclose(row[column['Mountain']], math.sqrt(56) * 1.5878 / length)
+    assert np.count_nonzero(row) == 2
+    assert vectors.lines.shape == (1, len(EMBEDDING.names))
+
+def test_a_deck_of_only_missing_cards_has_no_lines() -> None:
+    vectors = build_deck_vectors([cards(Smaug_s_Fury=60), cards(Shock=4, Mountain=56)], EMBEDDING)
+    assert vectors.lines.getrow(0).nnz == 0
+    assert vectors.lines.getrow(1).nnz == 2
+
+def test_the_deck_vectors_are_computed_as_before_bit_for_bit() -> None:
+    """Regression: stored runs reproduce only if the vectors don't change by rounding, so they're still the summed lines over their length, not lines @ E."""
+    decks = [cards(Shock=4, Mountain=56), cards(Essence_Scatter=4, Island=56)]
+    column = {name: i for i, name in enumerate(EMBEDDING.names)}
+    raw = np.zeros((len(decks), len(EMBEDDING.names)))
+    for r, deck in enumerate(decks):
+        for line in deck:
+            raw[r, column[line.card]] = math.sqrt(line.n) * WEIGHTS[line.card]
+    summed = np.asarray(sparse.csr_matrix(raw) @ EMBEDDING.vectors.astype(np.float64))
+    before = summed / np.linalg.norm(summed, axis=1, keepdims=True)
+    assert np.array_equal(build_deck_vectors(decks, EMBEDDING, WEIGHTS.__getitem__, math.sqrt).matrix, before)

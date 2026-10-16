@@ -1,4 +1,5 @@
 """Deck vectors: a deck's maindeck as the sum of its cards' combined embedding rows, each times copies(n) x the card's weight, at unit length (#44, #50).
+The lines behind each vector are kept too, scaled by the same length, for the archetype geometry (#64).
 With no weights and linear copies, the defaults, that's the copy-weighted average of #44.
 
 Basic lands count like any other card. Only maindecks reach this module, so a sideboard never changes a deck's vector. A card the embedding lacks is
@@ -21,6 +22,7 @@ class DeckVectors:
     embedded: np.ndarray  # Maindeck copies found in the embedding, per deck.
     skipped: np.ndarray  # Maindeck copies the embedding lacks, per deck.
     skipped_cards: Counter[str]  # Copies of each missing card, over all the decks.
+    lines: sparse.csr_matrix  # Each line's copies(n) x weight over its deck's unscaled length, columns in the embedding's order: lines @ E matches matrix to rounding (#64).
 
 
 def build_deck_vectors(maindecks: Sequence[tuple[CardCount, ...]], embedding: CombinedEmbedding, weight: Callable[[str], float] | None = None,
@@ -45,5 +47,6 @@ def build_deck_vectors(maindecks: Sequence[tuple[CardCount, ...]], embedding: Co
     lines = sparse.csr_matrix((values, (rows, cols)), shape=(len(maindecks), len(index)), dtype=np.float64)
     summed = np.asarray(lines @ embedding.vectors.astype(np.float64))
     norms = np.linalg.norm(summed, axis=1, keepdims=True)
-    matrix = np.divide(summed, norms, out=np.zeros_like(summed), where=norms > 0)
-    return DeckVectors(matrix, embedded, skipped, skipped_cards)
+    matrix = np.divide(summed, norms, out=np.zeros_like(summed), where=norms > 0)  # Not lines @ E: rounding could flip a tie and change a stored run.
+    scale = np.divide(1.0, norms[:, 0], out=np.zeros(len(maindecks)), where=norms[:, 0] > 0)
+    return DeckVectors(matrix, embedded, skipped, skipped_cards, sparse.csr_matrix(sparse.diags(scale) @ lines))

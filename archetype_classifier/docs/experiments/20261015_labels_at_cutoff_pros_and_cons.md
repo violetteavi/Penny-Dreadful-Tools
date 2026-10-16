@@ -127,7 +127,15 @@ On 93 of the 1,956 decks of existing archetypes (4.8%, 78 maindecks), none of ru
 | Relabelled after the season | 1 | 71 |
 | Repeating a training maindeck | 0 | |
 
-- **Mostly broad parent labels.** Combo (14 of its 37 season 39 decks) and Midrange (9 of 37) lead. These are decks a reviewer couldn't place in a leaf, and their nearest training decks carry specific leaf labels, so the broad label ranks low. Ranking by single nearest decks can't say "this deck is generic": that's parent fallback's job (#45).
+**Each model by the label's position in the tree** (season 39, existing archetypes; Top 1 / Top 5):
+
+| Label | Control (run 14) | Site's guesser (run 15) | Bag (run 16) | IDF average (run 17) |
+|---|---|---|---|---|
+| Top-level (106 decks) | 0.15 / 0.52 | **0.36** / 0.52 | 0.21 / **0.58** | 0.14 / 0.48 |
+| Mid-level parent (621) | 0.58 / **0.89** | 0.39 / 0.67 | 0.57 / 0.87 | **0.60** / 0.89 |
+| Leaf (1,229) | 0.75 / 0.92 | 0.60 / 0.79 | **0.78** / **0.95** | **0.78** / 0.91 |
+
+- **Mostly broad parent labels.** Combo (14 of its 37 season 39 decks) and Midrange (9 of 37) lead. These are decks a reviewer couldn't place in a leaf, and their nearest training decks carry specific leaf labels, so the broad label ranks low. Ranking by single nearest decks can't say "this deck is generic": that's parent fallback's job (#45). The table shows it's the top-level labels that suffer: every model reaches the top 5 for only about half of them, while mid-level parents do almost as well as leaves. The site's guesser is best at Top 1 on top-level labels (0.36), though no better at Top 5.
 - **A few young, fast-changing archetypes.** Kinnan Combo misses 15 of its 18 decks: all 27 of its training decks are from season 38, and its lists changed with season 39's cards. Squirrel Aristocrats (training decks from season 36 on) misses 6 of 17.
 - **Not noise and not tiny archetypes.** Only 1 was relabelled after the season, none repeats a training maindeck, and the label's median training count is 210 decks.
 - **Often near misses.** The best rank any model gives the label has a median of 10, and 48 of the 93 have it in the top 10. About half the models' first candidates are in another top-level branch.

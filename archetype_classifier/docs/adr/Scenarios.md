@@ -1840,6 +1840,25 @@ Centroids: Orzhov Midrange (1, 0, 0), Orzhov Control (0, 0, 1), Mono Black Midra
 - **Why it matters:** the analogy "works" only because Mono Black Control is already Mono Black Midrange's nearest neighbour. Without the baseline and the offset cosine beside the rank, it would read as evidence that "control rather than midrange" is a direction.
 - **Check:** unit-test the three ranks and the offset cosine.
 
+### Analogies test if strategies have a consistent direction
+
+Archetypes with centroids: Orzhov Midrange, Orzhov Control, Mono Black Midrange, Mono Black Control, Mono Black Aggro, Mono Black Devotion and Orzhov Aristocrats. There's no Orzhov Aggro.
+
+- **Expect:**
+  - **Strategy analogies** take every name "X S" with S among Control, Midrange and Aggro, and pair two colours X ≠ Y with two strategies S ≠ T when all four archetypes have centroids. Here that's 4:
+    - Orzhov Midrange : Orzhov Control :: Mono Black Midrange : Mono Black Control
+    - Orzhov Control : Orzhov Midrange :: Mono Black Control : Mono Black Midrange
+    - Mono Black Midrange : Mono Black Control :: Orzhov Midrange : Orzhov Control
+    - Mono Black Control : Mono Black Midrange :: Orzhov Control : Orzhov Midrange
+  - None involve Mono Black Aggro, since Orzhov Aggro doesn't exist. Mono Black Devotion and Orzhov Aristocrats don't end in a strategy, so they're never used. If Mono Black Control were below the floor, there would be none.
+  - **Pair analogies** take (fair, combo) pairs. (Applejacks, Lumbertwin) and (Izzet Control, Izzet Twin) give 4, adding the combo and taking it away, each way:
+    - Applejacks : Lumbertwin :: Izzet Control : Izzet Twin
+    - Izzet Control : Izzet Twin :: Applejacks : Lumbertwin
+    - Lumbertwin : Applejacks :: Izzet Twin : Izzet Control
+    - Izzet Twin : Izzet Control :: Lumbertwin : Applejacks
+- **Why it matters:** each analogy asks whether one change, from midrange to control or from a fair deck to its combo version, points the same way in two colours. One example could be luck; the systematic set turns it into a finding, scored as in the three scenarios before.
+- **Check:** unit-test both lists, as sets.
+
 ### Neighbours kept measures how faithful a map is
 
 Four Izzet Control rows at 0°, 10°, 30° and 90° in one plane, so by cosine each row's nearest neighbour is: 0° → 10°, 10° → 0°, 30° → 10°, 90° → 30°. Two one-dimensional maps place them at:
@@ -1853,14 +1872,3 @@ Four Izzet Control rows at 0°, 10°, 30° and 90° in one plane, so by cosine e
 
 - **Why it matters:** any two-dimensional map of 84,085 rows distorts them. The one illustrative map in the results prints its neighbours kept, so a reader knows how far to trust it.
 - **Check:** unit-test both maps.
-
-### Run 17's space, rebuilt (real data)
-
-`PD_LOCAL_DATA=1`. Run 17, scheme 3.
-
-- **Expect:**
-  - The space has **84,085** training rows, as run 17's model records.
-  - Its deck vectors equal run 17's model's row vectors exactly: the space is built by the same code.
-  - Its card lines times the embedding match the deck vectors to rounding.
-- **Why it matters:** every number in the results describes the space run 17 actually ranked decks in.
-- **Check:** in `geometry/space_local_test.py`, load the space and the model and compare.

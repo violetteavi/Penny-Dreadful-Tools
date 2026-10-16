@@ -30,7 +30,7 @@ class Row:
 def build_rows(scored: DeckSet, training: DeckSet, scheme: SplitScheme) -> list[Row]:
     """The rows for the splits that were scored. Every row but the unverified one holds VERIFIED decks only."""
     training_maindecks = {d.maindeck_hash for d in training.decks.values()}
-    training_counts = Counter(d.site_archetype_id for d in training.decks.values())  # The label the model trains on, so its count of each archetype.
+    training_counts = Counter(d.label_id for d in training.decks.values())  # The label the model trains on, so its count of each archetype.
     def repeated(d: SnapshotDeck) -> bool:
         return d.maindeck_hash in training_maindecks
     rows = []

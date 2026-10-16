@@ -1,3 +1,4 @@
+import dataclasses
 import logging
 
 import pytest
@@ -5,6 +6,7 @@ import pytest
 from archetype_classifier.data_loading.labels import LabelFacts, LabelStatus
 from archetype_classifier.data_loading.slices import Snapshot, SnapshotDeck, build_deck_set
 from archetype_classifier.data_loading.splits import Split, SplitScheme
+from archetype_classifier.evaluation import rows as rows_module
 from archetype_classifier.evaluation.rows import ROWS_VERSION, build_rows
 
 RED_DECK_WINS = 16
@@ -118,6 +120,21 @@ def test_new_and_existing_archetypes_are_separate_rows() -> None:
 def test_held_out_decks_get_no_archetype_rows() -> None:
     assert not [name for name in rows({Split.HELD_OUT}) if 'archetypes' in name]
 
+
+
+# Scenario: an archetype created after the cutoff has no training decks (Scenarios.md, "Labels at a cutoff").
+
+FLARE_DECK_WINS = 17
+
+def test_an_archetype_created_after_the_cutoff_has_no_training_decks(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(rows_module, 'NEW_ARCHETYPE_DECKS', 2)  # Small, as in the scenario.
+    def training_deck(deck_id: int, label: int) -> SnapshotDeck:  # Decks A and A': Flare Deck Wins on the site.
+        return dataclasses.replace(snapshot_deck(deck_id, Split.TRAIN, 0, None, label=label), site_archetype_id=FLARE_DECK_WINS)
+    v = snapshot_deck(601, Split.VALIDATION, 0, None, label=FLARE_DECK_WINS)
+    without_cutoff = snapshot({1: training_deck(1, FLARE_DECK_WINS), 2: training_deck(2, FLARE_DECK_WINS), 601: v})
+    with_cutoff = snapshot({1: training_deck(1, RED_DECK_WINS), 2: training_deck(2, RED_DECK_WINS), 601: v})
+    assert rows({Split.VALIDATION}, without_cutoff)['validation, existing archetypes'] == frozenset({601})
+    assert rows({Split.VALIDATION}, with_cutoff)['validation, new archetypes'] == frozenset({601})
 
 # Scenario: rows are versioned. 3: new and existing archetypes (#14).
 

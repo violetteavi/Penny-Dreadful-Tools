@@ -44,15 +44,21 @@ def test_labelled_and_prediction_decks_come_from_the_same_deck_set() -> None:
     assert sum(c.n for c in deck_1.maindeck) == 60 and sum(c.n for c in deck_1.sideboard) == 2
 
 
-# Scenario: training decks carry the site label and the label status.
+# Scenario: training decks carry the scheme's label and the label status.
 TRAINING_DECKS = snapshot(snapshot_deck(3, 30, Split.TRAIN, LabelStatus.UNVERIFIED, RED_DECK_WINS), snapshot_deck(4, 30, Split.TRAIN, LabelStatus.UNLABELLED, None, reviewed=False))
 
-def test_training_decks_carry_the_site_label_and_the_label_status() -> None:
+def test_training_decks_carry_the_schemes_label_and_the_label_status() -> None:
     deck_set = build_deck_set(TRAINING_DECKS, frozenset({Split.TRAIN}))
     assert build_training_decks(deck_set, CONTENTS) == [
         TrainingDeck(PredictDeck(3, 'League', CONTENTS[3].maindeck, CONTENTS[3].sideboard), 30, RED_DECK_WINS, True, LabelStatus.UNVERIFIED),
         TrainingDeck(PredictDeck(4, 'League', CONTENTS[4].maindeck, CONTENTS[4].sideboard), 30, None, False, LabelStatus.UNLABELLED),
     ]
+
+FLARE_DECK_WINS = 11
+
+def test_under_a_label_cutoff_a_training_deck_carries_its_label_at_the_cutoff_not_its_site_label() -> None:
+    a = dataclasses.replace(snapshot_deck(3, 30, Split.TRAIN, LabelStatus.VERIFIED, RED_DECK_WINS), site_archetype_id=FLARE_DECK_WINS)  # Deck A, "Labels at a cutoff".
+    assert [d.archetype_id for d in build_training_decks(build_deck_set(snapshot(a), frozenset({Split.TRAIN})), CONTENTS)] == [RED_DECK_WINS]
 
 
 # Scenario: the same deck always gives the same input.
@@ -95,8 +101,8 @@ def test_a_deck_set_of_any_split_converts_to_every_shape(split: Split, deck_id: 
     deck = ONE_PER_SPLIT.decks[deck_id]
     expected = PredictDeck(deck_id, 'League', CONTENTS[1].maindeck, CONTENTS[1].sideboard)
     assert build_predict_decks(deck_set, CONTENTS_BY_ID) == [expected]
-    assert build_labelled_decks(deck_set, CONTENTS_BY_ID) == [LabelledDeck(expected, deck.site_archetype_id, deck.maindeck_hash)]  # type: ignore[arg-type]
-    assert build_training_decks(deck_set, CONTENTS_BY_ID) == [TrainingDeck(expected, deck.season_id, deck.site_archetype_id, True, LabelStatus.VERIFIED)]
+    assert build_labelled_decks(deck_set, CONTENTS_BY_ID) == [LabelledDeck(expected, deck.label_id, deck.maindeck_hash)]  # type: ignore[arg-type]
+    assert build_training_decks(deck_set, CONTENTS_BY_ID) == [TrainingDeck(expected, deck.season_id, deck.label_id, True, LabelStatus.VERIFIED)]
 
 def test_excluded_decks_never_reach_a_model() -> None:
     with pytest.raises(ValueError, match='EXCLUDED'):

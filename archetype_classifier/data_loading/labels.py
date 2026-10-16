@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -68,3 +68,20 @@ def latest_entry_is_human(facts: LabelFacts) -> bool:
     if facts.human_labelled_at is None:
         return False
     return facts.machine_labelled_at is None or facts.human_labelled_at >= facts.machine_labelled_at
+
+def label_at(history: Sequence[LabelChange], cutoff: datetime, source: str, archetype_names: Mapping[int, str], scope_rule: ScopeRule) -> DeckLabel:
+    """A deck's label as it stood at a label cutoff, from its history alone (oldest first; entries at the cutoff count).
+
+    A person's latest label is verified; failing that, the latest automatic guess is unverified. Scope is judged on that label, not today's."""
+    known = [c for c in history if c.changed_at <= cutoff]
+    latest = next((c for c in reversed(known) if c.by_person), None) or next((c for c in reversed(known) if not c.by_person), None)
+    name = archetype_names.get(latest.archetype_id) if latest else None
+    if not in_scope(source, name, scope_rule):
+        return DeckLabel(LabelStatus.OUT_OF_SCOPE, None)
+    if latest is None:
+        return DeckLabel(LabelStatus.UNLABELLED, None)
+    return DeckLabel(LabelStatus.VERIFIED if latest.by_person else LabelStatus.UNVERIFIED, latest.archetype_id)
+
+def decided_after(history: Sequence[LabelChange], cutoff: datetime) -> bool:
+    """Whether any label decision, a person's or automatic, came after a label cutoff."""
+    return any(c.changed_at > cutoff for c in history)

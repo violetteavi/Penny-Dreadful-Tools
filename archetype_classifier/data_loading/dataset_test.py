@@ -1,6 +1,8 @@
 from collections import Counter
 from datetime import UTC, datetime
 
+import pytest
+
 from archetype_classifier.data_loading.dataset import ArchetypeRow, DeckCardRow, DeckRow, DeckSplit, TwinOverlap, snapshot_decks, split_decks, twin_overlaps
 from archetype_classifier.data_loading.labels import LabelChange, LabelFacts, LabelStatus
 from archetype_classifier.data_loading.splits import ExclusionReason, Split, SplitScheme
@@ -120,3 +122,95 @@ def test_a_112_card_maindeck_is_frozen_in_full_and_not_excluded() -> None:
     assert snapshot.decks[217677].maindeck_cards == 112
     assert snapshot.decks[217677].maindeck_hash != snapshot_decks([deck(1, RED_DECK_WINS.id)], [], burn(1), ARCHETYPES).decks[1].maindeck_hash
     assert split_decks(snapshot, life_is_ez, NOTHING_HELD_OUT).decks[217677].split == Split.TRAIN
+
+
+# Scenario: a training deck relabelled after the cutoff trains on its label at the cutoff (Scenarios.md, "Labels at a cutoff").
+
+FLARE_DECK_WINS = ArchetypeRow(4, 'Flare Deck Wins', 2)
+EQUIPMENT_AGGRO = ArchetypeRow(5, 'Equipment Aggro', 1)
+BURN = ArchetypeRow(6, 'Burn', 1)
+UNCLASSIFIED = ArchetypeRow(7, 'Unclassified', None)
+WILDFIRE = ArchetypeRow(8, 'Wildfire', None)
+THRYX_WILDFIRE = ArchetypeRow(9, 'Thryx-Wildfire', 8)
+CUTOFF_ARCHETYPES = [*ARCHETYPES, FLARE_DECK_WINS, EQUIPMENT_AGGRO, BURN, UNCLASSIFIED, WILDFIRE, THRYX_WILDFIRE]
+CUTOFF = datetime(2025, 10, 3, 7, tzinfo=UTC)  # The start of season 39.
+BEFORE = datetime(2025, 6, 1, tzinfo=UTC)
+AFTER = datetime(2026, 4, 8, tzinfo=UTC)
+AT_SEASON_39 = SplitScheme('typical at season 39, nothing held out', held_out_percent=0, label_cutoff=int(CUTOFF.timestamp()))
+
+def person(deck_id: int, archetype: ArchetypeRow, at: datetime) -> LabelChange:
+    return LabelChange(deck_id, archetype.id, by_person=True, changed_at=at)
+
+def automatic(deck_id: int, archetype: ArchetypeRow, at: datetime) -> LabelChange:
+    return LabelChange(deck_id, archetype.id, by_person=False, changed_at=at)
+
+CUTOFF_HISTORY = [
+    person(1, RED_DECK_WINS, BEFORE), person(1, FLARE_DECK_WINS, AFTER),  # A
+    automatic(2, RED_DECK_WINS, BEFORE), person(2, EQUIPMENT_AGGRO, AFTER),  # B
+    person(3, EQUIPMENT_AGGRO, AFTER),  # C
+    person(4, UNCLASSIFIED, BEFORE), person(4, BURN, AFTER),  # D
+    person(5, BURN, BEFORE), automatic(5, RED_DECK_WINS, AFTER),  # E: the site refused the guess.
+    person(6, BURN, CUTOFF), person(6, RED_DECK_WINS, AFTER),  # F
+    person(7, WILDFIRE, BEFORE),  # G: later moved to Thryx-Wildfire without history.
+]
+CUTOFF_DECKS = [deck(1, FLARE_DECK_WINS.id), deck(2, EQUIPMENT_AGGRO.id), deck(3, EQUIPMENT_AGGRO.id), deck(4, BURN.id), deck(5, BURN.id), deck(6, RED_DECK_WINS.id),
+                deck(7, THRYX_WILDFIRE.id)]
+CUTOFF_CARDS = [c for i in range(1, 8) for c in burn(i)]
+
+def by_deck(history: list[LabelChange]) -> dict[int, list[LabelChange]]:
+    grouped: dict[int, list[LabelChange]] = {}
+    for c in history:
+        grouped.setdefault(c.deck_id, []).append(c)
+    return grouped
+
+def test_training_decks_relabelled_after_the_cutoff_train_on_their_label_at_the_cutoff() -> None:
+    snapshot = snapshot_decks(CUTOFF_DECKS, CUTOFF_HISTORY, CUTOFF_CARDS, CUTOFF_ARCHETYPES)
+    splits = split_decks(snapshot, CUTOFF_CARDS, AT_SEASON_39, by_deck(CUTOFF_HISTORY))
+    trained_on, not_trained_on = (Split.TRAIN, None), (Split.EXCLUDED, ExclusionReason.STATUS_NOT_TRAINED_ON)
+    expected = {
+        1: (*trained_on, LabelStatus.VERIFIED, RED_DECK_WINS.id),
+        2: (*not_trained_on, LabelStatus.UNVERIFIED, RED_DECK_WINS.id),
+        3: (*not_trained_on, LabelStatus.UNLABELLED, None),
+        4: (*not_trained_on, LabelStatus.OUT_OF_SCOPE, None),
+        5: (*trained_on, LabelStatus.VERIFIED, BURN.id),
+        6: (*trained_on, LabelStatus.VERIFIED, BURN.id),
+        7: (*not_trained_on, LabelStatus.UNVERIFIED, THRYX_WILDFIRE.id),  # The label rule, exactly as without a cutoff.
+    }
+    assert {i: (s.split, s.reason, s.label_status, s.label_id) for i, s in splits.decks.items()} == expected
+    assert splits.report.cutoff_labels == Counter({'same label': 1, 'different label': 3, 'no label': 1, 'out of scope': 1})
+
+
+# Scenario: scored decks keep today's label.
+
+def a_history(deck_id: int) -> list[LabelChange]:
+    return [person(deck_id, RED_DECK_WINS, BEFORE), person(deck_id, FLARE_DECK_WINS, AFTER)]
+
+def test_held_out_validation_and_test_decks_keep_todays_label_under_a_cutoff() -> None:
+    held_out_scheme = SplitScheme('typical at season 39, everything held out', held_out_percent=100, label_cutoff=AT_SEASON_39.label_cutoff)
+    decks = [deck(11, FLARE_DECK_WINS.id, season_id=30), deck(12, FLARE_DECK_WINS.id, season_id=39), deck(13, FLARE_DECK_WINS.id, season_id=41)]
+    history = a_history(11) + a_history(12) + a_history(13)
+    cards = burn(11) + burn(12) + burn(13)
+    splits = split_decks(snapshot_decks(decks, history, cards, CUTOFF_ARCHETYPES), cards, held_out_scheme, by_deck(history))
+    assert [(splits.decks[i].split, splits.decks[i].label_status, splits.decks[i].label_id) for i in (11, 12, 13)] == [
+        (Split.HELD_OUT, LabelStatus.VERIFIED, FLARE_DECK_WINS.id), (Split.VALIDATION, LabelStatus.VERIFIED, FLARE_DECK_WINS.id), (Split.TEST, LabelStatus.VERIFIED, FLARE_DECK_WINS.id)]
+    assert splits.report.cutoff_labels == Counter()
+
+def test_a_deck_held_out_by_its_deck_id_keeps_todays_label() -> None:
+    twins = SplitScheme('twins at season 39', allow_held_out_twins=True, label_cutoff=AT_SEASON_39.label_cutoff)  # Deck id 4 is held out; its maindeck alone wouldn't be.
+    splits = split_decks(snapshot_decks([deck(4, FLARE_DECK_WINS.id)], a_history(4), burn(4), CUTOFF_ARCHETYPES), burn(4), twins, by_deck(a_history(4)))
+    assert (splits.decks[4].split, splits.decks[4].label_id) == (Split.HELD_OUT, FLARE_DECK_WINS.id)
+
+def test_an_earlier_automatic_label_is_trained_on_by_a_scheme_that_trains_on_unverified_decks() -> None:
+    widened = SplitScheme('baseline at season 39', held_out_percent=0, train_statuses=frozenset({LabelStatus.VERIFIED, LabelStatus.UNVERIFIED}),
+                          label_cutoff=AT_SEASON_39.label_cutoff)
+    snapshot = snapshot_decks(CUTOFF_DECKS, CUTOFF_HISTORY, CUTOFF_CARDS, CUTOFF_ARCHETYPES)
+    b = split_decks(snapshot, CUTOFF_CARDS, widened, by_deck(CUTOFF_HISTORY)).decks[2]
+    assert (b.split, b.label_status, b.label_id) == (Split.TRAIN, LabelStatus.UNVERIFIED, RED_DECK_WINS.id)
+
+
+# Scenario: adding history to a snapshot refuses a changed dump (the splitting half).
+
+def test_a_scheme_with_a_cutoff_refuses_to_split_without_the_label_history() -> None:
+    snapshot = snapshot_decks(CUTOFF_DECKS, CUTOFF_HISTORY, CUTOFF_CARDS, CUTOFF_ARCHETYPES)
+    with pytest.raises(ValueError, match='label history'):
+        split_decks(snapshot, CUTOFF_CARDS, AT_SEASON_39)

@@ -583,7 +583,7 @@ All scenarios here were proposed 2026-10-15.
 - **Expect:**
   - Each deck gets the status, label and split in its row.
   - Under the same cutoff on a scheme that trains on {VERIFIED, UNVERIFIED}, deck B is TRAIN, labelled Red Deck Wins.
-  - The split report counts the TRAIN-role decks with a decision after the cutoff: same label **2** (E, F), different label **2** (A, B), no label **1** (C), out of scope **1** (D). Deck G has no decision after the cutoff, so it isn't counted.
+  - The split report counts the TRAIN-role decks with a decision after the cutoff: same label **1** (E), different label **3** (A, B, F), no label **1** (C), out of scope **1** (D). "Same" and "different" compare the label at the cutoff with the deck's site label. Deck G has no decision after the cutoff, so it isn't counted.
 - **Why it matters:**
   - Deck A is the 26 Flare Deck Wins training decks, which were Red Deck Wins when season 39 began.
   - Deck B: a person's later review doesn't verify an earlier automatic label.

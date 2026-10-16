@@ -7,7 +7,7 @@ import pytest
 
 from archetype_classifier.data_loading import loader
 from archetype_classifier.data_loading.dataset import CardCount, split_decks
-from archetype_classifier.data_loading.labels import LabelFacts, LabelStatus
+from archetype_classifier.data_loading.labels import LabelChange, LabelFacts, LabelStatus
 from archetype_classifier.data_loading.splits import ExclusionReason, Split, SplitScheme
 from decksite.conftest import seeded_db  # noqa: F401  # The repo's seeded site database, reused as-is.
 from decksite.database import db
@@ -77,6 +77,70 @@ def test_a_snapshot_loads_back_with_every_decks_split_matching_the_pure_function
            {i: (s.split, s.reason, s.label_status, s.label_id, s.unseen_maindeck_copies) for i, s in pure.decks.items()}
 
 
+
+# Scenarios: labels at a cutoff (Scenarios.md). The snapshot keeps every deck's label history, oldest first.
+
+def test_a_snapshot_keeps_every_decks_label_history_in_order(labelled_seed: Container, experiments_db: Database) -> None:
+    validated, automatic, unlabelled = labelled_seed.deck_ids
+    history = loader.load_snapshot_history(experiments_db, loader.create_snapshot(experiments_db))
+    assert history[validated] == (LabelChange(validated, labelled_seed.aggro_id, by_person=False, changed_at=datetime.fromtimestamp(1, UTC)),
+                                  LabelChange(validated, labelled_seed.aggro_id, by_person=True, changed_at=datetime.fromtimestamp(2, UTC)))
+    assert history[automatic] == (LabelChange(automatic, labelled_seed.aggro_id, by_person=False, changed_at=datetime.fromtimestamp(1, UTC)),)
+    assert unlabelled not in history
+
+def test_label_history_is_added_to_a_snapshot_taken_without_it(labelled_seed: Container, experiments_db: Database) -> None:
+    snapshot_id = loader.create_snapshot(experiments_db)
+    expected = loader.load_snapshot_history(experiments_db, snapshot_id)
+    experiments_db.execute('DELETE FROM label_change_snapshot WHERE snapshot_id = %s', [snapshot_id])  # As snapshot 1 was taken.
+    assert loader.create_label_history(experiments_db, snapshot_id) == 3
+    assert loader.load_snapshot_history(experiments_db, snapshot_id) == expected
+
+
+def test_history_of_decks_outside_the_snapshot_is_not_kept(labelled_seed: Container, experiments_db: Database) -> None:
+    validated = labelled_seed.deck_ids[0]
+    snapshot_id = loader.create_snapshot(experiments_db)
+    experiments_db.execute('DELETE FROM label_change_snapshot WHERE snapshot_id = %s', [snapshot_id])
+    at_1 = datetime.fromtimestamp(1, UTC)
+    history = [LabelChange(validated, labelled_seed.aggro_id, by_person=True, changed_at=at_1), LabelChange(-5, labelled_seed.aggro_id, by_person=True, changed_at=at_1)]
+    assert loader.save_label_history(experiments_db, snapshot_id, history, frozenset({validated})) == 1
+    assert set(loader.load_snapshot_history(experiments_db, snapshot_id)) == {validated}
+
+# Scenario: adding history to a snapshot refuses a changed dump.
+
+def test_adding_history_refuses_a_snapshot_that_already_has_it(labelled_seed: Container, experiments_db: Database) -> None:
+    snapshot_id = loader.create_snapshot(experiments_db)
+    with pytest.raises(ValueError, match='already has'):
+        loader.create_label_history(experiments_db, snapshot_id)
+
+def test_adding_history_refuses_a_dump_changed_since_the_snapshot(labelled_seed: Container, experiments_db: Database) -> None:
+    validated = labelled_seed.deck_ids[0]
+    snapshot_id = loader.create_snapshot(experiments_db)
+    experiments_db.execute('DELETE FROM label_change_snapshot WHERE snapshot_id = %s', [snapshot_id])
+    db().execute('INSERT INTO deck_archetype_change (changed_date, deck_id, archetype_id, person_id) VALUES (3, %s, %s, %s)', [validated, labelled_seed.aggro_id, labelled_seed.person_id])
+    with pytest.raises(ValueError, match='latest label change') as refused:
+        loader.create_label_history(experiments_db, snapshot_id)
+    assert 'largest deck id' in str(refused.value)
+    assert loader.load_snapshot_history(experiments_db, snapshot_id) == {}
+
+def test_a_scheme_with_a_cutoff_splits_with_the_snapshots_history(labelled_seed: Container, experiments_db: Database) -> None:
+    validated, automatic, _ = labelled_seed.deck_ids
+    snapshot_id = loader.create_snapshot(experiments_db)
+    cutoff_between = SplitScheme('integration at 1', train_seasons=frozenset({labelled_seed.season_id}), validation_seasons=frozenset(), test_seasons=frozenset(),
+                                 held_out_percent=0, label_cutoff=1)  # The validated deck's person label (at 2) came after it.
+    scheme_id = loader.create_scheme(experiments_db, cutoff_between)
+    loader.materialise_split(experiments_db, snapshot_id, scheme_id)
+    snapshot = loader.load_snapshot(experiments_db, snapshot_id, scheme_id)
+    assert snapshot.scheme == cutoff_between
+    assert (snapshot.decks[validated].label_status, snapshot.decks[validated].split) == (LabelStatus.UNVERIFIED, Split.EXCLUDED)
+    assert (snapshot.decks[automatic].label_status, snapshot.decks[automatic].split) == (LabelStatus.UNVERIFIED, Split.EXCLUDED)
+
+def test_a_scheme_with_a_cutoff_refuses_a_snapshot_without_history(labelled_seed: Container, experiments_db: Database) -> None:
+    snapshot_id = loader.create_snapshot(experiments_db)
+    experiments_db.execute('DELETE FROM label_change_snapshot WHERE snapshot_id = %s', [snapshot_id])
+    scheme_id = loader.create_scheme(experiments_db, SplitScheme('at 1', label_cutoff=1))
+    with pytest.raises(ValueError, match='no label history'):
+        loader.materialise_split(experiments_db, snapshot_id, scheme_id)
+
 # Scenario: a large maindeck loads in full (Scenarios.md, "Splitting decks"). The real deck 217677 is checked once, in the rebuild verification.
 
 @pytest.fixture
@@ -126,3 +190,36 @@ def test_the_command_line_snapshots_splits_and_summarises(labelled_seed: Contain
     assert out[:3] == ['Created snapshot 1', 'Created scheme 1', f'Split {len(labelled_seed.deck_ids)} decks']
     assert out[3] == out[6] and out[3].startswith('split {')  # split prints the same summary as summary does.
     assert sum(ast.literal_eval(out[3].removeprefix('split ')).values()) == len(labelled_seed.deck_ids)
+
+
+def test_season_starts_come_from_the_site(labelled_seed: Container) -> None:
+    start = db().value('SELECT start_date FROM season WHERE id = %s', [labelled_seed.season_id])
+    assert loader.load_season_starts()[labelled_seed.season_id] == datetime.fromtimestamp(start, UTC)
+
+def test_the_command_line_adds_history_and_makes_a_scheme_with_a_cutoff(labelled_seed: Container, experiments_db: Database, monkeypatch: pytest.MonkeyPatch,
+                                                                        capsys: pytest.CaptureFixture[str]) -> None:
+    monkeypatch.setattr(loader, 'experiments_db', lambda: experiments_db)
+    def run(*argv: str) -> None:
+        monkeypatch.setattr(sys, 'argv', ['loader', *argv])
+        loader.main()
+    run('snapshot')
+    experiments_db.execute('DELETE FROM label_change_snapshot WHERE snapshot_id = 1')
+    run('history', '1')
+    run('scheme', 'default')
+    run('scheme', 'default at the seed season', '--like', '1', '--label-cutoff-season', str(labelled_seed.season_id))
+    run('split', '1', '2')
+    out = capsys.readouterr().out.splitlines()
+    assert out[1:4] == ['Added 3 label history entries to snapshot 1', 'Created scheme 1', 'Created scheme 2']
+    start = db().value('SELECT start_date FROM season WHERE id = %s', [labelled_seed.season_id])
+    assert loader.load_scheme(experiments_db, 2) == SplitScheme('default at the seed season', label_cutoff=start)
+    assert out[4] == f'Split {len(labelled_seed.deck_ids)} decks'
+
+def test_splitting_from_the_command_line_prints_the_cutoff_counts(labelled_seed: Container, experiments_db: Database, monkeypatch: pytest.MonkeyPatch,
+                                                                  capsys: pytest.CaptureFixture[str]) -> None:
+    monkeypatch.setattr(loader, 'experiments_db', lambda: experiments_db)
+    snapshot_id = loader.create_snapshot(experiments_db)
+    scheme_id = loader.create_scheme(experiments_db, SplitScheme('at 1', train_seasons=frozenset({labelled_seed.season_id}), held_out_percent=0, label_cutoff=1))
+    monkeypatch.setattr(sys, 'argv', ['loader', 'split', str(snapshot_id), str(scheme_id)])
+    loader.main()
+    out = capsys.readouterr().out.splitlines()
+    assert out[1] == "label cutoff {'same label': 1}"  # The validated deck: an automatic Aggro at 1, a person's Aggro at 2.

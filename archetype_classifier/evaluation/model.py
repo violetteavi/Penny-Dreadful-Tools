@@ -27,7 +27,7 @@ class PredictDeck:
 class TrainingDeck:
     deck: PredictDeck
     season_id: int
-    archetype_id: int | None  # The site's current label, as the site's own guesser searches.
+    archetype_id: int | None  # The label the scheme trains on: the site's label unless a label cutoff applies (#59).
     reviewed: bool
     label_status: LabelStatus  # So a model trained on several statuses can tell them apart.
 
@@ -91,7 +91,7 @@ def model_class(name: str) -> type[Model]:
     return MODELS[name]
 
 def build_training_decks(deck_set: DeckSet, contents: Mapping[int, DeckContents]) -> list[TrainingDeck]:
-    return [TrainingDeck(predict_deck(d, c), d.season_id, d.site_archetype_id, d.reviewed, d.label_status) for d, c in with_contents(deck_set, contents)]
+    return [TrainingDeck(predict_deck(d, c), d.season_id, d.label_id, d.reviewed, d.label_status) for d, c in with_contents(deck_set, contents)]
 
 def build_labelled_decks(deck_set: DeckSet, contents: Mapping[int, DeckContents]) -> list[LabelledDeck]:
     """Decks with the label each is scored against. A deck with no label, which only a training deck set can hold, is skipped with a warning."""

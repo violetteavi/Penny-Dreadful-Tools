@@ -1,7 +1,8 @@
 """The #6 experiment: today's guesser, as the similarity baseline, at the site's fixed threshold of 20 and at a threshold tuned on season 39.
 
 Both are fitted on scheme 2's TRAIN decks ("similarity baseline": train {VERIFIED, UNVERIFIED}), saved, run on {HELD_OUT, VALIDATION}, and reported
-into docs/experiments/. The test seasons aren't used. It composes existing functions only.
+into docs/experiments/. The test seasons aren't used. It composes existing functions only. --scheme picks another scheme on snapshot 1, such as
+#59's "similarity baseline, labels at season 39", and --baseline-run compares the fixed thresholds' runs with a stored run.
 
     uv run python -m archetype_classifier.experiments.similarity_baseline --min-decks 20 --pr 34
     uv run python -m archetype_classifier.experiments.similarity_baseline --threshold 20 --min-decks 10 --date 20261012  # The site's threshold only.
@@ -30,10 +31,12 @@ def main() -> None:
     parser.add_argument('--pr', type=int, action='append', default=[], help='a PR that produced the runs (repeatable)')
     parser.add_argument('--date', required=True, help='YYYYMMDD, for the report file names')
     parser.add_argument('--threshold', action='append', type=threshold_arg, help="a whole-number threshold or 'tuned' (repeatable; default: 20 and tuned)")
+    parser.add_argument('--scheme', default=SCHEME, help=f"the split scheme, by name (default: '{SCHEME}')")
+    parser.add_argument('--baseline-run', type=int, help="a stored run to compare each fixed threshold's run with (the tuned run is compared with fixed 20)")
     args = parser.parse_args()
 
     edb = loader.experiments_db()
-    scheme_id = int(edb.value('SELECT id FROM split_scheme WHERE name = %s', [SCHEME]))
+    scheme_id = int(edb.value('SELECT id FROM split_scheme WHERE name = %s', [args.scheme]))
     snapshot = loader.load_snapshot(edb, 1, scheme_id)
     train, validation, scored = (build_deck_set(snapshot, splits) for splits in (TRAIN, VALIDATION, SCOPE))
     training = build_training_decks(train, loader.load_contents(train.decks))
@@ -59,7 +62,7 @@ def main() -> None:
 
     OUT.mkdir(parents=True, exist_ok=True)
     for label, run_id in run_ids.items():
-        baseline = run_ids.get('fixed20') if label == 'tuned' else None  # The tuned threshold is compared with the site's.
+        baseline = run_ids.get('fixed20') if label == 'tuned' else args.baseline_run  # The tuned threshold is compared with the site's.
         path = OUT / f'{args.date}_similarity_{label}.md'
         path.write_text(render_report(edb, run_id, args.min_decks, baseline_run_id=baseline, prs=args.pr))
         print(f'Wrote {path}')

@@ -4,12 +4,13 @@ It holds no decisions of its own; those live in dataset.py, labels.py, splits.py
 """
 import json
 import logging
-from collections import Counter
+from collections import Counter, defaultdict
 from collections.abc import Iterable, Iterator, Sequence
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 
-from archetype_classifier.data_loading.dataset import ArchetypeRow, ArchetypeSnapshot, CardCount, DeckCardRow, DeckContents, DeckFacts, DeckRow, SnapshotFacts, snapshot_decks, split_decks
+from archetype_classifier.data_loading.dataset import ArchetypeRow, ArchetypeSnapshot, CardCount, DeckCardRow, DeckContents, DeckFacts, DeckRow, SnapshotFacts, SplitReport, snapshot_decks, split_decks
 from archetype_classifier.data_loading.labels import LabelChange, LabelFacts, LabelStatus
 from archetype_classifier.data_loading.slices import Snapshot, SnapshotDeck
 from archetype_classifier.data_loading.splits import ExclusionReason, Split, SplitScheme
@@ -60,6 +61,16 @@ SCHEMA = [
         PRIMARY KEY (snapshot_id, deck_id),
         FOREIGN KEY (snapshot_id) REFERENCES snapshot (id) ON DELETE CASCADE
     )""",
+    """CREATE TABLE IF NOT EXISTS label_change_snapshot (
+        snapshot_id INT NOT NULL,
+        deck_id INT NOT NULL,
+        seq INT NOT NULL,
+        archetype_id INT NOT NULL,
+        by_person BOOLEAN NOT NULL,
+        changed_at DATETIME NOT NULL,
+        PRIMARY KEY (snapshot_id, deck_id, seq),
+        FOREIGN KEY (snapshot_id, deck_id) REFERENCES deck_snapshot (snapshot_id, deck_id) ON DELETE CASCADE
+    )""",
     """CREATE TABLE IF NOT EXISTS split_scheme (
         id INT AUTO_INCREMENT PRIMARY KEY,
         name VARCHAR(190) NOT NULL UNIQUE,
@@ -102,6 +113,10 @@ def load_label_history() -> list[LabelChange]:
 def load_archetypes() -> list[ArchetypeRow]:
     sql = 'SELECT a.id, a.name, c.ancestor AS parent_id FROM archetype AS a LEFT JOIN archetype_closure AS c ON c.descendant = a.id AND c.depth = 1 ORDER BY a.id'
     return [ArchetypeRow(r['id'], r['name'], r['parent_id']) for r in db().select(sql)]  # type: ignore[arg-type]
+
+def load_season_starts() -> dict[int, datetime]:
+    """When each season started, by season id. A season ends where the next one starts."""
+    return {r['id']: datetime.fromtimestamp(r['start_date'], UTC) for r in db().select('SELECT id, start_date FROM season')}  # type: ignore[arg-type, misc]
 
 def iter_deck_cards() -> Iterator[DeckCardRow]:
     """Every deck_card row, streamed a chunk of decks at a time so 6 million rows are never held at once."""
@@ -149,8 +164,9 @@ def load_legal_cards(season_ids: Iterable[int]) -> dict[int, frozenset[str]]:
 def create_snapshot(edb: Database, notes: str = '') -> int:
     """Freeze the site's current labels and archetype tree. Returns the new snapshot's id."""
     ensure_schema(edb)
-    snapshot = snapshot_decks(load_decks(), load_label_history(), iter_deck_cards(), load_archetypes())
-    latest_change = db().value('SELECT FROM_UNIXTIME(MAX(changed_date)) FROM deck_archetype_change')
+    history = load_label_history()
+    snapshot = snapshot_decks(load_decks(), history, iter_deck_cards(), load_archetypes())
+    latest_change = latest_label_change()
     max_deck_id = max(snapshot.decks, default=0)
     snapshot_id = edb.insert('INSERT INTO snapshot (latest_label_change, deck_count, max_deck_id, notes) VALUES (%s, %s, %s, %s)', [latest_change, len(snapshot.decks), max_deck_id, notes])
     insert_rows(edb, 'archetype_snapshot', ['snapshot_id', 'archetype_id', 'name', 'parent_id', 'depth'],
@@ -158,7 +174,43 @@ def create_snapshot(edb: Database, notes: str = '') -> int:
     insert_rows(edb, 'deck_snapshot', ['snapshot_id', *DECK_FACT_COLUMNS],
                 [[snapshot_id, d.deck_id, d.season_id, d.source, d.reviewed, d.maindeck_hash, d.maindeck_cards, d.labels.human_archetype_id, d.labels.human_labelled_at,
                   d.labels.machine_archetype_id, d.labels.machine_labelled_at, d.site_archetype_id] for d in snapshot.decks.values()])
+    save_label_history(edb, snapshot_id, history, frozenset(snapshot.decks))
     return snapshot_id
+
+def create_label_history(edb: Database, snapshot_id: int) -> int:
+    """Add the site's label history to a snapshot taken without it (#59). Refuses if the snapshot has history, or if the site has changed since it was taken.
+    Returns the number of entries written."""
+    ensure_schema(edb)
+    if edb.value('SELECT COUNT(*) FROM label_change_snapshot WHERE snapshot_id = %s', [snapshot_id]):
+        raise ValueError(f'Snapshot {snapshot_id} already has its label history')
+    row = edb.select('SELECT latest_label_change, max_deck_id FROM snapshot WHERE id = %s', [snapshot_id])[0]
+    site_change, site_max = latest_label_change(), db().value('SELECT MAX(d.id) FROM deck AS d INNER JOIN deck_cache AS dc ON dc.deck_id = d.id')
+    if (row['latest_label_change'], row['max_deck_id']) != (site_change, site_max):
+        raise ValueError(f"The site has changed since snapshot {snapshot_id}: latest label change {row['latest_label_change']} then, {site_change} now; "
+                         f"largest deck id {row['max_deck_id']} then, {site_max} now")
+    deck_ids = frozenset(int(r['deck_id']) for r in edb.select('SELECT deck_id FROM deck_snapshot WHERE snapshot_id = %s', [snapshot_id]))  # type: ignore[call-overload]
+    return save_label_history(edb, snapshot_id, load_label_history(), deck_ids)
+
+def save_label_history(edb: Database, snapshot_id: int, history: Sequence[LabelChange], deck_ids: frozenset[int]) -> int:
+    """Store the snapshot's decks' history entries, keeping the site's order within each deck. Returns the number written."""
+    seq: Counter[int] = Counter()
+    rows = []
+    for c in history:
+        if c.deck_id in deck_ids:
+            rows.append([snapshot_id, c.deck_id, seq[c.deck_id], c.archetype_id, c.by_person, c.changed_at])
+            seq[c.deck_id] += 1
+    insert_rows(edb, 'label_change_snapshot', ['snapshot_id', 'deck_id', 'seq', 'archetype_id', 'by_person', 'changed_at'], rows)
+    return len(rows)
+
+def latest_label_change() -> Any:
+    return db().value('SELECT FROM_UNIXTIME(MAX(changed_date)) FROM deck_archetype_change')
+
+def load_snapshot_history(edb: Database, snapshot_id: int) -> dict[int, tuple[LabelChange, ...]]:
+    """Each deck's label history as the snapshot keeps it, oldest first. Decks with no history are left out."""
+    history: dict[int, list[LabelChange]] = defaultdict(list)
+    for r in edb.select('SELECT deck_id, archetype_id, by_person, changed_at FROM label_change_snapshot WHERE snapshot_id = %s ORDER BY deck_id, seq', [snapshot_id]):
+        history[r['deck_id']].append(LabelChange(r['deck_id'], r['archetype_id'], bool(r['by_person']), utc(r['changed_at'])))  # type: ignore[arg-type, index]
+    return {deck_id: tuple(changes) for deck_id, changes in history.items()}
 
 def create_scheme(edb: Database, scheme: SplitScheme) -> int:
     ensure_schema(edb)
@@ -202,13 +254,19 @@ def load_archetype_snapshot(edb: Database, snapshot_id: int) -> dict[int, Archet
     return {r['archetype_id']: ArchetypeSnapshot(r['archetype_id'], r['name'], r['parent_id'], r['depth'])  # type: ignore[arg-type, misc]
             for r in edb.select('SELECT * FROM archetype_snapshot WHERE snapshot_id = %s', [snapshot_id])}
 
-def materialise_split(edb: Database, snapshot_id: int, scheme_id: int) -> int:
-    """Apply a scheme to a snapshot and store every deck's split. Returns the number of decks split."""
-    splits = split_decks(load_deck_facts(edb, snapshot_id), iter_deck_cards(), load_scheme(edb, scheme_id))
+def materialise_split(edb: Database, snapshot_id: int, scheme_id: int) -> SplitReport:
+    """Apply a scheme to a snapshot and store every deck's split. Returns the split report."""
+    scheme = load_scheme(edb, scheme_id)
+    history = None
+    if scheme.label_cutoff is not None:
+        history = load_snapshot_history(edb, snapshot_id)
+        if not history:
+            raise ValueError(f'Snapshot {snapshot_id} has no label history, which scheme {scheme_id} needs for its label cutoff: add it with create_label_history')
+    splits = split_decks(load_deck_facts(edb, snapshot_id), iter_deck_cards(), scheme, history)
     insert_rows(edb, 'deck_split', ['snapshot_id', 'scheme_id', 'deck_id', 'split', 'exclusion_reason', 'label_status', 'label_id', 'unseen_maindeck_copies'],
                 [[snapshot_id, scheme_id, s.deck_id, s.split.value, s.reason.value if s.reason else None, s.label_status.value, s.label_id, s.unseen_maindeck_copies]
                  for s in splits.decks.values()])
-    return len(splits.decks)
+    return splits.report
 
 def insert_rows(edb: Database, table: str, columns: Sequence[str], rows: Sequence[Sequence[Any]]) -> None:
     placeholders = '(' + ', '.join(['%s'] * len(columns)) + ')'
@@ -232,7 +290,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=main.__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
     commands.add_parser('snapshot', help='freeze every deck\'s facts').add_argument('--notes', default='')
-    commands.add_parser('scheme', help='store the default split scheme under a name').add_argument('name')
+    scheme = commands.add_parser('scheme', help='store the default split scheme, or a copy of a stored one, under a name')
+    scheme.add_argument('name')
+    scheme.add_argument('--like', type=int, help="copy this stored scheme's parameters")
+    scheme.add_argument('--label-cutoff-season', type=int, help="take training labels as they stood at this season's start (#59)")
+    commands.add_parser('history', help='add the label history to a snapshot taken without it').add_argument('snapshot_id', type=int)
     for command in ('split', 'summary'):
         p = commands.add_parser(command, help='put every deck in one split' if command == 'split' else 'count decks by split, reason and status')
         p.add_argument('snapshot_id', type=int)
@@ -242,10 +304,18 @@ def main() -> None:
     if args.command == 'snapshot':
         print(f'Created snapshot {create_snapshot(edb, args.notes)}')
     elif args.command == 'scheme':
-        print(f'Created scheme {create_scheme(edb, SplitScheme(args.name))}')
+        new = replace(load_scheme(edb, args.like), name=args.name) if args.like else SplitScheme(args.name)
+        if args.label_cutoff_season is not None:
+            new = replace(new, label_cutoff=int(load_season_starts()[args.label_cutoff_season].timestamp()))
+        print(f'Created scheme {create_scheme(edb, new)}')
+    elif args.command == 'history':
+        print(f'Added {create_label_history(edb, args.snapshot_id)} label history entries to snapshot {args.snapshot_id}')
     else:
         if args.command == 'split':
-            print(f'Split {materialise_split(edb, args.snapshot_id, args.scheme_id)} decks')
+            report = materialise_split(edb, args.snapshot_id, args.scheme_id)
+            print(f'Split {report.by_split.total()} decks')
+            if report.cutoff_labels:
+                print('label cutoff', dict(sorted(report.cutoff_labels.items())))
         for name, counts in summary(load_snapshot(edb, args.snapshot_id, args.scheme_id)).items():
             print(name, dict(sorted(counts.items())))
 

@@ -1,11 +1,14 @@
+import dataclasses
 import logging
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from archetype_classifier.data_loading.labels import LabelFacts, LabelStatus
+from archetype_classifier.data_loading.labels import LabelChange, LabelFacts, LabelStatus
 from archetype_classifier.data_loading.slices import Snapshot, SnapshotDeck, build_deck_set
 from archetype_classifier.data_loading.splits import Split, SplitScheme
-from archetype_classifier.evaluation.rows import ROWS_VERSION, build_rows
+from archetype_classifier.evaluation import rows as rows_module
+from archetype_classifier.evaluation.rows import ROWS_VERSION, build_relabelled, build_rows
 
 RED_DECK_WINS = 16
 MAINDECK_A, MAINDECK_B = 'a' * 40, 'b' * 40
@@ -119,7 +122,61 @@ def test_held_out_decks_get_no_archetype_rows() -> None:
     assert not [name for name in rows({Split.HELD_OUT}) if 'archetypes' in name]
 
 
-# Scenario: rows are versioned. 3: new and existing archetypes (#14).
+
+# Scenario: an archetype created after the cutoff has no training decks (Scenarios.md, "Labels at a cutoff").
+
+FLARE_DECK_WINS = 17
+
+def test_an_archetype_created_after_the_cutoff_has_no_training_decks(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(rows_module, 'NEW_ARCHETYPE_DECKS', 2)  # Small, as in the scenario.
+    def training_deck(deck_id: int, label: int) -> SnapshotDeck:  # Decks A and A': Flare Deck Wins on the site.
+        return dataclasses.replace(snapshot_deck(deck_id, Split.TRAIN, 0, None, label=label), site_archetype_id=FLARE_DECK_WINS)
+    v = snapshot_deck(601, Split.VALIDATION, 0, None, label=FLARE_DECK_WINS)
+    without_cutoff = snapshot({1: training_deck(1, FLARE_DECK_WINS), 2: training_deck(2, FLARE_DECK_WINS), 601: v})
+    with_cutoff = snapshot({1: training_deck(1, RED_DECK_WINS), 2: training_deck(2, RED_DECK_WINS), 601: v})
+    assert rows({Split.VALIDATION}, without_cutoff)['validation, existing archetypes'] == frozenset({601})
+    assert rows({Split.VALIDATION}, with_cutoff)['validation, new archetypes'] == frozenset({601})
+
+
+# Scenario: the "label changed after its season" row (Scenarios.md, "Labels at a cutoff").
+
+EQUIPMENT_AGGRO, BURN = 18, 19
+SEASON_STARTS = {39: datetime(2025, 10, 3, 7, tzinfo=UTC), 40: datetime(2025, 11, 28, 8, tzinfo=UTC), 43: datetime(2026, 6, 12, 7, tzinfo=UTC)}
+IN_SEASON_39 = datetime(2025, 10, 20, tzinfo=UTC)
+AFTER_SEASON_39 = datetime(2026, 4, 8, tzinfo=UTC)
+IN_SEASON_43 = datetime(2026, 7, 1, tzinfo=UTC)
+
+def season_deck(deck_id: int, season_id: int, label: int, split: Split = Split.VALIDATION) -> SnapshotDeck:
+    return dataclasses.replace(snapshot_deck(deck_id, split, 0, None, label=label), season_id=season_id)
+
+def change(deck_id: int, label: int, at: datetime, by_person: bool = True) -> LabelChange:
+    return LabelChange(deck_id, label, by_person=by_person, changed_at=at)
+
+RELABEL_DECKS = {801: season_deck(801, 39, EQUIPMENT_AGGRO), 802: season_deck(802, 39, RED_DECK_WINS), 803: season_deck(803, 39, EQUIPMENT_AGGRO),
+                 804: season_deck(804, 39, BURN), 805: season_deck(805, 43, EQUIPMENT_AGGRO, Split.TEST)}
+RELABEL_HISTORY = {
+    801: (change(801, RED_DECK_WINS, IN_SEASON_39), change(801, EQUIPMENT_AGGRO, AFTER_SEASON_39)),  # P
+    802: (change(802, RED_DECK_WINS, IN_SEASON_39), change(802, BURN, AFTER_SEASON_39, by_person=False)),  # Q: the site refused the guess.
+    803: (change(803, RED_DECK_WINS, IN_SEASON_39), change(803, EQUIPMENT_AGGRO, IN_SEASON_39 + timedelta(days=1))),  # R
+    804: (change(804, BURN, IN_SEASON_39), change(804, BURN, AFTER_SEASON_39)),  # S
+    805: (change(805, BURN, IN_SEASON_43), change(805, EQUIPMENT_AGGRO, IN_SEASON_43 + timedelta(days=1))),  # T: season 43 hasn't ended.
+}
+
+def test_only_a_label_a_person_changed_after_its_season_ended_counts_as_relabelled() -> None:
+    assert build_relabelled(RELABEL_DECKS.values(), RELABEL_HISTORY, SEASON_STARTS) == frozenset({801})
+
+def test_relabelled_decks_get_a_row_in_each_scored_split_they_are_in() -> None:
+    decks = {**RELABEL_DECKS, 806: dataclasses.replace(season_deck(806, 30, EQUIPMENT_AGGRO, Split.HELD_OUT))}
+    relabelled = frozenset({801, 806})
+    deck_set = build_deck_set(snapshot(decks), frozenset({Split.HELD_OUT, Split.VALIDATION, Split.TEST}), include_test=True)
+    found = {r.name: r.deck_ids for r in build_rows(deck_set, build_deck_set(snapshot(decks), frozenset({Split.TRAIN})), TYPICAL, relabelled)}
+    assert {name: ids for name, ids in found.items() if 'label changed' in name} == {
+        'held-out, label changed after its season': frozenset({806}),
+        'validation, label changed after its season': frozenset({801}),
+    }  # No test deck was relabelled, so the test row is left out.
+    assert not [name for name in rows({Split.HELD_OUT, Split.VALIDATION}) if 'label changed' in name]  # Nothing relabelled, no rows.
+
+# Scenario: rows are versioned. 3: new and existing archetypes (#14). 4: label changed after its season (#59).
 
 def test_rows_are_versioned() -> None:
-    assert ROWS_VERSION == 3
+    assert ROWS_VERSION == 4

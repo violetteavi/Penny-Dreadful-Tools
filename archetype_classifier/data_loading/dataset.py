@@ -3,9 +3,10 @@ import logging
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
-from archetype_classifier.data_loading.labels import DeckLabel, LabelChange, LabelFacts, LabelStatus, label_facts, label_status
-from archetype_classifier.data_loading.splits import ExclusionReason, Split, SplitDecision, SplitScheme, assign_split
+from archetype_classifier.data_loading.labels import DeckLabel, LabelChange, LabelFacts, LabelStatus, decided_after, label_at, label_facts, label_status
+from archetype_classifier.data_loading.splits import ExclusionReason, Split, SplitDecision, SplitScheme, assign_split, deck_role, group_key
 
 logger = logging.getLogger(__name__)
 
@@ -105,19 +106,33 @@ class SplitReport:
     by_split: Counter[Split]
     by_reason: Counter[ExclusionReason]
     twin_overlaps: list[TwinOverlap]
+    cutoff_labels: Counter[str]  # TRAIN-role decks decided after the label cutoff: 'same label', 'different label', 'no label' or 'out of scope'.
 
 @dataclass(frozen=True)
 class Splits:
     decks: dict[int, DeckSplit]
     report: SplitReport
 
-def split_decks(snapshot: SnapshotFacts, deck_cards: Iterable[DeckCardRow], scheme: SplitScheme) -> Splits:
-    """Put every deck in exactly one split. Unseen cards are counted against training maindecks only, so excluded decks change nothing."""
+def split_decks(snapshot: SnapshotFacts, deck_cards: Iterable[DeckCardRow], scheme: SplitScheme, history: Mapping[int, Sequence[LabelChange]] | None = None) -> Splits:
+    """Put every deck in exactly one split. Unseen cards are counted against training maindecks only, so excluded decks change nothing.
+
+    Under a label cutoff, a TRAIN-role deck with a label decision after it takes its label from its history as it stood then; every other deck keeps
+    the label rule's label. The history is needed only then."""
+    if scheme.label_cutoff is not None and history is None:
+        raise ValueError(f"Scheme '{scheme.name}' has a label cutoff, so splitting needs the snapshot's label history")
+    cutoff = datetime.fromtimestamp(scheme.label_cutoff, UTC) if scheme.label_cutoff is not None else None
+    names = {a.id: a.name for a in snapshot.archetypes.values()}
     labels: dict[int, DeckLabel] = {}
     decisions: dict[int, SplitDecision] = {}
+    cutoff_labels: Counter[str] = Counter()
     for d in snapshot.decks.values():
-        archetype = snapshot.archetypes.get(d.site_archetype_id) if d.site_archetype_id is not None else None
-        labels[d.deck_id] = label_status(d.labels, d.site_archetype_id, archetype.name if archetype else None, d.source, scheme.scope_rule, scheme.label_rule)
+        deck_history = history.get(d.deck_id, ()) if history is not None else ()
+        if cutoff is not None and d.maindeck_hash is not None and deck_role(d.season_id, group_key(d.deck_id, d.maindeck_hash, scheme), scheme) == Split.TRAIN and decided_after(deck_history, cutoff):
+            labels[d.deck_id] = label_at(deck_history, cutoff, d.source, names, scheme.scope_rule)
+            cutoff_labels[cutoff_kind(labels[d.deck_id], d.site_archetype_id)] += 1
+        else:
+            archetype = snapshot.archetypes.get(d.site_archetype_id) if d.site_archetype_id is not None else None
+            labels[d.deck_id] = label_status(d.labels, d.site_archetype_id, archetype.name if archetype else None, d.source, scheme.scope_rule, scheme.label_rule)
         decisions[d.deck_id] = assign_split(deck_id=d.deck_id, season_id=d.season_id, maindeck_hash=d.maindeck_hash, maindeck_cards=d.maindeck_cards,
                                             status=labels[d.deck_id].status, scheme=scheme)
     seen_cards: set[str] = set()
@@ -133,8 +148,19 @@ def split_decks(snapshot: SnapshotFacts, deck_cards: Iterable[DeckCardRow], sche
                                 sum(c.n for c in other_maindecks[deck_id] if c.card not in seen_cards))
              for deck_id, decision in decisions.items()}
     hashes = {d.deck_id: d.maindeck_hash for d in snapshot.decks.values() if d.maindeck_hash is not None}
-    report = SplitReport(Counter(s.split for s in decks.values()), Counter(s.reason for s in decks.values() if s.reason is not None), twin_overlaps(decks, hashes, scheme))
+    for kind, n in sorted(cutoff_labels.items()):
+        logger.info('Label cutoff: %d training deck%s decided after it got %s', n, '' if n == 1 else 's', kind)
+    report = SplitReport(Counter(s.split for s in decks.values()), Counter(s.reason for s in decks.values() if s.reason is not None), twin_overlaps(decks, hashes, scheme),
+                         cutoff_labels)
     return Splits(decks, report)
+
+def cutoff_kind(label: DeckLabel, site_archetype_id: int | None) -> str:
+    """How a deck's label at the cutoff compares with its site label, for the split report."""
+    if label.status == LabelStatus.OUT_OF_SCOPE:
+        return 'out of scope'
+    if label.status == LabelStatus.UNLABELLED:
+        return 'no label'
+    return 'same label' if label.label_id == site_archetype_id else 'different label'
 
 def twin_overlaps(splits: Mapping[int, DeckSplit], maindeck_hashes: Mapping[int, str], scheme: SplitScheme) -> list[TwinOverlap]:
     """Maindecks in both TRAIN and HELD_OUT. Expected when twins are allowed; otherwise each is logged, and the split carries on."""

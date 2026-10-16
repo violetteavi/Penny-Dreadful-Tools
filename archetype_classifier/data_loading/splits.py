@@ -42,6 +42,7 @@ class SplitScheme:
     train_statuses: frozenset[LabelStatus] = frozenset({LabelStatus.VERIFIED})  # Label statuses a model may train on.
     eval_statuses: frozenset[LabelStatus] = frozenset({LabelStatus.VERIFIED})  # Label statuses that are scored.
     allow_held_out_twins: bool = False  # Hold out single decks rather than maindeck groups, so held-out decks can repeat a training maindeck.
+    label_cutoff: int | None = None  # Unix time. A TRAIN deck with a label decision after it trains on its label as it stood then (#59); None for today's labels.
 
     def to_params(self) -> dict[str, Any]:
         """Every parameter except the name, as JSON-ready values."""
@@ -75,7 +76,7 @@ def assign_split(*, deck_id: int, season_id: int, maindeck_hash: str | None, mai
         return SplitDecision(Split.EXCLUDED, ExclusionReason.NO_MAINDECK_CARDS)
     if maindeck_cards < MINIMUM_MAINDECK:
         return SplitDecision(Split.EXCLUDED, ExclusionReason.MAINDECK_UNDER_60_CARDS)
-    role = deck_role(season_id, str(deck_id) if scheme.allow_held_out_twins else maindeck_hash, scheme)
+    role = deck_role(season_id, group_key(deck_id, maindeck_hash, scheme), scheme)
     if role is None:
         return SplitDecision(Split.EXCLUDED, ExclusionReason.RESERVED_SEASON)
     if role == Split.TRAIN:
@@ -83,6 +84,10 @@ def assign_split(*, deck_id: int, season_id: int, maindeck_hash: str | None, mai
     else:
         allowed, reason = scheme.eval_statuses, ExclusionReason.STATUS_NOT_EVALUATED
     return SplitDecision(role, None) if status in allowed else SplitDecision(Split.EXCLUDED, reason)
+
+def group_key(deck_id: int, maindeck_hash: str, scheme: SplitScheme) -> str:
+    """What a deck is held out by: its maindeck hash, so identical maindecks share a role, or its deck id when twins are allowed."""
+    return str(deck_id) if scheme.allow_held_out_twins else maindeck_hash
 
 def deck_role(season_id: int, group_key: str, scheme: SplitScheme) -> Split | None:
     """The split a deck's season and held-out group give it before its label status is considered, or None for a reserved season.

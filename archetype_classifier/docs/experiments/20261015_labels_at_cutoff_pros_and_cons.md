@@ -63,7 +63,7 @@ Only the training labels changed. Snapshot 1 now holds every deck's label histor
 
 ## Time taken
 
-Fitting and predicting, as stored with each model and run. Predicting covers all 20,173 held-out and season 39 decks. Loading the data and rendering the report add several minutes: run 14 took 6 min 56 s from start to report.
+Fit and prediction time, as stored with each model and run (predicting covers all 20,173 held-out and season 39 decks).
 
 | Model | Original: fit / predict | With the cutoff: fit / predict |
 |---|---|---|
@@ -71,8 +71,6 @@ Fitting and predicting, as stored with each model and run. Predicting covers all
 | Site's guesser at 20 (9 → 15) | 15 s / 390 s | 22 s / 577 s |
 | Bag of cards (10 → 16) | 8 s / 491 s | 6 s / 330 s |
 | IDF average (11 → 17) | 6 s / 88 s | 8 s / 69 s |
-
-The labels barely change the work involved (the training sets differ by 9 decks), so the differences are most likely the machine's load at the time, not the cutoff. The site's guesser's first attempt at run 15 hit the shell's 10-minute limit after fitting, so it was run again; the fitted model was reused.
 
 ## Pros and cons of training on labels at the cutoff
 

@@ -1,7 +1,7 @@
 """Analogies (Scenarios.md, "Archetype geometry")."""
 import numpy as np
 
-from archetype_classifier.geometry.analogies import Analogy, build_analogy_scores, build_offset_scores
+from archetype_classifier.geometry.analogies import Analogy, build_analogy_scores, build_offset_baseline, build_offset_scores
 from archetype_classifier.geometry.centroids import Centroids, build_centroids
 from archetype_classifier.geometry.space_test import rows_space
 
@@ -59,3 +59,23 @@ def test_the_only_b_baseline_shows_an_analogy_that_needed_no_offset() -> None:
     assert np.isclose(score.offset_cosine, 0.0, atol=1e-12)
     index = centroids.index()
     assert np.isclose(centroids.unit[index[MONO_BLACK_CONTROL]] @ centroids.unit[index[MONO_BLACK_MIDRANGE]], 0.9623, atol=5e-5)
+
+
+# The offset cosine's baseline: offset cosines of random quadruples of distinct centroids, repeatable for a seed.
+
+def test_the_random_baseline_is_repeatable_for_a_seed() -> None:
+    first, again, other = (build_offset_baseline(DOMINANT, quadruples=200, seed=s) for s in (0, 0, 1))
+    assert np.array_equal(first, again)
+    assert not np.array_equal(first, other)
+    assert len(first) == 200 and np.all(np.abs(first) <= 1 + 1e-12)
+
+def test_the_offset_percentile_is_the_share_of_random_quadruples_below() -> None:
+    [score] = build_analogy_scores(DOMINANT, [CONTROL_RATHER_THAN_MIDRANGE], quadruples=200, seed=0)
+    baseline = build_offset_baseline(DOMINANT, quadruples=200, seed=0)
+    assert score.offset_percentile is not None
+    assert np.isclose(score.offset_percentile, float((baseline < score.offset_cosine).mean()))
+    assert 0 < score.offset_percentile < 1
+
+def test_too_few_centroids_for_a_quadruple_give_no_baseline() -> None:
+    three = centroids_at({ORZHOV_MIDRANGE: (1, 0, 0), ORZHOV_CONTROL: (0, 0, 1), MONO_BLACK_MIDRANGE: (0, 1, 0)})
+    assert len(build_offset_baseline(three, quadruples=200, seed=0)) == 0

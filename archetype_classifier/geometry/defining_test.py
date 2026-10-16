@@ -3,8 +3,8 @@ import numpy as np
 
 from archetype_classifier.data_loading.dataset import ArchetypeSnapshot
 from archetype_classifier.evaluation.metrics import ArchetypeTree
-from archetype_classifier.geometry.defining import build_defining_cards, build_presence, build_ranked_cards, build_siblings, build_subtree
-from archetype_classifier.geometry.space_test import deck, lists_space
+from archetype_classifier.geometry.defining import build_centroid_push, build_defining_cards, build_presence, build_ranked_cards, build_siblings, build_subtree
+from archetype_classifier.geometry.space_test import deck, lists_space, rows_space
 
 # Scenario: defining cards rank by evidence, not just by how exclusive they are. An archetype of 500 rows against 84,000 contrast rows.
 
@@ -80,3 +80,30 @@ def test_presence_counts_a_card_once_per_row_whatever_its_copies() -> None:
     presence = build_presence(space)
     assert presence.cards == ('Island', 'Shock')
     assert presence.matrix.toarray().tolist() == [[1, 1], [1, 1]]
+
+
+# Scenario: centroid pushes add up to what separates an archetype from its siblings. The hand-made embedding; no weights, linear copies.
+
+def test_centroid_pushes_add_up_to_the_distance_between_the_averages() -> None:
+    space = lists_space([(IZZET_CONTROL, deck(Essence_Scatter=4, Negate=4, Shock=4, Island=24, Mountain=24)),
+                         (AZORIUS_CONTROL, deck(Essence_Scatter=4, Negate=4, Island=52))])
+    push = build_centroid_push(space, TREE, IZZET_CONTROL)
+    assert push is not None
+    assert np.isclose(push.distance, 0.3960, atol=5e-5)
+    assert [c.card for c in push.cards] == ['Mountain', 'Island', 'Shock', 'Negate', 'Essence Scatter']
+    expected = {'Mountain': (0.4950, 0, 0.3819, 0.1890), 'Island': (0.4950, 0.9895, -0.2488, 0.1230), 'Shock': (0.0825, 0, 0.9681, 0.0799),
+                'Negate': (0.0825, 0.0761, 0.6041, 0.0039), 'Essence Scatter': (0.0825, 0.0761, 0.0290, 0.0002)}
+    for c in push.cards:
+        assert np.allclose((c.share_in, c.share_out, c.alignment, c.push), expected[c.card], atol=5e-5), c.card
+    assert np.isclose(sum(c.push for c in push.cards), push.distance)
+
+def test_an_archetype_with_no_siblings_has_no_push() -> None:
+    space = lists_space([(IZZET_TWIN, deck(Shock=4, Island=56)), (ACTUAL_TWIN, deck(Shock=4, Mountain=56))])
+    assert build_centroid_push(space, FAMILY_TREE, IZZET_TWIN) is None
+
+def test_with_no_embedding_each_card_is_its_own_coordinate() -> None:
+    space = rows_space([(IZZET_CONTROL, (1, 0, 0)), (AZORIUS_CONTROL, (0, 1, 0))])  # The bag of cards: the lines are the vectors.
+    push = build_centroid_push(space, TREE, IZZET_CONTROL)
+    assert push is not None
+    assert np.isclose(push.distance, np.sqrt(2))
+    assert [(c.card, round(c.alignment, 4), round(c.push, 4)) for c in push.cards] == [('dimension 1', 0.7071, 0.7071), ('dimension 2', -0.7071, 0.7071)]

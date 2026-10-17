@@ -11,9 +11,7 @@ import numpy as np
 
 from archetype_classifier.card_embeddings.deck_vectors import DeckVectors
 from archetype_classifier.evaluation.model import Model
-from archetype_classifier.evaluation.store import ModelRecord, load_model, load_run
 from archetype_classifier.models.embedding_nearest import EmbeddingNearestDeck, TrainingRows
-from shared.database import Database
 
 
 @dataclass(frozen=True)
@@ -43,10 +41,3 @@ def build_model_space(model: Model) -> DeckSpace:
     vectors = model.deck_vectors(model.rows.maindecks)
     return build_space(model.rows, vectors, model.embedding.names, model.embedding.vectors.astype(np.float64))
 
-
-def load_space(edb: Database, run_id: int) -> tuple[ModelRecord, DeckSpace]:
-    """The space of a stored run's model, refitted from its record as store.load_model refits it, with the record that says which space it is.
-    load_model checks the stored fingerprints: it refuses a changed embedding or changed card weights, and warns when the training decks no longer
-    rebuild to the stored fingerprint."""
-    record, model = load_model(edb, load_run(edb, run_id).model_id)
-    return record, build_model_space(model)

@@ -1,7 +1,9 @@
 """Centroids, typical lists and cohesion (Scenarios.md, "Archetype geometry")."""
 import numpy as np
+from scipy import sparse
 
 from archetype_classifier.geometry.centroids import build_centroids, build_medoids
+from archetype_classifier.geometry.space import DeckSpace, build_space
 from archetype_classifier.geometry.space_test import rows_space
 
 MONO_BLACK_MIDRANGE, ORZHOV_CONTROL = 282, 512
@@ -64,3 +66,18 @@ def test_a_tie_for_the_typical_list_goes_to_the_row_with_more_decks_then_the_new
     assert build_medoids(more, build_centroids(more, min_rows=1))[ORZHOV_CONTROL] == 0  # More decks win, though row 1's deck is newer.
     newer = rows_space([(ORZHOV_CONTROL, (1, 0, 0), 2), (ORZHOV_CONTROL, (1, 0, 0), 2), (ORZHOV_CONTROL, (0, 1, 0))])
     assert build_medoids(newer, build_centroids(newer, min_rows=1))[ORZHOV_CONTROL] == 1  # Equal decks: the newer deck.
+
+
+# The bag of cards keeps its rows sparse (#62): centroids and typical lists come out the same as from the same rows dense.
+
+def as_sparse(space: DeckSpace) -> DeckSpace:
+    return build_space(space.rows, sparse.csr_matrix(space.matrix), space.lines, space.cards, space.embedding)
+
+def test_sparse_rows_give_the_same_centroids_and_typical_lists_as_dense_ones() -> None:
+    dense = rows_space([(MONO_BLACK_MIDRANGE, (1, 0, 0), 3), (ORZHOV_CONTROL, (0, 1, 0)), (MONO_BLACK_MIDRANGE, (0.8, 0.6, 0)), (ORZHOV_CONTROL, (0, 0.6, 0.8), 2)])
+    expected, actual = build_centroids(dense, min_rows=1), build_centroids(as_sparse(dense), min_rows=1)
+    assert actual.label_ids.tolist() == expected.label_ids.tolist()
+    assert np.allclose(actual.sums, expected.sums) and np.allclose(actual.unit, expected.unit)
+    assert actual.weights.tolist() == expected.weights.tolist()
+    assert np.allclose(actual.cohesion, expected.cohesion)
+    assert build_medoids(as_sparse(dense), actual) == build_medoids(dense, expected)

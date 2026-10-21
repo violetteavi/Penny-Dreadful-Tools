@@ -7,6 +7,7 @@ since a row's summed cosine to them is its cosine to the unscaled centroid times
 from dataclasses import dataclass
 
 import numpy as np
+from scipy import sparse
 
 from archetype_classifier.geometry.space import DeckSpace
 from archetype_classifier.models.embedding_nearest import TIE_TOLERANCE
@@ -38,8 +39,11 @@ def build_centroids(space: DeckSpace, min_rows: int = MIN_ROWS) -> Centroids:
     order, starts = rows.label_order, rows.label_starts
     labels = rows.labels[order[starts]]
     counts = np.diff(np.r_[starts, len(order)])
-    weighted = space.matrix[order] * rows.deck_counts[order, None]
-    sums = np.add.reduceat(weighted, starts) if len(starts) else np.zeros((0, space.matrix.shape[1]))
+    # Each archetype's rows, each times its deck count, summed by one product: the same for dense rows and the bag of cards' sparse ones.
+    indicator = sparse.csr_matrix((rows.deck_counts[order].astype(np.float64), (np.repeat(np.arange(len(starts)), counts), order)),
+                                  shape=(len(starts), len(rows.labels)))
+    sums = indicator @ space.matrix
+    sums = sums.toarray() if sparse.issparse(sums) else np.asarray(sums)
     weights = np.add.reduceat(rows.deck_counts[order], starts) if len(starts) else np.zeros(0, dtype=np.int64)
     kept = counts >= min_rows
     skipped = {int(label): int(n) for label, n in zip(labels[~kept], counts[~kept], strict=True)}

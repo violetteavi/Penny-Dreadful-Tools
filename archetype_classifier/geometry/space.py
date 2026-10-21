@@ -22,6 +22,14 @@ class DeckSpace:
     cards: tuple[str, ...]  # The columns of lines.
     embedding: np.ndarray | None  # E, one row per card; None when the lines are the vectors (the bag of cards).
 
+    def vector(self, shares: np.ndarray) -> np.ndarray:
+        """Card shares as a vector in the space: shares @ E, or the shares themselves in the bag of cards."""
+        return shares if self.embedding is None else shares @ self.embedding
+
+    def alignment(self, direction: np.ndarray) -> np.ndarray:
+        """Each card's alignment with a unit direction in the space: E @ u, or u itself in the bag of cards, where each card is its own coordinate."""
+        return direction if self.embedding is None else self.embedding @ direction
+
 @dataclass(frozen=True)
 class Presence:
     cards: tuple[str, ...]  # Every card a training row's maindeck plays, in name order.

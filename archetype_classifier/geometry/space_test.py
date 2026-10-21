@@ -103,3 +103,16 @@ def test_presence_counts_a_card_once_per_row_whatever_its_copies() -> None:
     presence = build_presence(space)
     assert presence.cards == ('Island', 'Shock')
     assert presence.matrix.toarray().tolist() == [[1, 1], [1, 1]]
+
+
+# Card shares and directions: the only place a space's embedding, or its absence, matters (#62).
+
+def test_card_shares_map_through_the_embedding() -> None:
+    space = lists_space([(1, deck(Island=60))])  # Cards in CARD_EMBEDDING's order: Island, Mountain, Essence Scatter, Negate, Shock.
+    assert np.allclose(space.vector(np.array([0.5, 0.5, 0, 0, 0])), [0.9, 0, 0.3])  # Half Island (1, 0, 0), half Mountain (0.8, 0, 0.6).
+    assert np.allclose(space.alignment(np.array([0, 0, 1])), [0, 0.6, 0, 0.6, 1])  # Each card's third coordinate.
+
+def test_without_an_embedding_each_card_is_its_own_coordinate() -> None:
+    space = rows_space([(1, (1, 0, 0))])
+    assert np.allclose(space.vector(np.array([0.2, 0.3, 0.5])), [0.2, 0.3, 0.5])
+    assert np.allclose(space.alignment(np.array([0.6, 0.8, 0])), [0.6, 0.8, 0])

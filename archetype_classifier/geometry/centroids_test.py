@@ -2,7 +2,7 @@
 import numpy as np
 from scipy import sparse
 
-from archetype_classifier.geometry.centroids import build_centroids, build_medoids
+from archetype_classifier.geometry.centroids import build_centroids, build_medoids, build_spread
 from archetype_classifier.geometry.space import DeckSpace, build_space
 from archetype_classifier.geometry.space_test import rows_space
 
@@ -81,3 +81,19 @@ def test_sparse_rows_give_the_same_centroids_and_typical_lists_as_dense_ones() -
     assert actual.weights.tolist() == expected.weights.tolist()
     assert np.allclose(actual.cohesion, expected.cohesion)
     assert build_medoids(as_sparse(dense), actual) == build_medoids(dense, expected)
+
+
+# Spread (#62): 1 - the median cosine of an archetype's rows to its centroid, each row once.
+
+def test_spread_is_one_minus_the_median_cosine_of_an_archetypes_rows_to_its_centroid() -> None:
+    space = rows_space([(ORZHOV_CONTROL, (1, 0, 0)), (ORZHOV_CONTROL, (1, 0, 0)), (ORZHOV_CONTROL, (0, 1, 0)),  # Centroid along (2, 1, 0).
+                        (MONO_BLACK_MIDRANGE, (0, 0, 1)), (MONO_BLACK_MIDRANGE, (0, 0, 1))])  # Identical lists.
+    centroids = build_centroids(space, min_rows=1)
+    assert centroids.label_ids.tolist() == [MONO_BLACK_MIDRANGE, ORZHOV_CONTROL]
+    assert np.allclose(build_spread(space, centroids), [0, 1 - 2 / np.sqrt(5)])  # Orzhov Control's cosines: 2/sqrt(5) twice and 1/sqrt(5).
+
+def test_a_list_submitted_many_times_counts_once_in_the_spread() -> None:
+    space = rows_space([(ORZHOV_CONTROL, (1, 0, 0)), (ORZHOV_CONTROL, (1, 0, 0)), (ORZHOV_CONTROL, (0, 1, 0), 5)])  # Centroid along (2, 5, 0).
+    spread = build_spread(space, build_centroids(space, min_rows=1))
+    assert np.allclose(spread, [1 - 2 / np.sqrt(29)])  # The three rows' cosines are 2, 2 and 5 over sqrt(29): the median row is 2/sqrt(29), not the
+                                                       # median deck's 5/sqrt(29), though five of the seven decks are the third list.

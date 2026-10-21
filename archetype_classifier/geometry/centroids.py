@@ -63,6 +63,12 @@ def build_medoids(space: DeckSpace, centroids: Centroids) -> dict[int, int]:
     return medoids
 
 
+def build_spread(space: DeckSpace, centroids: Centroids) -> np.ndarray:
+    """Each archetype's spread, in label order: 1 - the median cosine of its rows to its centroid, each row once whatever its deck count. Its median
+    list sits one spread from the centroid (#62)."""
+    return np.array([1 - float(np.median(space.matrix[space.rows.labels == label] @ centroids.unit[i])) for i, label in enumerate(centroids.label_ids.tolist())])
+
+
 def mean_lines(space: DeckSpace, rows: np.ndarray) -> np.ndarray:
     """The deck-weighted mean of the rows' scaled lines: per card, how much of their average vector it makes up."""
     weights = space.rows.deck_counts[rows].astype(np.float64)

@@ -1731,7 +1731,7 @@ Orzhov Control's rows in three cases:
 
 ### Defining cards rank by evidence, not just by how exclusive they are
 
-An archetype with 500 training rows and a contrast set of 84,000 rows. Each card is counted once per row that plays it.
+An archetype with 500 training rows and a row contrast of 84,000 rows. Each card is counted once per row that plays it.
 
 - **Expect:**
 

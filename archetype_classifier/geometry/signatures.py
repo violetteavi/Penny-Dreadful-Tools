@@ -1,4 +1,4 @@
-"""What sets an archetype apart from a contrast, as ranked cards (#64, #62; Scenarios.md, "Archetype geometry"): defining cards and pushes.
+"""An archetype's signature: what sets it apart from a contrast, as ranked cards (#64, #62; Scenarios.md, "Archetype geometry"): defining cards and pushes.
 
 Defining cards are the cards an archetype's rows play far more often than a row contrast's rows.
 
@@ -46,7 +46,7 @@ class Push:
 class DefiningCard:
     card: str
     rows_in: int  # The archetype's rows that play it.
-    rows_out: int  # The contrast set's rows that play it.
+    rows_out: int  # The row contrast's rows that play it.
     log_odds: float
     z: float
 

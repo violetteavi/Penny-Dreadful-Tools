@@ -12,20 +12,20 @@ MONO_BLACK_MIDRANGE, ORZHOV_CONTROL = 282, 512
 def test_the_typical_list_is_the_row_nearest_the_centroid() -> None:
     space = rows_space([(MONO_BLACK_MIDRANGE, (1, 0, 0)), (MONO_BLACK_MIDRANGE, (0.6, 0.8, 0)), (MONO_BLACK_MIDRANGE, (0.8, 0.6, 0))])
     centroids = build_centroids(space, min_rows=1)
-    assert np.allclose(space.vectors.matrix @ centroids.unit[0], [0.8638, 0.9214, 0.9933], atol=5e-5)
+    assert np.allclose(space.matrix @ centroids.unit[0], [0.8638, 0.9214, 0.9933], atol=5e-5)
     assert build_medoids(space, centroids) == {MONO_BLACK_MIDRANGE: 2}
 
 def test_a_list_submitted_many_times_can_become_the_typical_list() -> None:
     space = rows_space([(MONO_BLACK_MIDRANGE, (1, 0, 0), 4), (MONO_BLACK_MIDRANGE, (0.6, 0.8, 0)), (MONO_BLACK_MIDRANGE, (0.8, 0.6, 0))])
     centroids = build_centroids(space, min_rows=1)
-    assert np.allclose(space.vectors.matrix @ centroids.unit[0], [0.9680, 0.7816, 0.9250], atol=5e-5)
+    assert np.allclose(space.matrix @ centroids.unit[0], [0.9680, 0.7816, 0.9250], atol=5e-5)
     assert build_medoids(space, centroids) == {MONO_BLACK_MIDRANGE: 0}
 
 def test_the_typical_list_also_has_the_highest_average_cosine_to_the_archetypes_decks() -> None:
     for counts, expected in (((1, 1, 1), [0.8000, 0.8533, 0.9200]), ((4, 1, 1), [0.9000, 0.7267, 0.8600])):
         vectors = [(1, 0, 0), (0.6, 0.8, 0), (0.8, 0.6, 0)]
         space = rows_space([(MONO_BLACK_MIDRANGE, v, n) for v, n in zip(vectors, counts, strict=True)])
-        x, w = space.vectors.matrix, space.rows.deck_counts
+        x, w = space.matrix, space.rows.deck_counts
         average = (x @ x.T) @ w / w.sum()  # Each row's cosine to every deck of the archetype, its own included.
         assert np.allclose(average, expected, atol=5e-5)
         assert build_medoids(space, build_centroids(space, min_rows=1))[MONO_BLACK_MIDRANGE] == int(np.argmax(average))

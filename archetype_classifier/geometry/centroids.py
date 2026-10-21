@@ -38,8 +38,8 @@ def build_centroids(space: DeckSpace, min_rows: int = MIN_ROWS) -> Centroids:
     order, starts = rows.label_order, rows.label_starts
     labels = rows.labels[order[starts]]
     counts = np.diff(np.r_[starts, len(order)])
-    weighted = space.vectors.matrix[order] * rows.deck_counts[order, None]
-    sums = np.add.reduceat(weighted, starts) if len(starts) else np.zeros((0, space.vectors.matrix.shape[1]))
+    weighted = space.matrix[order] * rows.deck_counts[order, None]
+    sums = np.add.reduceat(weighted, starts) if len(starts) else np.zeros((0, space.matrix.shape[1]))
     weights = np.add.reduceat(rows.deck_counts[order], starts) if len(starts) else np.zeros(0, dtype=np.int64)
     kept = counts >= min_rows
     skipped = {int(label): int(n) for label, n in zip(labels[~kept], counts[~kept], strict=True)}
@@ -53,7 +53,7 @@ def build_medoids(space: DeckSpace, centroids: Centroids) -> dict[int, int]:
     medoids = {}
     for i, label in enumerate(centroids.label_ids.tolist()):
         mine = np.flatnonzero(rows.labels == label)
-        cosines = space.vectors.matrix[mine] @ centroids.unit[i]
+        cosines = space.matrix[mine] @ centroids.unit[i]
         tied = mine[cosines >= cosines.max() - TIE_TOLERANCE]
         medoids[label] = int(max(tied, key=lambda r: (rows.deck_counts[r], rows.newest_deck_ids[r])))
     return medoids
@@ -62,4 +62,4 @@ def build_medoids(space: DeckSpace, centroids: Centroids) -> dict[int, int]:
 def mean_lines(space: DeckSpace, rows: np.ndarray) -> np.ndarray:
     """The deck-weighted mean of the rows' scaled lines: per card, how much of their average vector it makes up."""
     weights = space.rows.deck_counts[rows].astype(np.float64)
-    return np.asarray(weights @ space.vectors.lines[rows]).ravel() / weights.sum()
+    return np.asarray(weights @ space.lines[rows]).ravel() / weights.sum()

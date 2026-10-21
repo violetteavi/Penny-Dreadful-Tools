@@ -115,9 +115,9 @@ def analyse(space: DeckSpace, snapshot: Snapshot, guesses: dict[int, Any], min_r
             'defining': defining, 'pushes': pushes, 'positions': build_parent_positions(space, centroids, tree), 'analogies': analogies,
             'skipped_pairs': skipped_pairs, 'top_1': top_1, 'curated': curated, 'missing_curated': [n for n in CURATED if n not in {names[c] for c in curated}],
             'figure': {'label_ids': centroids.label_ids, 'unit': centroids.unit, 'tree_order': np.array(build_tree_order(tree, centroids.label_ids.tolist())),
-                       'cohesion': centroids.cohesion, 'curated_rows': rows, 'curated_vectors': space.vectors.matrix[rows],
+                       'cohesion': centroids.cohesion, 'curated_rows': rows, 'curated_vectors': space.matrix[rows],
                        'curated_labels': space.rows.labels[rows], 'curated_deck_counts': space.rows.deck_counts[rows],
-                       'curated_own_cosine': np.einsum('ij,ij->i', space.vectors.matrix[rows], centroids.unit[[index[int(label)] for label in space.rows.labels[rows]]])}}
+                       'curated_own_cosine': np.einsum('ij,ij->i', space.matrix[rows], centroids.unit[[index[int(label)] for label in space.rows.labels[rows]]])}}
 
 
 def write_tables(result: dict[str, Any], prefix: Path) -> None:

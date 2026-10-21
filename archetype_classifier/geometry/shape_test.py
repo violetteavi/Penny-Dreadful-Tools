@@ -20,7 +20,7 @@ CROWDED = rows_space([(IZZET_CONTROL, (1, 0, 0)), (IZZET_CONTROL, (0.98, 0.2, 0)
 def test_a_row_nearer_another_archetypes_centroid_counts_as_overlap() -> None:
     centroids = build_centroids(CROWDED, min_rows=1)
     index = centroids.index()
-    row = CROWDED.vectors.matrix[2]
+    row = CROWDED.matrix[2]
     assert np.isclose(row @ centroids.unit[index[IZZET_CONTROL]], 0.8486, atol=5e-5)
     assert np.isclose(row @ centroids.unit[index[AZORIUS_CONTROL]], 0.8562, atol=5e-5)
     overlap = build_overlap(CROWDED, centroids)

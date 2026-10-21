@@ -7,6 +7,7 @@ since a row's summed cosine to them is its cosine to the unscaled centroid times
 from dataclasses import dataclass
 
 import numpy as np
+from scipy import sparse
 
 from archetype_classifier.geometry.space import DeckSpace
 from archetype_classifier.models.embedding_nearest import TIE_TOLERANCE
@@ -38,8 +39,11 @@ def build_centroids(space: DeckSpace, min_rows: int = MIN_ROWS) -> Centroids:
     order, starts = rows.label_order, rows.label_starts
     labels = rows.labels[order[starts]]
     counts = np.diff(np.r_[starts, len(order)])
-    weighted = space.vectors.matrix[order] * rows.deck_counts[order, None]
-    sums = np.add.reduceat(weighted, starts) if len(starts) else np.zeros((0, space.vectors.matrix.shape[1]))
+    # Each archetype's rows, each times its deck count, summed by one product: the same for dense rows and the bag of cards' sparse ones.
+    indicator = sparse.csr_matrix((rows.deck_counts[order].astype(np.float64), (np.repeat(np.arange(len(starts)), counts), order)),
+                                  shape=(len(starts), len(rows.labels)))
+    sums = indicator @ space.matrix
+    sums = sums.toarray() if sparse.issparse(sums) else np.asarray(sums)
     weights = np.add.reduceat(rows.deck_counts[order], starts) if len(starts) else np.zeros(0, dtype=np.int64)
     kept = counts >= min_rows
     skipped = {int(label): int(n) for label, n in zip(labels[~kept], counts[~kept], strict=True)}
@@ -53,7 +57,25 @@ def build_medoids(space: DeckSpace, centroids: Centroids) -> dict[int, int]:
     medoids = {}
     for i, label in enumerate(centroids.label_ids.tolist()):
         mine = np.flatnonzero(rows.labels == label)
-        cosines = space.vectors.matrix[mine] @ centroids.unit[i]
+        cosines = space.matrix[mine] @ centroids.unit[i]
         tied = mine[cosines >= cosines.max() - TIE_TOLERANCE]
         medoids[label] = int(max(tied, key=lambda r: (rows.deck_counts[r], rows.newest_deck_ids[r])))
     return medoids
+
+
+def build_spread(space: DeckSpace, centroids: Centroids) -> np.ndarray:
+    """Each archetype's spread, in label order: 1 - the median cosine of its rows to its centroid, each row once whatever its deck count. Its median
+    list sits one spread from the centroid (#62)."""
+    return np.array([1 - float(np.median(space.matrix[space.rows.labels == label] @ centroids.unit[i])) for i, label in enumerate(centroids.label_ids.tolist())])
+
+
+def mean_lines(space: DeckSpace, rows: np.ndarray) -> np.ndarray:
+    """The deck-weighted mean of the rows' scaled lines: per card, how much of their average vector it makes up."""
+    weights = space.rows.deck_counts[rows].astype(np.float64)
+    return np.asarray(weights @ space.lines[rows]).ravel() / weights.sum()
+
+
+def build_shares(space: DeckSpace, centroids: Centroids) -> np.ndarray:
+    """One row per archetype with a centroid, in label order: its card shares, how much of its average vector each card makes up (mean_lines).
+    The centroid written card by card: space.vector of an archetype's shares points along its centroid (#62)."""
+    return np.array([mean_lines(space, space.rows.labels == label) for label in centroids.label_ids.tolist()]).reshape(len(centroids.label_ids), len(space.cards))

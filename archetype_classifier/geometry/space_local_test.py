@@ -35,5 +35,5 @@ def test_run_17s_space_is_its_stored_model_refitted_reproducibly(caplog: pytest.
     assert len(space.rows.labels) == state['training_rows'] == 84_085
     assert int(space.rows.deck_counts.sum()) == state['training_decks'] == record.training_count == 162_869
     assert space.embedding is not None
-    assert np.allclose(space.vectors.lines @ space.embedding, space.vectors.matrix)
-    assert np.allclose(np.linalg.norm(space.vectors.matrix, axis=1), 1)
+    assert np.allclose(space.lines @ space.embedding, space.matrix)
+    assert np.allclose(np.linalg.norm(space.matrix, axis=1), 1)

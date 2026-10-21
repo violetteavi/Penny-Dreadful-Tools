@@ -236,6 +236,8 @@ An archetype with fewer than 5 decks labelled exactly with it in a model's **Tra
 The decks a classifier's predictions are scored on, from any combination of the training, held-out, validation and test splits, each with the label it is scored against.
 _Avoid_: Dataset, test set (the test seasons are only one possible part of it)
 
+### Archetype geometry
+
 **Centroid**:
 An archetype's average position in a space of **Deck vectors**: the sum of its **Training rows**' vectors, each times its deck count, and at unit length where directions are compared. Only rows labelled exactly with the archetype count, not its children's, so a parent's centroid is made of its parent-labelled rows.
 _Avoid_: Prototype, mean deck (it isn't a deck)
@@ -247,15 +249,53 @@ _Avoid_: Medoid (in prose), stock list (that's the community's word, with no fix
 **Cohesion**:
 How tightly an archetype's rows point the same way: the length of its unscaled **Centroid** divided by its total deck count. It's 1 when every list is the same direction, and it's the square root of the mean cosine over every pair of its decks, each deck paired with itself included.
 
+**Spread**:
+How far an archetype's lists typically sit from its **Centroid**: 1 − the median cosine of its **Training rows** to it, each list counted once whatever its deck count.
+
+**Card shares**:
+How much of an archetype's average **Deck vector** each card makes up: its **Centroid** written card by card.
+_Avoid_: Card weights (a **Card weight** is one card's weight in every deck)
+
 **Sibling**:
-For an archetype, the other archetypes under the same parent, with their own children. A **Defining card** or a **Centroid push** against siblings asks what sets an archetype apart within its family rather than from every deck.
+For an archetype, the other archetypes under the same parent, with their own children. A **Row contrast** or a **Sibling push** against siblings asks what sets an archetype apart within its family rather than from every deck.
+
+**Span neighbour**:
+An archetype whose **Centroid** is within the larger of the two archetypes' **Spreads**: one's span reaches the other's centroid. So a tight archetype inside a loose, generic one's span and the generic one are each other's span neighbours.
+_Avoid_: Neighbour on its own (a **Neighbour list** is about cards), nearest archetypes
+
+**Contrast**:
+What an archetype is compared with when asking what sets it apart, given as **Card shares**, like the average of an imaginary archetype: a **Local contrast**, the **Global contrast**, a **Blended contrast**, or its **Siblings**' rows pooled.
+
+**Local contrast**:
+The plain mean of an archetype's **Span neighbours**' **Card shares**, each neighbour counted once.
+
+**Global contrast**:
+The plain mean of every archetype's **Card shares**, each counted once: the same for every archetype.
+_Avoid_: Mega-centroid
+
+**Blended contrast**:
+An archetype's **Local contrast** and the **Global contrast** mixed, with the global one counting as one more span neighbour; the global contrast alone when it has none.
+
+**Row contrast**:
+The **Training rows** an archetype's **Defining cards** are counted against: every other row, or its **Siblings**' rows.
+_Avoid_: Contrast set
 
 **Defining card**:
-A card an archetype's **Training rows** play far more often than a contrast set's rows (all other rows, or its **Siblings**'). It's ranked by the z-score of the log-odds, with 1 added to every count, so a card seen in only a few rows ranks low without a play-rate floor. It's counted by distinct list, whatever the copies and the deck count.
-_Avoid_: Signature card (that's a card measured by **Card weight** or label concentration alone)
+A card an archetype's **Training rows** play far more often than a **Row contrast**'s rows. It's ranked by the z-score of the log-odds, with 1 added to every count, so a card seen in only a few rows ranks low without a play-rate floor. It's counted by distinct list, whatever the copies and the deck count.
 
-**Centroid push**:
-A card's share of what separates an archetype's average from its **Siblings'** average in the **Deck vector** space: how much more of the archetype's average the card makes up, times how far its embedding points the way the two differ. The pushes add up exactly to the distance between the two averages, so they show which cards the embedding average actually uses to tell the archetype apart.
+**Push**:
+A card's share of what separates an archetype's average from a **Contrast** in the **Deck vector** space: how much more of the archetype's average the card makes up than of the contrast, times how far the card points the way the two differ. The pushes add up exactly to the distance between the two, so they show which cards the deck vectors actually use to tell the archetype apart. A card the archetype plays less of can push too, when the contrast's use of it points away from the archetype.
+_Avoid_: Centroid push (every push compares averages)
+
+**Sibling push**:
+A **Push** against an archetype's **Siblings**' rows pooled.
+
+**Signature**:
+The cards that set an archetype apart from a **Contrast**, ranked: by **Push**, or as **Defining cards** against a **Row contrast**. A **Signature card** is one of them, so what counts as one depends on the contrast.
+
+**Card specificity**:
+How specific a card is on its own, whatever archetype it's in: to few decks (its **Card weight**) and to one label (its label concentration).
+_Avoid_: Signature measures (a **Signature** needs a contrast)
 
 **Analogy**:
 Four archetypes a : a* :: b : b*, asking whether the difference from a to a* is the same direction as from b to b* (Orzhov Midrange : Orzhov Control :: Mono Black Midrange : Mono Black Control). It's judged by the **Offset cosine** and by the rank of b* near a* − a + b, with a, a* and b left out of the search and the rank near b alone as the baseline.
@@ -275,6 +315,7 @@ The cosine between an **Analogy**'s two differences, a* − a and b* − b, betw
 - An **Excluded deck** leaves every other deck's **Split** and scores unchanged: an experiment is the same whether or not it exists.
 - A card's representation is its **Card embedding** (of its **Masked text**) together with its **Card numbers**, compared by **Exact thirds** or **Average thirds**; an **Unseen card** gets one the same way as any other card.
 - A **Combined embedding** stores that representation for the cards of its **Embedded seasons**; a card outside its **Fit seasons** is combined with the frozen statistics but never moves them.
+- An archetype's **Signature** depends on its **Contrast**: against its **Span neighbours** it shows what tells it from close rivals, against the **Global contrast** what tells it from every archetype, and a near-twin can hide the family's shared cards from a **Local contrast**.
 
 ## Flagged ambiguities
 
@@ -283,3 +324,5 @@ The cosine between an **Analogy**'s two differences, a* − a and b* − b, betw
 - "Test" means only the test seasons, never the whole **Eval set**.
 - "Pool" means the **Legal card pool**, never the decks a classifier learns from, and never the **Ever-legal cards**.
 - "Stats" means power, toughness and loyalty only; mana value and colours are separate parts of a card's **Card numbers**.
+- "Neighbour" on its own is ambiguous: a card's **Neighbour list** is about cards, an archetype's **Span neighbours** are archetypes. Always qualify it.
+- "Signature" always means cards that set an archetype apart from a **Contrast**. A card's IDF and label concentration on their own are its **Card specificity** (#62's earlier "signature measures").

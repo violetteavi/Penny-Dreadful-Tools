@@ -1,10 +1,10 @@
-"""Defining cards and centroid pushes (Scenarios.md, "Archetype geometry")."""
+"""Defining cards and pushes (Scenarios.md, "Archetype geometry")."""
 import numpy as np
 
-from archetype_classifier.data_loading.dataset import ArchetypeSnapshot
-from archetype_classifier.evaluation.metrics import ArchetypeTree
-from archetype_classifier.geometry.defining import build_centroid_push, build_defining_cards, build_presence, build_ranked_cards, build_siblings, build_subtree
+from archetype_classifier.geometry.signatures import build_defining_cards, build_push, build_ranked_cards, build_sibling_push
+from archetype_classifier.geometry.space import build_presence
 from archetype_classifier.geometry.space_test import deck, lists_space, rows_space
+from archetype_classifier.geometry.tree_test import ACTUAL_TWIN, AZORIUS_CONTROL, FAMILY_TREE, IZZET_CONTROL, IZZET_TWIN, RED_DECK_WINS, TREE
 
 # Scenario: defining cards rank by evidence, not just by how exclusive they are. An archetype of 500 rows against 84,000 contrast rows.
 
@@ -35,11 +35,6 @@ def test_ties_break_by_log_odds_then_by_name() -> None:
 # Scenario: against its siblings, a card the whole family plays stops being defining. Izzet Control and Azorius Control under Control; Red Deck Wins
 # under Aggro. Each archetype's lists differ only in copies.
 
-CONTROL, AGGRO, IZZET_CONTROL, AZORIUS_CONTROL, RED_DECK_WINS = 1001, 1002, 65, 49, 16
-TREE = ArchetypeTree({CONTROL: ArchetypeSnapshot(CONTROL, 'Control', None, 0), AGGRO: ArchetypeSnapshot(AGGRO, 'Aggro', None, 0),
-                      IZZET_CONTROL: ArchetypeSnapshot(IZZET_CONTROL, 'Izzet Control', CONTROL, 1),
-                      AZORIUS_CONTROL: ArchetypeSnapshot(AZORIUS_CONTROL, 'Azorius Control', CONTROL, 1),
-                      RED_DECK_WINS: ArchetypeSnapshot(RED_DECK_WINS, 'Red Deck Wins', AGGRO, 1)})
 FAMILY = lists_space([*((IZZET_CONTROL, deck(Essence_Scatter=4, Shock=4, Island=21 + i, Mountain=31 - i)) for i in range(10)),
                       *((AZORIUS_CONTROL, deck(Essence_Scatter=4, Island=56 + i)) for i in range(10)),
                       *((RED_DECK_WINS, deck(Shock=4, Mountain=56 + i)) for i in range(30))])
@@ -57,37 +52,17 @@ def test_against_its_siblings_only_the_red_cards_are_listed() -> None:
     assert [(c.rows_in, c.rows_out) for c in ranked] == [(10, 0), (10, 0)]
 
 
-# Siblings: the other archetypes under the same parent, with their own children.
-
-IZZET_TWIN, ACTUAL_TWIN, COMBO = 549, 557, 1003
-FAMILY_TREE = ArchetypeTree({**TREE.archetypes, COMBO: ArchetypeSnapshot(COMBO, 'Combo', None, 0),
-                             ACTUAL_TWIN: ArchetypeSnapshot(ACTUAL_TWIN, 'Actual Twin', COMBO, 1),
-                             IZZET_TWIN: ArchetypeSnapshot(IZZET_TWIN, 'Izzet Twin', ACTUAL_TWIN, 2)})
-
-def test_a_siblings_children_count_among_the_siblings() -> None:
-    assert build_siblings(FAMILY_TREE, COMBO) == {CONTROL, IZZET_CONTROL, AZORIUS_CONTROL, AGGRO, RED_DECK_WINS}  # Top-level: the other top-level subtrees.
-    assert build_siblings(FAMILY_TREE, IZZET_CONTROL) == {AZORIUS_CONTROL}
-    assert build_subtree(FAMILY_TREE, COMBO) == {COMBO, ACTUAL_TWIN, IZZET_TWIN}
-
 def test_an_only_child_has_no_sibling_contrast_and_no_defining_cards_against_it() -> None:
     space = lists_space([(IZZET_TWIN, deck(Shock=4, Island=56)), (ACTUAL_TWIN, deck(Shock=4, Mountain=56))])
-    assert build_siblings(FAMILY_TREE, IZZET_TWIN) == frozenset()
     assert build_defining_cards(build_presence(space), space, FAMILY_TREE, IZZET_TWIN, 'siblings') == []
     assert [c.card for c in build_defining_cards(build_presence(space), space, FAMILY_TREE, IZZET_TWIN, 'all')] == ['Island']
 
-def test_presence_counts_a_card_once_per_row_whatever_its_copies() -> None:
-    space = lists_space([(IZZET_CONTROL, deck(Shock=4, Island=56)), (IZZET_CONTROL, deck(Shock=1, Island=59))])
-    presence = build_presence(space)
-    assert presence.cards == ('Island', 'Shock')
-    assert presence.matrix.toarray().tolist() == [[1, 1], [1, 1]]
-
-
-# Scenario: centroid pushes add up to what separates an archetype from its siblings. The hand-made embedding; no weights, linear copies.
+# Scenario: sibling pushes add up to what separates an archetype from its siblings. The hand-made embedding; no weights, linear copies.
 
 def test_centroid_pushes_add_up_to_the_distance_between_the_averages() -> None:
     space = lists_space([(IZZET_CONTROL, deck(Essence_Scatter=4, Negate=4, Shock=4, Island=24, Mountain=24)),
                          (AZORIUS_CONTROL, deck(Essence_Scatter=4, Negate=4, Island=52))])
-    push = build_centroid_push(space, TREE, IZZET_CONTROL)
+    push = build_sibling_push(space, TREE, IZZET_CONTROL)
     assert push is not None
     assert np.isclose(push.distance, 0.3960, atol=5e-5)
     assert [c.card for c in push.cards] == ['Mountain', 'Island', 'Shock', 'Negate', 'Essence Scatter']
@@ -99,11 +74,37 @@ def test_centroid_pushes_add_up_to_the_distance_between_the_averages() -> None:
 
 def test_an_archetype_with_no_siblings_has_no_push() -> None:
     space = lists_space([(IZZET_TWIN, deck(Shock=4, Island=56)), (ACTUAL_TWIN, deck(Shock=4, Mountain=56))])
-    assert build_centroid_push(space, FAMILY_TREE, IZZET_TWIN) is None
+    assert build_sibling_push(space, FAMILY_TREE, IZZET_TWIN) is None
 
 def test_with_no_embedding_each_card_is_its_own_coordinate() -> None:
     space = rows_space([(IZZET_CONTROL, (1, 0, 0)), (AZORIUS_CONTROL, (0, 1, 0))])  # The bag of cards: the lines are the vectors.
-    push = build_centroid_push(space, TREE, IZZET_CONTROL)
+    push = build_sibling_push(space, TREE, IZZET_CONTROL)
     assert push is not None
     assert np.isclose(push.distance, np.sqrt(2))
     assert [(c.card, round(c.alignment, 4), round(c.push, 4)) for c in push.cards] == [('dimension 1', 0.7071, 0.7071), ('dimension 2', -0.7071, 0.7071)]
+
+
+# A push against any contrast given as card shares (#62).
+
+def test_a_push_against_a_contrast_adds_up_to_the_distance_between_them() -> None:
+    space = lists_space([(IZZET_CONTROL, deck(Island=60))])  # Only the hand-made embedding matters: Island (1, 0, 0), Mountain (0.8, 0, 0.6).
+    all_mountain, all_island = np.array([0, 1.0, 0, 0, 0]), np.array([1.0, 0, 0, 0, 0])
+    push = build_push(space, all_mountain, all_island)
+    assert np.isclose(push.distance, np.sqrt(0.4))  # (0.8, 0, 0.6) - (1, 0, 0) = (-0.2, 0, 0.6).
+    assert sorted((c.card, round(c.share_in, 4), round(c.share_out, 4), round(c.alignment, 4), round(c.push, 4)) for c in push.cards) == [
+        ('Island', 0, 1, -0.3162, 0.3162), ('Mountain', 1, 0, 0.3162, 0.3162)]  # Equal pushes, up to rounding; cards neither side plays are left out.
+    assert np.isclose(sum(c.push for c in push.cards), push.distance)
+
+def test_without_an_embedding_a_push_ranks_cards_by_how_much_their_shares_differ() -> None:
+    space = rows_space([(IZZET_CONTROL, (1, 0, 0))])
+    push = build_push(space, np.array([0.7, 0.3, 0]), np.array([0.2, 0.4, 0.4]))
+    assert np.isclose(push.distance, np.sqrt(0.42))
+    assert [(c.card, round(c.push, 4)) for c in push.cards] == [('dimension 1', 0.3858), ('dimension 3', 0.2469), ('dimension 2', 0.0154)]
+    assert np.isclose(sum(c.push for c in push.cards), push.distance)
+
+def test_identical_averages_have_nothing_to_separate_them() -> None:
+    space = lists_space([(IZZET_CONTROL, deck(Island=60))])
+    shares = np.array([0.5, 0.5, 0, 0, 0])
+    push = build_push(space, shares, shares)
+    assert push.distance == 0
+    assert [(c.card, c.alignment, c.push) for c in push.cards] == [('Island', 0, 0), ('Mountain', 0, 0)]

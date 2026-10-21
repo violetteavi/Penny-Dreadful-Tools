@@ -10,8 +10,8 @@ import numpy as np
 
 from archetype_classifier.evaluation.metrics import ArchetypeTree
 from archetype_classifier.geometry.centroids import Centroids
-from archetype_classifier.geometry.defining import build_siblings, build_subtree
 from archetype_classifier.geometry.space import DeckSpace
+from archetype_classifier.geometry.tree import build_siblings, build_subtree
 
 CHUNK = 10_000  # Rows compared with every centroid at once.
 MARGIN = 0.02  # Two children this close are a near-tie (#14: misses are near-ties within 0.02). A starting value, to revisit on the data.
@@ -49,7 +49,7 @@ def build_overlap(space: DeckSpace, centroids: Centroids) -> dict[int, Overlap]:
     index = centroids.index()
     own = np.array([index.get(int(label), -1) for label in space.rows.labels])
     rows = np.flatnonzero(own >= 0)
-    nearest = np.concatenate([np.argmax(space.vectors.matrix[rows[i:i + CHUNK]] @ centroids.unit.T, axis=1) for i in range(0, len(rows), CHUNK)] or [np.zeros(0, int)])
+    nearest = np.concatenate([np.argmax(space.matrix[rows[i:i + CHUNK]] @ centroids.unit.T, axis=1) for i in range(0, len(rows), CHUNK)] or [np.zeros(0, int)])
     overlap = {}
     for i, label in enumerate(centroids.label_ids.tolist()):
         mine = own[rows] == i
@@ -93,7 +93,7 @@ def build_parent_positions(space: DeckSpace, centroids: Centroids, tree: Archety
         candidates = np.array([i for i, label in enumerate(centroids.label_ids.tolist()) if label in children or label not in family])
         is_child = np.isin(centroids.label_ids[candidates], children)
         for row in np.flatnonzero(space.rows.labels == parent).tolist():
-            cosines = centroids.unit[candidates] @ space.vectors.matrix[row]
+            cosines = centroids.unit[candidates] @ space.matrix[row]
             first, second = np.argsort(-cosines, kind='stable')[:2]
             if not is_child[first]:
                 position: Position = 'elsewhere'
@@ -103,5 +103,5 @@ def build_parent_positions(space: DeckSpace, centroids: Centroids, tree: Archety
                 position = 'one child'
             positions.append(ParentPosition(row, parent, position, int(centroids.label_ids[candidates[first]]), float(cosines[first]),
                                             int(centroids.label_ids[candidates[second]]), float(cosines[second]),
-                                            float(centroids.unit[index[parent]] @ space.vectors.matrix[row]) if parent in index else None))
+                                            float(centroids.unit[index[parent]] @ space.matrix[row]) if parent in index else None))
     return positions

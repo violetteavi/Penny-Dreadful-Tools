@@ -1,7 +1,7 @@
 """Defining cards and centroid pushes (Scenarios.md, "Archetype geometry")."""
 import numpy as np
 
-from archetype_classifier.geometry.signatures import build_centroid_push, build_defining_cards, build_ranked_cards
+from archetype_classifier.geometry.signatures import build_centroid_push, build_defining_cards, build_push, build_ranked_cards
 from archetype_classifier.geometry.space import build_presence
 from archetype_classifier.geometry.space_test import deck, lists_space, rows_space
 from archetype_classifier.geometry.tree_test import ACTUAL_TWIN, AZORIUS_CONTROL, FAMILY_TREE, IZZET_CONTROL, IZZET_TWIN, RED_DECK_WINS, TREE
@@ -82,3 +82,22 @@ def test_with_no_embedding_each_card_is_its_own_coordinate() -> None:
     assert push is not None
     assert np.isclose(push.distance, np.sqrt(2))
     assert [(c.card, round(c.alignment, 4), round(c.push, 4)) for c in push.cards] == [('dimension 1', 0.7071, 0.7071), ('dimension 2', -0.7071, 0.7071)]
+
+
+# A push against any contrast given as card shares (#62).
+
+def test_a_push_against_a_contrast_adds_up_to_the_distance_between_them() -> None:
+    space = lists_space([(IZZET_CONTROL, deck(Island=60))])  # Only the hand-made embedding matters: Island (1, 0, 0), Mountain (0.8, 0, 0.6).
+    all_mountain, all_island = np.array([0, 1.0, 0, 0, 0]), np.array([1.0, 0, 0, 0, 0])
+    push = build_push(space, all_mountain, all_island)
+    assert np.isclose(push.distance, np.sqrt(0.4))  # (0.8, 0, 0.6) - (1, 0, 0) = (-0.2, 0, 0.6).
+    assert sorted((c.card, round(c.share_in, 4), round(c.share_out, 4), round(c.alignment, 4), round(c.push, 4)) for c in push.cards) == [
+        ('Island', 0, 1, -0.3162, 0.3162), ('Mountain', 1, 0, 0.3162, 0.3162)]  # Equal pushes, up to rounding; cards neither side plays are left out.
+    assert np.isclose(sum(c.push for c in push.cards), push.distance)
+
+def test_without_an_embedding_a_push_ranks_cards_by_how_much_their_shares_differ() -> None:
+    space = rows_space([(IZZET_CONTROL, (1, 0, 0))])
+    push = build_push(space, np.array([0.7, 0.3, 0]), np.array([0.2, 0.4, 0.4]))
+    assert np.isclose(push.distance, np.sqrt(0.42))
+    assert [(c.card, round(c.push, 4)) for c in push.cards] == [('dimension 1', 0.3858), ('dimension 3', 0.2469), ('dimension 2', 0.0154)]
+    assert np.isclose(sum(c.push for c in push.cards), push.distance)

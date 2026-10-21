@@ -11,6 +11,7 @@ import numpy as np
 from scipy import sparse
 
 from archetype_classifier.evaluation.model import Model
+from archetype_classifier.models.bag_nearest import BagNearestDeck
 from archetype_classifier.models.embedding_nearest import EmbeddingNearestDeck, TrainingRows
 
 
@@ -49,12 +50,15 @@ def build_space(rows: TrainingRows, matrix: np.ndarray | sparse.csr_matrix, line
 
 
 def build_model_space(model: Model) -> DeckSpace:
-    """A fitted nearest deck's space: its training rows with the very vectors it ranks them by, rebuilt by its own code, with their lines. The bag
-    of cards comes with its own pass (#64)."""
-    if not isinstance(model, EmbeddingNearestDeck):
-        raise ValueError(f'No space for the {model.name} model yet: only the embedding nearest deck')
-    vectors = model.deck_vectors(model.rows.maindecks)
-    return build_space(model.rows, vectors.matrix, vectors.lines, model.embedding.names, model.embedding.vectors.astype(np.float64))
+    """A fitted nearest deck's space: its training rows with the very vectors it ranks them by, rebuilt by its own code, with their lines. In the
+    bag of cards the scaled bag is both, kept sparse, and its vocabulary is the cards. Of the functions that read the rows' vectors, only centroids,
+    typical lists and spread are tested on the bag's sparse rows (#62); card shares, contrasts and pushes read the lines, sparse in every space."""
+    if isinstance(model, EmbeddingNearestDeck):
+        vectors = model.deck_vectors(model.rows.maindecks)
+        return build_space(model.rows, vectors.matrix, vectors.lines, model.embedding.names, model.embedding.vectors.astype(np.float64))
+    if isinstance(model, BagNearestDeck):
+        return build_space(model.rows, model.row_vectors, model.row_vectors, sorted(model.vocabulary, key=model.vocabulary.__getitem__), None)
+    raise ValueError(f'No space for the {model.name} model: only the nearest decks')
 
 
 def build_presence(space: DeckSpace) -> Presence:

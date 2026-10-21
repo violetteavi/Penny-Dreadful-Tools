@@ -81,6 +81,7 @@ def test_sparse_rows_give_the_same_centroids_and_typical_lists_as_dense_ones() -
     assert actual.weights.tolist() == expected.weights.tolist()
     assert np.allclose(actual.cohesion, expected.cohesion)
     assert build_medoids(as_sparse(dense), actual) == build_medoids(dense, expected)
+    assert np.allclose(build_spread(as_sparse(dense), actual), build_spread(dense, expected))
 
 
 # Spread (#62): 1 - the median cosine of an archetype's rows to its centroid, each row once.

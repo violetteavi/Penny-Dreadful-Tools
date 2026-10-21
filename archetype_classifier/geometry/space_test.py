@@ -10,9 +10,10 @@ from archetype_classifier.card_embeddings.combined_embedding import save_combine
 from archetype_classifier.data_loading.dataset import CardCount, LabelStatus
 from archetype_classifier.evaluation.model import PredictDeck, TrainingDeck
 from archetype_classifier.geometry.space import DeckSpace, build_model_space, build_presence, build_space
-from archetype_classifier.models.bag_nearest import BagNearestDeck
+from archetype_classifier.models.bag_nearest_test import fitted
 from archetype_classifier.models.embedding_nearest import build_training_rows
 from archetype_classifier.models.embedding_nearest_test import EMBEDDING, weighted
+from archetype_classifier.models.most_common import MostCommonArchetype
 
 DIMENSIONS = ('dimension 1', 'dimension 2', 'dimension 3')
 
@@ -94,9 +95,18 @@ def test_a_models_space_has_exactly_its_row_vectors(small_embedding: Path) -> No
     assert space.cards == tuple(model.embedding.names)
     assert space.embedding is not None and np.allclose(space.lines @ space.embedding, space.matrix)
 
-def test_the_bag_of_cards_is_refused_until_its_own_pass() -> None:
-    with pytest.raises(ValueError, match="bag of cards nearest deck"):
-        build_model_space(BagNearestDeck({'copies': 'sqrt'}))
+def test_the_bag_of_cards_space_is_its_own_sparse_rows_with_no_embedding() -> None:
+    model = fitted()
+    space = build_model_space(model)
+    assert space.rows is model.rows
+    assert sparse.issparse(space.matrix) and (space.matrix != model.row_vectors).nnz == 0
+    assert (space.lines != model.row_vectors).nnz == 0  # In the bag the scaled lines are the vectors.
+    assert space.cards == tuple(sorted(model.vocabulary, key=model.vocabulary.__getitem__))  # The vocabulary, in column order.
+    assert space.embedding is None
+
+def test_another_model_has_no_space() -> None:
+    with pytest.raises(ValueError, match="most common archetype"):
+        build_model_space(MostCommonArchetype({}))
 
 def test_presence_counts_a_card_once_per_row_whatever_its_copies() -> None:
     space = lists_space([(65, deck(Shock=4, Island=56)), (65, deck(Shock=1, Island=59))])

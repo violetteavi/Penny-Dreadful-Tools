@@ -2,9 +2,9 @@
 import numpy as np
 from scipy import sparse
 
-from archetype_classifier.geometry.centroids import build_centroids, build_medoids, build_spread
+from archetype_classifier.geometry.centroids import build_centroids, build_medoids, build_shares, build_spread, mean_lines
 from archetype_classifier.geometry.space import DeckSpace, build_space
-from archetype_classifier.geometry.space_test import rows_space
+from archetype_classifier.geometry.space_test import deck, lists_space, rows_space
 
 MONO_BLACK_MIDRANGE, ORZHOV_CONTROL = 282, 512
 
@@ -97,3 +97,17 @@ def test_a_list_submitted_many_times_counts_once_in_the_spread() -> None:
     spread = build_spread(space, build_centroids(space, min_rows=1))
     assert np.allclose(spread, [1 - 2 / np.sqrt(29)])  # The three rows' cosines are 2, 2 and 5 over sqrt(29): the median row is 2/sqrt(29), not the
                                                        # median deck's 5/sqrt(29), though five of the seven decks are the third list.
+
+
+# Card shares (#62): each archetype's centroid written card by card.
+
+def test_an_archetypes_card_shares_are_its_rows_mean_lines_and_point_along_its_centroid() -> None:
+    space = lists_space([(ORZHOV_CONTROL, deck(Essence_Scatter=4, Island=56)), (ORZHOV_CONTROL, deck(Negate=4, Island=56)),
+                         (MONO_BLACK_MIDRANGE, deck(Shock=4, Mountain=56)), (MONO_BLACK_MIDRANGE, deck(Shock=8, Mountain=52))])
+    centroids = build_centroids(space, min_rows=1)
+    shares = build_shares(space, centroids)
+    assert shares.shape == (2, len(space.cards))
+    for i, label in enumerate(centroids.label_ids.tolist()):
+        assert np.allclose(shares[i], mean_lines(space, space.rows.labels == label))
+        vector = space.vector(shares[i])
+        assert np.allclose(vector / np.linalg.norm(vector), centroids.unit[i])

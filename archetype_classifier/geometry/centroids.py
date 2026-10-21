@@ -73,3 +73,9 @@ def mean_lines(space: DeckSpace, rows: np.ndarray) -> np.ndarray:
     """The deck-weighted mean of the rows' scaled lines: per card, how much of their average vector it makes up."""
     weights = space.rows.deck_counts[rows].astype(np.float64)
     return np.asarray(weights @ space.lines[rows]).ravel() / weights.sum()
+
+
+def build_shares(space: DeckSpace, centroids: Centroids) -> np.ndarray:
+    """One row per archetype with a centroid, in label order: its card shares, how much of its average vector each card makes up (mean_lines).
+    The centroid written card by card: space.vector of an archetype's shares points along its centroid (#62)."""
+    return np.array([mean_lines(space, space.rows.labels == label) for label in centroids.label_ids.tolist()]).reshape(len(centroids.label_ids), len(space.cards))

@@ -2,7 +2,15 @@
 import numpy as np
 
 from archetype_classifier.geometry.analogies_test import centroids_at
-from archetype_classifier.geometry.contrasts import Neighbour, build_span_neighbours
+from archetype_classifier.geometry.contrasts import (
+    BlendRule,
+    Neighbour,
+    NeighbourContrast,
+    build_blended_contrast,
+    build_global_contrast,
+    build_neighbour_contrasts,
+    build_span_neighbours,
+)
 
 IZZET_TWIN, CONTROL, SLIVERS = 549, 1001, 1004
 
@@ -44,3 +52,33 @@ def test_being_neighbours_is_symmetric() -> None:
     mirrored = {(label, n.label_id): n for label, found in neighbours.items() for n in found}
     assert all(mirrored[(a, b)].inside_mine == mirrored[(b, a)].inside_theirs for a, b in pairs)
     assert isinstance(next(iter(mirrored.values())), Neighbour)
+
+
+# Contrasts as card shares: the neighbours' mean, the global centroid, and a blend of the two.
+
+FOUR = centroids_at({HUMANS: (1, 0, 0), GOBLINS: (0, 1, 0), ELVES: (0, 0, 1), AGGRO: (0.6, 0.8, 0)})  # Label order: Humans, Goblins, Elves, Aggro.
+SHARES = np.array([[1.0, 0, 0], [0, 1.0, 0], [0, 0, 1.0], [0.2, 0.8, 0]])  # Each archetype's card shares, in label order.
+NEIGHBOURS = {AGGRO: [Neighbour(GOBLINS, 0.8, True, False), Neighbour(HUMANS, 0.6, True, False)],
+              HUMANS: [Neighbour(AGGRO, 0.6, False, True)], GOBLINS: [Neighbour(AGGRO, 0.8, False, True)], ELVES: []}
+
+def test_a_local_contrast_is_the_plain_mean_of_the_neighbours_shares() -> None:
+    contrasts = build_neighbour_contrasts(FOUR, SHARES, NEIGHBOURS)
+    aggro, humans = contrasts[AGGRO].local_contrast, contrasts[HUMANS].local_contrast
+    assert aggro is not None and np.allclose(aggro, [0.5, 0.5, 0])  # Humans and Goblins, each counted once.
+    assert contrasts[AGGRO].neighbour_count == 2
+    assert humans is not None and np.allclose(humans, [0.2, 0.8, 0])
+    assert contrasts[ELVES] == NeighbourContrast(None, 0)
+
+def test_the_global_contrast_is_the_plain_mean_of_every_archetypes_shares() -> None:
+    assert np.allclose(build_global_contrast(SHARES), [0.3, 0.45, 0.25])
+
+def test_with_one_neighbour_the_blend_is_half_local_and_half_global() -> None:
+    blended = build_blended_contrast(build_neighbour_contrasts(FOUR, SHARES, NEIGHBOURS)[HUMANS], build_global_contrast(SHARES))
+    assert np.allclose(blended, [0.25, 0.625, 0.125])  # (0.2, 0.8, 0) / 2 + (0.3, 0.45, 0.25) / 2.
+
+def test_with_three_neighbours_the_global_contrast_counts_a_quarter() -> None:
+    blended = build_blended_contrast(NeighbourContrast(np.array([1.0, 0]), 3), np.array([0, 1.0]), BlendRule.GLOBAL_AS_ONE_NEIGHBOUR)
+    assert np.allclose(blended, [0.75, 0.25])
+
+def test_with_no_neighbour_the_blend_is_the_global_contrast() -> None:
+    assert np.allclose(build_blended_contrast(NeighbourContrast(None, 0), np.array([0.3, 0.7])), [0.3, 0.7])

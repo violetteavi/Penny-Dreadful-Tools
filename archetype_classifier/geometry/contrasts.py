@@ -5,8 +5,13 @@ A row contrast is a set of training rows: every other row, or the archetype's si
 Span neighbours: an archetype's spread is 1 - the median cosine of its rows to its centroid (centroids.build_spread). Two archetypes are neighbours
 when the gap between their centroids, 1 - cosine, is within width x the larger of their two spreads: one's span reaches the other's centroid. So a
 tight archetype inside a loose, generic one's span is compared with it, and the loose one with it. There's no cap on how many.
+
+Contrasts as card shares: an archetype's local contrast is the plain mean of its neighbours' card shares, each neighbour counted once; the global
+contrast is the plain mean of every archetype's shares; a blended contrast mixes the two by a BlendRule. A push (signatures.build_push) compares an
+archetype's shares with any of them.
 """
 from dataclasses import dataclass
+from enum import Enum
 from typing import Literal
 
 import numpy as np
@@ -19,12 +24,24 @@ from archetype_classifier.geometry.tree import build_siblings
 type RowContrast = Literal['all', 'siblings']
 
 
+class BlendRule(Enum):
+    GLOBAL_AS_ONE_NEIGHBOUR = 'global_as_one_neighbour'  # w = 1/(k + 1) for k neighbours: the global contrast counts like one more neighbour.
+
+    def global_weight(self, neighbour_count: int) -> float:
+        """The global contrast's share w of the blend. Only one rule so far (an "equal pull" rule is an idea recorded on #62)."""
+        return 1 / (neighbour_count + 1)
+
 @dataclass(frozen=True)
 class Neighbour:
     label_id: int
     cosine: float  # Between the two centroids.
     inside_mine: bool  # Its centroid is within width x my spread (↓: usually more specific than me).
     inside_theirs: bool  # Mine is within width x its spread (↑: usually a more generic archetype that contains me).
+
+@dataclass(frozen=True)
+class NeighbourContrast:
+    local_contrast: np.ndarray | None  # The plain mean of the neighbours' card shares; None with no neighbour.
+    neighbour_count: int
 
 
 def build_contrast_rows(space: DeckSpace, tree: ArchetypeTree, label_id: int, row_contrast: RowContrast) -> np.ndarray:
@@ -46,3 +63,25 @@ def build_span_neighbours(centroids: Centroids, spread: np.ndarray, width: float
         neighbours[labels[i]].append(Neighbour(labels[j], 1 - gap, bool(mine), bool(theirs)))
         neighbours[labels[j]].append(Neighbour(labels[i], 1 - gap, bool(theirs), bool(mine)))
     return {label: sorted(found, key=lambda n: (-n.cosine, n.label_id)) for label, found in neighbours.items()}
+
+
+def build_neighbour_contrasts(centroids: Centroids, shares: np.ndarray, neighbours: dict[int, list[Neighbour]]) -> dict[int, NeighbourContrast]:
+    """Each archetype's local contrast. shares is in label order (centroids.build_shares)."""
+    index = centroids.index()
+    return {label: NeighbourContrast(shares[[index[n.label_id] for n in found]].mean(axis=0) if found else None, len(found))
+            for label, found in neighbours.items()}
+
+
+def build_global_contrast(shares: np.ndarray) -> np.ndarray:
+    """The global centroid as card shares: the plain mean of every archetype's, each counted once. An archetype is in its own global contrast;
+    that only rescales its push."""
+    return shares.mean(axis=0)
+
+
+def build_blended_contrast(neighbour_contrast: NeighbourContrast, global_contrast: np.ndarray,
+                           rule: BlendRule = BlendRule.GLOBAL_AS_ONE_NEIGHBOUR) -> np.ndarray:
+    """(1 - w) x the local contrast + w x the global one, with w from the rule; the global contrast alone when there's no neighbour."""
+    if neighbour_contrast.local_contrast is None:
+        return global_contrast
+    weight = rule.global_weight(neighbour_contrast.neighbour_count)
+    return (1 - weight) * neighbour_contrast.local_contrast + weight * global_contrast

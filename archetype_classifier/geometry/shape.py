@@ -10,8 +10,8 @@ import numpy as np
 
 from archetype_classifier.evaluation.metrics import ArchetypeTree
 from archetype_classifier.geometry.centroids import Centroids
-from archetype_classifier.geometry.defining import build_siblings, build_subtree
 from archetype_classifier.geometry.space import DeckSpace
+from archetype_classifier.geometry.tree import build_siblings, build_subtree
 
 CHUNK = 10_000  # Rows compared with every centroid at once.
 MARGIN = 0.02  # Two children this close are a near-tie (#14: misses are near-ties within 0.02). A starting value, to revisit on the data.

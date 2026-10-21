@@ -27,10 +27,11 @@ from archetype_classifier.evaluation.metrics import ArchetypeTree
 from archetype_classifier.evaluation.store import ModelRecord, identity_hash, load_guesses, load_model, load_model_record, load_run
 from archetype_classifier.geometry.analogies import AnalogyScore, build_analogy_scores, build_pair_analogies, build_strategy_analogies
 from archetype_classifier.geometry.centroids import MIN_ROWS, build_centroids, build_medoids
-from archetype_classifier.geometry.defining import Contrast, build_centroid_push, build_defining_cards, build_presence
+from archetype_classifier.geometry.contrasts import RowContrast
 from archetype_classifier.geometry.faithfulness import build_tree_order
 from archetype_classifier.geometry.shape import build_overlap, build_parent_positions, build_separation
-from archetype_classifier.geometry.space import DeckSpace, build_model_space
+from archetype_classifier.geometry.signatures import build_centroid_push, build_defining_cards
+from archetype_classifier.geometry.space import DeckSpace, build_model_space, build_presence
 
 OUT = Path(__file__).parents[1] / 'docs' / 'experiments'
 DECK_URL = 'https://pennydreadfulmagic.com/decks/{}/'
@@ -96,7 +97,7 @@ def analyse(space: DeckSpace, snapshot: Snapshot, guesses: dict[int, Any], min_r
     presence = build_presence(space)
     separation = {s.label_id: s for s in build_separation(centroids, tree)}
     overlap = build_overlap(space, centroids)
-    defining: dict[tuple[int, Contrast], list[Any]] = {(label, contrast): build_defining_cards(presence, space, tree, label, contrast)
+    defining: dict[tuple[int, RowContrast], list[Any]] = {(label, contrast): build_defining_cards(presence, space, tree, label, contrast)
                                                        for label in centroids.label_ids.tolist() for contrast in ('all', 'siblings')}
     pushes = {label: build_centroid_push(space, tree, label) for label in centroids.label_ids.tolist()}
     strategy = build_strategy_analogies(names, centroids)

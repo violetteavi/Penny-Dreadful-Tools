@@ -57,3 +57,9 @@ def build_medoids(space: DeckSpace, centroids: Centroids) -> dict[int, int]:
         tied = mine[cosines >= cosines.max() - TIE_TOLERANCE]
         medoids[label] = int(max(tied, key=lambda r: (rows.deck_counts[r], rows.newest_deck_ids[r])))
     return medoids
+
+
+def mean_lines(space: DeckSpace, rows: np.ndarray) -> np.ndarray:
+    """The deck-weighted mean of the rows' scaled lines: per card, how much of their average vector it makes up."""
+    weights = space.rows.deck_counts[rows].astype(np.float64)
+    return np.asarray(weights @ space.vectors.lines[rows]).ravel() / weights.sum()

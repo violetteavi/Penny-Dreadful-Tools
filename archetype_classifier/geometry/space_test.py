@@ -11,7 +11,7 @@ from archetype_classifier.card_embeddings.combined_embedding import save_combine
 from archetype_classifier.card_embeddings.deck_vectors import DeckVectors
 from archetype_classifier.data_loading.dataset import CardCount, LabelStatus
 from archetype_classifier.evaluation.model import PredictDeck, TrainingDeck
-from archetype_classifier.geometry.space import DeckSpace, build_model_space, build_space
+from archetype_classifier.geometry.space import DeckSpace, build_model_space, build_presence, build_space
 from archetype_classifier.models.bag_nearest import BagNearestDeck
 from archetype_classifier.models.embedding_nearest import build_training_rows
 from archetype_classifier.models.embedding_nearest_test import EMBEDDING, weighted
@@ -102,3 +102,9 @@ def test_a_models_space_has_exactly_its_row_vectors(small_embedding: Path) -> No
 def test_the_bag_of_cards_is_refused_until_its_own_pass() -> None:
     with pytest.raises(ValueError, match="bag of cards nearest deck"):
         build_model_space(BagNearestDeck({'copies': 'sqrt'}))
+
+def test_presence_counts_a_card_once_per_row_whatever_its_copies() -> None:
+    space = lists_space([(65, deck(Shock=4, Island=56)), (65, deck(Shock=1, Island=59))])
+    presence = build_presence(space)
+    assert presence.cards == ('Island', 'Shock')
+    assert presence.matrix.toarray().tolist() == [[1, 1], [1, 1]]

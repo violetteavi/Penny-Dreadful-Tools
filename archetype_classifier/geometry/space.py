@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 import numpy as np
+from scipy import sparse
 
 from archetype_classifier.card_embeddings.deck_vectors import DeckVectors
 from archetype_classifier.evaluation.model import Model
@@ -20,6 +21,11 @@ class DeckSpace:
     vectors: DeckVectors  # One row per training row: the unit vectors in matrix, their scaled lines in lines.
     cards: tuple[str, ...]  # The columns of vectors.lines.
     embedding: np.ndarray | None  # E, one row per card; None when the lines are the vectors (the bag of cards).
+
+@dataclass(frozen=True)
+class Presence:
+    cards: tuple[str, ...]  # Every card a training row's maindeck plays, in name order.
+    matrix: sparse.csr_matrix  # Rows x cards: 1 where the row plays the card, whatever its copies.
 
 
 def build_space(rows: TrainingRows, vectors: DeckVectors, cards: Sequence[str], embedding: np.ndarray | None) -> DeckSpace:
@@ -40,4 +46,16 @@ def build_model_space(model: Model) -> DeckSpace:
         raise ValueError(f'No space for the {model.name} model yet: only the embedding nearest deck')
     vectors = model.deck_vectors(model.rows.maindecks)
     return build_space(model.rows, vectors, model.embedding.names, model.embedding.vectors.astype(np.float64))
+
+
+def build_presence(space: DeckSpace) -> Presence:
+    """From the rows' maindecks, so a card the embedding lacks still counts."""
+    cards = tuple(sorted({line.card for maindeck in space.rows.maindecks for line in maindeck}))
+    column = {card: i for i, card in enumerate(cards)}
+    rows = [r for r, maindeck in enumerate(space.rows.maindecks) for _ in maindeck]
+    cols = [column[line.card] for maindeck in space.rows.maindecks for line in maindeck]
+    matrix = sparse.csr_matrix((np.ones(len(rows)), (rows, cols)), shape=(len(space.rows.maindecks), len(cards)))
+    matrix.sum_duplicates()
+    matrix.data[:] = 1
+    return Presence(cards, matrix)
 

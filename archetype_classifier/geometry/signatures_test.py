@@ -1,10 +1,10 @@
 """Defining cards and centroid pushes (Scenarios.md, "Archetype geometry")."""
 import numpy as np
 
-from archetype_classifier.data_loading.dataset import ArchetypeSnapshot
-from archetype_classifier.evaluation.metrics import ArchetypeTree
-from archetype_classifier.geometry.defining import build_centroid_push, build_defining_cards, build_presence, build_ranked_cards, build_siblings, build_subtree
+from archetype_classifier.geometry.signatures import build_centroid_push, build_defining_cards, build_ranked_cards
+from archetype_classifier.geometry.space import build_presence
 from archetype_classifier.geometry.space_test import deck, lists_space, rows_space
+from archetype_classifier.geometry.tree_test import ACTUAL_TWIN, AZORIUS_CONTROL, FAMILY_TREE, IZZET_CONTROL, IZZET_TWIN, RED_DECK_WINS, TREE
 
 # Scenario: defining cards rank by evidence, not just by how exclusive they are. An archetype of 500 rows against 84,000 contrast rows.
 
@@ -35,11 +35,6 @@ def test_ties_break_by_log_odds_then_by_name() -> None:
 # Scenario: against its siblings, a card the whole family plays stops being defining. Izzet Control and Azorius Control under Control; Red Deck Wins
 # under Aggro. Each archetype's lists differ only in copies.
 
-CONTROL, AGGRO, IZZET_CONTROL, AZORIUS_CONTROL, RED_DECK_WINS = 1001, 1002, 65, 49, 16
-TREE = ArchetypeTree({CONTROL: ArchetypeSnapshot(CONTROL, 'Control', None, 0), AGGRO: ArchetypeSnapshot(AGGRO, 'Aggro', None, 0),
-                      IZZET_CONTROL: ArchetypeSnapshot(IZZET_CONTROL, 'Izzet Control', CONTROL, 1),
-                      AZORIUS_CONTROL: ArchetypeSnapshot(AZORIUS_CONTROL, 'Azorius Control', CONTROL, 1),
-                      RED_DECK_WINS: ArchetypeSnapshot(RED_DECK_WINS, 'Red Deck Wins', AGGRO, 1)})
 FAMILY = lists_space([*((IZZET_CONTROL, deck(Essence_Scatter=4, Shock=4, Island=21 + i, Mountain=31 - i)) for i in range(10)),
                       *((AZORIUS_CONTROL, deck(Essence_Scatter=4, Island=56 + i)) for i in range(10)),
                       *((RED_DECK_WINS, deck(Shock=4, Mountain=56 + i)) for i in range(30))])
@@ -57,30 +52,10 @@ def test_against_its_siblings_only_the_red_cards_are_listed() -> None:
     assert [(c.rows_in, c.rows_out) for c in ranked] == [(10, 0), (10, 0)]
 
 
-# Siblings: the other archetypes under the same parent, with their own children.
-
-IZZET_TWIN, ACTUAL_TWIN, COMBO = 549, 557, 1003
-FAMILY_TREE = ArchetypeTree({**TREE.archetypes, COMBO: ArchetypeSnapshot(COMBO, 'Combo', None, 0),
-                             ACTUAL_TWIN: ArchetypeSnapshot(ACTUAL_TWIN, 'Actual Twin', COMBO, 1),
-                             IZZET_TWIN: ArchetypeSnapshot(IZZET_TWIN, 'Izzet Twin', ACTUAL_TWIN, 2)})
-
-def test_a_siblings_children_count_among_the_siblings() -> None:
-    assert build_siblings(FAMILY_TREE, COMBO) == {CONTROL, IZZET_CONTROL, AZORIUS_CONTROL, AGGRO, RED_DECK_WINS}  # Top-level: the other top-level subtrees.
-    assert build_siblings(FAMILY_TREE, IZZET_CONTROL) == {AZORIUS_CONTROL}
-    assert build_subtree(FAMILY_TREE, COMBO) == {COMBO, ACTUAL_TWIN, IZZET_TWIN}
-
 def test_an_only_child_has_no_sibling_contrast_and_no_defining_cards_against_it() -> None:
     space = lists_space([(IZZET_TWIN, deck(Shock=4, Island=56)), (ACTUAL_TWIN, deck(Shock=4, Mountain=56))])
-    assert build_siblings(FAMILY_TREE, IZZET_TWIN) == frozenset()
     assert build_defining_cards(build_presence(space), space, FAMILY_TREE, IZZET_TWIN, 'siblings') == []
     assert [c.card for c in build_defining_cards(build_presence(space), space, FAMILY_TREE, IZZET_TWIN, 'all')] == ['Island']
-
-def test_presence_counts_a_card_once_per_row_whatever_its_copies() -> None:
-    space = lists_space([(IZZET_CONTROL, deck(Shock=4, Island=56)), (IZZET_CONTROL, deck(Shock=1, Island=59))])
-    presence = build_presence(space)
-    assert presence.cards == ('Island', 'Shock')
-    assert presence.matrix.toarray().tolist() == [[1, 1], [1, 1]]
-
 
 # Scenario: centroid pushes add up to what separates an archetype from its siblings. The hand-made embedding; no weights, linear copies.
 

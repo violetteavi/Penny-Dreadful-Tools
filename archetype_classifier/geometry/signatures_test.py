@@ -101,3 +101,10 @@ def test_without_an_embedding_a_push_ranks_cards_by_how_much_their_shares_differ
     assert np.isclose(push.distance, np.sqrt(0.42))
     assert [(c.card, round(c.push, 4)) for c in push.cards] == [('dimension 1', 0.3858), ('dimension 3', 0.2469), ('dimension 2', 0.0154)]
     assert np.isclose(sum(c.push for c in push.cards), push.distance)
+
+def test_identical_averages_have_nothing_to_separate_them() -> None:
+    space = lists_space([(IZZET_CONTROL, deck(Island=60))])
+    shares = np.array([0.5, 0.5, 0, 0, 0])
+    push = build_push(space, shares, shares)
+    assert push.distance == 0
+    assert [(c.card, c.alignment, c.push) for c in push.cards] == [('Island', 0, 0), ('Mountain', 0, 0)]

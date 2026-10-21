@@ -1,7 +1,7 @@
 """The #64 exploration: archetype geometry in a nearest-deck model's space (Scenarios.md, "Archetype geometry"; 20261016_Archetype_Geometry_Architecture.pdf).
 
 For each run it refits the stored model (store.load_model, which checks the stored fingerprints), reads its space off it (build_model_space), and
-applies the geometry functions: centroids, typical lists and cohesion; defining cards against all rows and against siblings, and centroid pushes;
+applies the geometry functions: centroids, typical lists and cohesion; defining cards against all rows and against siblings, and sibling pushes;
 separation, overlap and where parent-labelled rows sit; strategy and combo analogies. It composes existing functions only. Nothing is tuned.
 
 It writes a summary into docs/experiments/, and the full tables (CSV) and figure data (.npz) into --out, for the results PDF.
@@ -30,7 +30,7 @@ from archetype_classifier.geometry.centroids import MIN_ROWS, build_centroids, b
 from archetype_classifier.geometry.contrasts import RowContrast
 from archetype_classifier.geometry.faithfulness import build_tree_order
 from archetype_classifier.geometry.shape import build_overlap, build_parent_positions, build_separation
-from archetype_classifier.geometry.signatures import build_centroid_push, build_defining_cards
+from archetype_classifier.geometry.signatures import build_defining_cards, build_sibling_push
 from archetype_classifier.geometry.space import DeckSpace, build_model_space, build_presence
 
 OUT = Path(__file__).parents[1] / 'docs' / 'experiments'
@@ -99,7 +99,7 @@ def analyse(space: DeckSpace, snapshot: Snapshot, guesses: dict[int, Any], min_r
     overlap = build_overlap(space, centroids)
     defining: dict[tuple[int, RowContrast], list[Any]] = {(label, contrast): build_defining_cards(presence, space, tree, label, contrast)
                                                        for label in centroids.label_ids.tolist() for contrast in ('all', 'siblings')}
-    pushes = {label: build_centroid_push(space, tree, label) for label in centroids.label_ids.tolist()}
+    pushes = {label: build_sibling_push(space, tree, label) for label in centroids.label_ids.tolist()}
     strategy = build_strategy_analogies(names, centroids)
     pairs, skipped_pairs = build_pair_analogies(COMBO_PAIRS, names, centroids)
     analogies = build_analogy_scores(centroids, [*strategy, *pairs])
@@ -172,7 +172,7 @@ def summary(results: Sequence[dict[str, Any]], prs: Sequence[int]) -> str:
     if first['missing_curated']:
         lines += ['', f'Curated archetypes without a centroid: {", ".join(first["missing_curated"])}.']
     lines += ['', f'## Defining cards and pushes (run {first["provenance"]["run"]})', '',
-              f'Top {TOP} by z (log-odds in brackets) against all other rows and against siblings; the largest centroid pushes against siblings, and the most negative.', '']
+              f'Top {TOP} by z (log-odds in brackets) against all other rows and against siblings; the largest sibling pushes, and the most negative.', '']
     for label in first['curated']:
         push = first['pushes'][label]
         lines += [f'**{names[label]}**', '', f'- All rows: {cards_text(first["defining"][(label, "all")])}',

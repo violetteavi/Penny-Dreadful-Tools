@@ -1763,7 +1763,7 @@ Izzet Control and Azorius Control are siblings under Control; Red Deck Wins is u
 - **Why it matters:** against every deck, a control deck's defining cards are its counterspells, which every control deck plays. Against its siblings, what makes Izzet Control *Izzet* comes out: the red cards.
 - **Check:** unit-test both contrasts' values and orders.
 
-### Centroid pushes add up to what separates an archetype from its siblings
+### Sibling pushes add up to what separates an archetype from its siblings
 
 A hand-made embedding: Island (1, 0, 0), Mountain (0.8, 0, 0.6), Essence Scatter (0, 1, 0), Negate (0, 0.8, 0.6), Shock (0, 0, 1). Deck vectors with no card weights and linear copies, as in run 14. One Izzet Control row, "4 Essence Scatter, 4 Negate, 4 Shock, 24 Island, 24 Mountain", and its one sibling row, Azorius Control's "4 Essence Scatter, 4 Negate, 52 Island".
 

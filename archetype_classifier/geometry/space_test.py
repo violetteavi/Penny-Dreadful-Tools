@@ -35,7 +35,7 @@ def rows_space(rows: Sequence[tuple[int, Sequence[float]] | tuple[int, Sequence[
     return build_space(build_training_rows(training), matrix, sparse.csr_matrix(matrix), tuple(f'dimension {d + 1}' for d in range(matrix.shape[1])), None)
 
 
-# A hand-made card embedding (Scenarios.md, "Centroid pushes add up to what separates an archetype from its siblings"), real cards legal in seasons 30 and 39.
+# A hand-made card embedding (Scenarios.md, "Sibling pushes add up to what separates an archetype from its siblings"), real cards legal in seasons 30 and 39.
 CARD_EMBEDDING: dict[str, tuple[float, ...]] = {'Island': (1, 0, 0), 'Mountain': (0.8, 0, 0.6), 'Essence Scatter': (0, 1, 0), 'Negate': (0, 0.8, 0.6), 'Shock': (0, 0, 1)}
 
 def lists_space(rows: Sequence[tuple[int, tuple[CardCount, ...]]], embedding: Mapping[str, Sequence[float]] = CARD_EMBEDDING) -> DeckSpace:

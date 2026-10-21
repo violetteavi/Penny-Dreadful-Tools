@@ -1,4 +1,4 @@
-"""What sets an archetype apart from a contrast, as ranked cards (#64, #62; Scenarios.md, "Archetype geometry"): defining cards and centroid pushes.
+"""What sets an archetype apart from a contrast, as ranked cards (#64, #62; Scenarios.md, "Archetype geometry"): defining cards and pushes.
 
 Defining cards are the cards an archetype's rows play far more often than a row contrast's rows.
 
@@ -12,7 +12,7 @@ Cards rank by z, so a card seen in few rows ranks low without a play-rate floor 
 
 A push is what the deck vectors themselves use to tell an archetype from a contrast. Each row's unit vector is its scaled lines times the
 embedding, so an archetype's deck-weighted mean vector is mu_A = sum_c a_c e_c, with a_c the deck-weighted mean of card c's scaled line: how much of the
-archetype's average is card c (its card shares). With b_c the contrast's card shares (its siblings' rows for the centroid push) and u the unit
+archetype's average is card c (its card shares). With b_c the contrast's card shares (its siblings' rows pooled for the sibling push) and u the unit
 direction from mu_B to mu_A, card c pushes (a_c - b_c)(e_c . u), and the pushes add up exactly to |mu_A - mu_B|. In the bag of cards each card is its
 own coordinate (DeckSpace.vector and alignment).
 """
@@ -38,7 +38,7 @@ class CardPush:
     push: float  # (share_in - share_out) x alignment.
 
 @dataclass(frozen=True)
-class CentroidPush:
+class Push:
     distance: float  # |mu_A - mu_B|, which the pushes add up to.
     cards: list[CardPush]  # Every card either side plays, the largest push first.
 
@@ -70,7 +70,7 @@ def build_defining_cards(presence: Presence, space: DeckSpace, tree: ArchetypeTr
     return build_ranked_cards(presence.cards, k_a, int(mine.sum()), k_o, int(others.sum()), top)
 
 
-def build_push(space: DeckSpace, archetype_shares: np.ndarray, contrast_shares: np.ndarray) -> CentroidPush:
+def build_push(space: DeckSpace, archetype_shares: np.ndarray, contrast_shares: np.ndarray) -> Push:
     """Each card's push between an archetype's card shares and a contrast's, for every card either side plays."""
     shift = archetype_shares - contrast_shares
     difference = space.vector(shift)
@@ -79,10 +79,10 @@ def build_push(space: DeckSpace, archetype_shares: np.ndarray, contrast_shares: 
     played = np.flatnonzero((archetype_shares != 0) | (contrast_shares != 0)).tolist()
     pushes = [CardPush(space.cards[c], float(archetype_shares[c]), float(contrast_shares[c]), float(alignment[c]), float(shift[c] * alignment[c]))
               for c in played]
-    return CentroidPush(distance, sorted(pushes, key=lambda p: (-p.push, p.card)))
+    return Push(distance, sorted(pushes, key=lambda p: (-p.push, p.card)))
 
 
-def build_centroid_push(space: DeckSpace, tree: ArchetypeTree, label_id: int) -> CentroidPush | None:
+def build_sibling_push(space: DeckSpace, tree: ArchetypeTree, label_id: int) -> Push | None:
     """Each card's push between the archetype and its siblings' rows pooled, or None when it has no siblings' rows to compare with."""
     siblings = build_contrast_rows(space, tree, label_id, 'siblings')
     if not siblings.any():

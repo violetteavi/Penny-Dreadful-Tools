@@ -1,7 +1,7 @@
-"""Defining cards and centroid pushes (Scenarios.md, "Archetype geometry")."""
+"""Defining cards and pushes (Scenarios.md, "Archetype geometry")."""
 import numpy as np
 
-from archetype_classifier.geometry.signatures import build_centroid_push, build_defining_cards, build_push, build_ranked_cards
+from archetype_classifier.geometry.signatures import build_defining_cards, build_push, build_ranked_cards, build_sibling_push
 from archetype_classifier.geometry.space import build_presence
 from archetype_classifier.geometry.space_test import deck, lists_space, rows_space
 from archetype_classifier.geometry.tree_test import ACTUAL_TWIN, AZORIUS_CONTROL, FAMILY_TREE, IZZET_CONTROL, IZZET_TWIN, RED_DECK_WINS, TREE
@@ -57,12 +57,12 @@ def test_an_only_child_has_no_sibling_contrast_and_no_defining_cards_against_it(
     assert build_defining_cards(build_presence(space), space, FAMILY_TREE, IZZET_TWIN, 'siblings') == []
     assert [c.card for c in build_defining_cards(build_presence(space), space, FAMILY_TREE, IZZET_TWIN, 'all')] == ['Island']
 
-# Scenario: centroid pushes add up to what separates an archetype from its siblings. The hand-made embedding; no weights, linear copies.
+# Scenario: sibling pushes add up to what separates an archetype from its siblings. The hand-made embedding; no weights, linear copies.
 
 def test_centroid_pushes_add_up_to_the_distance_between_the_averages() -> None:
     space = lists_space([(IZZET_CONTROL, deck(Essence_Scatter=4, Negate=4, Shock=4, Island=24, Mountain=24)),
                          (AZORIUS_CONTROL, deck(Essence_Scatter=4, Negate=4, Island=52))])
-    push = build_centroid_push(space, TREE, IZZET_CONTROL)
+    push = build_sibling_push(space, TREE, IZZET_CONTROL)
     assert push is not None
     assert np.isclose(push.distance, 0.3960, atol=5e-5)
     assert [c.card for c in push.cards] == ['Mountain', 'Island', 'Shock', 'Negate', 'Essence Scatter']
@@ -74,11 +74,11 @@ def test_centroid_pushes_add_up_to_the_distance_between_the_averages() -> None:
 
 def test_an_archetype_with_no_siblings_has_no_push() -> None:
     space = lists_space([(IZZET_TWIN, deck(Shock=4, Island=56)), (ACTUAL_TWIN, deck(Shock=4, Mountain=56))])
-    assert build_centroid_push(space, FAMILY_TREE, IZZET_TWIN) is None
+    assert build_sibling_push(space, FAMILY_TREE, IZZET_TWIN) is None
 
 def test_with_no_embedding_each_card_is_its_own_coordinate() -> None:
     space = rows_space([(IZZET_CONTROL, (1, 0, 0)), (AZORIUS_CONTROL, (0, 1, 0))])  # The bag of cards: the lines are the vectors.
-    push = build_centroid_push(space, TREE, IZZET_CONTROL)
+    push = build_sibling_push(space, TREE, IZZET_CONTROL)
     assert push is not None
     assert np.isclose(push.distance, np.sqrt(2))
     assert [(c.card, round(c.alignment, 4), round(c.push, 4)) for c in push.cards] == [('dimension 1', 0.7071, 0.7071), ('dimension 2', -0.7071, 0.7071)]

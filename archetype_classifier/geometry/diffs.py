@@ -70,4 +70,4 @@ def build_share_axis(archetype_shares: np.ndarray, contrast_shares: np.ndarray) 
 def build_shift(axis: Axis, deck_lines: np.ndarray, target_lines: np.ndarray, movement: float) -> Shift:
     """movement is how far D moved at all: |v_D - v_T| on a space's axis, |l_D - l_T| on the share axis."""
     raw = float((deck_lines - target_lines) @ axis.alignment)
-    return Shift(raw, raw / axis.gap, abs(raw) / movement)
+    return Shift(raw, raw / axis.gap, abs(raw) / movement if movement > 0 else None)

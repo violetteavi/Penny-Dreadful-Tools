@@ -61,3 +61,9 @@ def test_the_shift_is_how_far_d_moved_along_the_axis() -> None:
     assert shift.raw == pytest.approx(0.4 * math.sqrt(2))  # (0, 0.6, -0.2) . (0, 1, -1) / sqrt(2): toward Essence Scatter.
     assert shift.fraction == pytest.approx(0.4)
     assert shift.on_axis == pytest.approx(math.sqrt(0.8))
+
+def test_an_unchanged_deck_has_no_shift_and_no_on_axis_share() -> None:
+    axis = build_axis(lists_space([(1, deck(Island=60))]), ALL_ESSENCE_SCATTER, ALL_SHOCK)
+    assert axis is not None
+    shift = build_shift(axis, TARGET_LINES, TARGET_LINES, movement=0)
+    assert (shift.raw, shift.fraction, shift.on_axis) == (0, 0, None)

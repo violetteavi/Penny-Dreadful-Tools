@@ -1,6 +1,7 @@
 """Which training rows a deck is diffed against (#62; 20261024_Deck_Diffs_Architecture.pdf): the models' matches, typical lists, and coverage draws by
 how the two labels are related.
 """
+from collections.abc import Set
 from enum import Enum
 
 import numpy as np
@@ -48,3 +49,22 @@ def build_near_rivals(similarities: np.ndarray, rows: TrainingRows, label_id: in
     another label counts: it's the nearest rival there is. Of a label's tied best rows, the first."""
     rivals = [c.archetype_id for c in build_candidates(similarities, rows) if c.archetype_id != label_id][:count]
     return [int(np.flatnonzero(rows.labels == rival)[np.argmax(similarities[rows.labels == rival])]) for rival in rivals]
+
+
+DRAWN = (PairClass.SAME, PairClass.SIBLING, PairClass.SAME_BRANCH, PairClass.UNRELATED, PairClass.ANCESTOR_DESCENDANT)
+
+def build_coverage_rows(anchor_label: int, anchor_row: int | None, rows: TrainingRows, tree: ArchetypeTree, eligible: Set[int],
+                        rng: np.random.Generator) -> dict[PairClass, int | None]:
+    """One row per drawn class: a label uniformly among the eligible labels in the class, so large archetypes don't dominate it, then a row uniformly
+    within the label. Never the anchor's own row (None for a deck that isn't a training row); None for a class with nothing to draw."""
+    drawn: dict[PairClass, int | None] = {}
+    for pair_class in DRAWN:
+        candidates = {label: [r for r in np.flatnonzero(rows.labels == label).tolist() if r != anchor_row]
+                      for label in sorted(eligible) if build_pair_class(tree, anchor_label, label) == pair_class}
+        labels = [label for label, found in candidates.items() if found]
+        if not labels:
+            drawn[pair_class] = None
+            continue
+        found = candidates[labels[rng.integers(len(labels))]]
+        drawn[pair_class] = int(found[rng.integers(len(found))])
+    return drawn

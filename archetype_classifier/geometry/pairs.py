@@ -56,10 +56,13 @@ def build_coverage_rows(anchor_label: int, anchor_row: int | None, rows: Trainin
                         rng: np.random.Generator) -> dict[PairClass, int | None]:
     """One row per drawn class: a label uniformly among the eligible labels in the class, so large archetypes don't dominate it, then a row uniformly
     within the label. Never the anchor's own row (None for a deck that isn't a training row); None for a class with nothing to draw."""
+    # Each label's rows are one run of rows.label_order, in row order, so no label's rows are searched for.
+    ends = np.r_[rows.label_starts[1:], len(rows.label_order)]
+    runs = {int(rows.labels[rows.label_order[start]]): (int(start), int(end)) for start, end in zip(rows.label_starts, ends, strict=True)}
+    classes = {label: build_pair_class(tree, anchor_label, label) for label in sorted(eligible)}  # Eligible labels have rows.
     drawn: dict[PairClass, int | None] = {}
     for pair_class in DRAWN:
-        candidates = {label: [r for r in np.flatnonzero(rows.labels == label).tolist() if r != anchor_row]
-                      for label in sorted(eligible) if build_pair_class(tree, anchor_label, label) == pair_class}
+        candidates = {label: [r for r in rows.label_order[slice(*runs[label])].tolist() if r != anchor_row] for label, c in classes.items() if c == pair_class}
         labels = [label for label, found in candidates.items() if found]
         if not labels:
             drawn[pair_class] = None

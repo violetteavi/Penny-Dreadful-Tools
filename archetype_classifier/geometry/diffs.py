@@ -16,6 +16,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 import numpy as np
+from scipy import stats
 
 from archetype_classifier.data_loading.dataset import CardCount
 from archetype_classifier.geometry.space import DeckSpace
@@ -50,6 +51,13 @@ class CardContribution:
 class Contributions:
     cards: list[CardContribution]  # Every card whose copies changed, in name order.
     rescaling: float  # The kept cards, whose copies didn't change: their lines still move when the deck's length does.
+
+@dataclass(frozen=True)
+class Agreement:
+    pairs: int  # Pairs with both shifts.
+    sign_agreement: float
+    spearman: float
+    small_flip_share: float  # Of the sign disagreements, the share where both shifts are small.
 
 
 def build_deck_diff(target: tuple[CardCount, ...], deck: tuple[CardCount, ...]) -> DeckDiff:
@@ -109,3 +117,12 @@ def build_net_shift(space: DeckSpace, deck_lines: np.ndarray, deck_length: float
     """lines are scaled and lengths are the decks' lengths before scaling (space.build_placed_decks), so lines x length is a deck's unscaled lines."""
     difference = space.vector(deck_lines * deck_length - target_lines * target_length)
     return float(np.linalg.norm(difference)) / ((deck_length + target_length) / 2)
+
+
+def build_agreement(first: Sequence[float | None], second: Sequence[float | None], small: float = 0.05) -> Agreement:
+    """Two shift fractions over the same pairs, skipping a pair where either is missing."""
+    both = [(a, b) for a, b in zip(first, second, strict=True) if a is not None and b is not None]
+    x, y = np.array([a for a, _ in both]), np.array([b for _, b in both])
+    flips = np.sign(x) != np.sign(y)
+    small_flips = flips & (np.abs(x) < small) & (np.abs(y) < small)
+    return Agreement(len(both), float(1 - flips.mean()), float(stats.spearmanr(x, y).statistic), float(small_flips.sum() / flips.sum()))

@@ -5,7 +5,8 @@ import numpy as np
 import pytest
 
 from archetype_classifier.data_loading.dataset import CardCount
-from archetype_classifier.geometry.diffs import CardContribution, DeckDiff, build_axis, build_contributions, build_deck_diff, build_net_shift, build_share_axis, build_shift
+from archetype_classifier.geometry.diffs import Agreement, CardContribution, DeckDiff, build_axis, build_contributions, build_deck_diff, build_net_shift, build_share_axis, build_shift
+from archetype_classifier.geometry.diffs import build_agreement
 from archetype_classifier.geometry.space_test import deck, lists_space, rows_space
 
 ROOT_HALF = math.sqrt(0.5)
@@ -114,3 +115,12 @@ def test_the_net_shift_is_symmetric_and_ignores_overall_size() -> None:
     assert build_net_shift(space, target_lines, lengths[0], deck_lines, lengths[1]) == pytest.approx(forward)  # Swapping D and T.
     assert build_net_shift(space, double_deck_lines, 2 * lengths[1], double_target_lines, 2 * lengths[0]) == pytest.approx(forward)  # Every copy doubled.
     assert build_net_shift(space, target_lines, lengths[0], target_lines, lengths[0]) == 0
+
+
+# Agreement between two spaces' shift fractions over the same pairs.
+
+def test_agreement_counts_signs_ranks_and_small_flips_over_pairs_with_both() -> None:
+    first = [0.1, 0.2, -0.3, 0.01, 0.4, None, 0.5]
+    second = [0.2, 0.1, -0.1, -0.02, -0.3, 0.3, None]
+    # Five pairs have both. Ranks 3, 4, 1, 2, 5 against 5, 4, 2, 3, 1: rho = 1 - 6 x 22 / (5 x 24) = -0.1. Two flips: 0.01 / -0.02 is small, 0.4 / -0.3 isn't.
+    assert build_agreement(first, second) == Agreement(pairs=5, sign_agreement=pytest.approx(0.6), spearman=pytest.approx(-0.1), small_flip_share=pytest.approx(0.5))

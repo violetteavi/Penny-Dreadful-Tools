@@ -97,5 +97,6 @@ def build_contributions(axis: Axis, cards: Sequence[str], deck_lines: np.ndarray
     for line in diff.kept + diff.added:
         after[line.card] += line.n
     changed = sorted({line.card for line in diff.removed + diff.added})
-    listed = [CardContribution(card, before.get(card, 0), after.get(card, 0), float(parts[column[card]])) for card in changed]
+    listed = [CardContribution(card, before[card], after[card], float(parts[column[card]]) if card in column else 0.0)  # No column, no part.
+              for card in changed]
     return Contributions(listed, float(parts.sum()) - sum(c.contribution for c in listed))

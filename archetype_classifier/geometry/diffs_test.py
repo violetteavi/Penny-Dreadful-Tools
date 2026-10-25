@@ -4,6 +4,7 @@ import math
 import numpy as np
 import pytest
 
+from archetype_classifier.data_loading.dataset import CardCount
 from archetype_classifier.geometry.diffs import CardContribution, DeckDiff, build_axis, build_contributions, build_deck_diff, build_share_axis, build_shift
 from archetype_classifier.geometry.space_test import deck, lists_space, rows_space
 
@@ -84,3 +85,12 @@ def test_each_changed_card_contributes_and_the_kept_cards_rescale() -> None:
     assert contributions.cards == [CardContribution('Essence Scatter', 0, 2, pytest.approx(0.025222, abs=1e-6)),
                                    CardContribution('Shock', 4, 2, pytest.approx(0.015095, abs=1e-6))]  # 4 -> 2: its own row, though 2 are kept.
     assert contributions.rescaling == pytest.approx(-0.000717, abs=1e-6)  # Island, kept: its line shrinks, and it points away from Essence Scatter.
+
+def test_a_card_the_space_lacks_contributes_nothing_but_is_listed() -> None:
+    space = lists_space([(1, SWAP_TARGET), (2, SWAP_DECK)])
+    axis = build_axis(space, ALL_ESSENCE_SCATTER, ALL_MOUNTAIN)
+    assert axis is not None
+    target_lines, deck_lines = space.lines.toarray()
+    with_fury = (*SWAP_DECK, CardCount("Smaug's Fury", 1))  # No column for Smaug's Fury, like an unseen card in the bag.
+    contributions = build_contributions(axis, space.cards, deck_lines, target_lines, build_deck_diff(SWAP_TARGET, with_fury))
+    assert [(c.card, c.copies_deck, c.contribution) for c in contributions.cards][-1] == ("Smaug's Fury", 1, 0)

@@ -149,3 +149,14 @@ def test_with_no_weights_and_linear_copies_a_line_is_its_copies(small_embedding:
     placed = build_placed_decks(model, [maindeck])
     column = {card: i for i, card in enumerate(model.embedding.names)}
     assert [placed.lengths[0] * placed.lines[0, column[line.card]] for line in maindeck] == pytest.approx([56, 4])
+
+def test_placed_decks_in_the_bag_count_an_unseen_card_in_their_length() -> None:
+    model = fitted()
+    maindeck = deck(Burst_Lightning=4, Shock=4, Mountain=52, Smaug_s_Fury=4)  # Smaug's Fury: no training row plays it.
+    placed = build_placed_decks(model, [maindeck])
+    vectors = model.bag_vectors([maindeck])
+    assert sparse.issparse(placed.matrix) and (placed.matrix != vectors.matrix).nnz == 0
+    assert (placed.lines != vectors.matrix).nnz == 0
+    known = [line for line in maindeck if line.card in model.vocabulary]
+    assert [placed.lengths[0] * placed.lines[0, model.vocabulary[line.card]] for line in known] == pytest.approx(
+        [math.sqrt(line.n) * model.card_weights.weight(line.card) for line in known])

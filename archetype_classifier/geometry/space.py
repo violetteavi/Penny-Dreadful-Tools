@@ -85,13 +85,19 @@ def build_presence(space: DeckSpace) -> Presence:
 
 def build_placed_decks(model: Model, maindecks: Sequence[tuple[CardCount, ...]]) -> PlacedDecks:
     """Any maindecks placed in a nearest deck's space by its own code (#62). Each deck's length is read back from one of its lines, so the model's
-    weighting isn't repeated: a line's unscaled value, copies(n) x the card's weight, over its scaled value."""
-    vectors = model.deck_vectors(maindecks)
+    weighting isn't repeated: a line's unscaled value, copies(n) x the card's weight, over its scaled value. In the bag of cards that length counts
+    unseen cards too, as the bag's own scaling does."""
+    if isinstance(model, EmbeddingNearestDeck):
+        vectors = model.deck_vectors(maindecks)
+        matrix, lines, cards = vectors.matrix, vectors.lines, model.embedding.names
+    elif isinstance(model, BagNearestDeck):
+        matrix = lines = model.bag_vectors(maindecks).matrix
+        cards = sorted(model.vocabulary, key=model.vocabulary.__getitem__)
     copies = COPIES[model.copies]
     weight = (lambda card: 1.0) if model.card_weights is None else model.card_weights.weight
-    column = {card: i for i, card in enumerate(model.embedding.names)}
+    column = {card: i for i, card in enumerate(cards)}
     lengths = np.zeros(len(maindecks))
     for r, maindeck in enumerate(maindecks):
         line = next(line for line in maindeck if line.card in column)
-        lengths[r] = copies(line.n) * weight(line.card) / vectors.lines[r, column[line.card]]
-    return PlacedDecks(vectors.matrix, vectors.lines, lengths)
+        lengths[r] = copies(line.n) * weight(line.card) / lines[r, column[line.card]]
+    return PlacedDecks(matrix, lines, lengths)

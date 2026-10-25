@@ -41,5 +41,7 @@ def build_axis(space: DeckSpace, archetype_shares: np.ndarray, contrast_shares: 
     """The axis in the space, with each card's alignment e_c . u (alpha); None when the two centroids coincide."""
     difference = space.vector(archetype_shares - contrast_shares)
     gap = float(np.linalg.norm(difference))
+    if gap == 0:
+        return None
     direction = difference / gap
     return Axis(direction, gap, space.alignment(direction))

@@ -28,3 +28,6 @@ def test_the_axis_points_from_the_contrast_to_the_archetype() -> None:
     assert axis.gap == pytest.approx(math.sqrt(2))  # From (0, 0, 1) to (0, 1, 0).
     assert axis.direction == pytest.approx([0, ROOT_HALF, -ROOT_HALF])
     assert axis.alignment == pytest.approx([0, -0.6 * ROOT_HALF, ROOT_HALF, 0.2 * ROOT_HALF, -ROOT_HALF])
+
+def test_no_axis_when_the_centroids_coincide() -> None:
+    assert build_axis(lists_space([(1, deck(Island=60))]), ALL_SHOCK, ALL_SHOCK) is None

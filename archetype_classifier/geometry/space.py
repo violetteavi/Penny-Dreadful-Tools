@@ -87,7 +87,8 @@ def build_placed_decks(model: Model, maindecks: Sequence[tuple[CardCount, ...]])
     """Any maindecks placed in a nearest deck's space by its own code (#62). Each deck's length is read back from one of its lines, so the model's
     weighting isn't repeated: a line's unscaled value, copies(n) x the card's weight, over its scaled value."""
     vectors = model.deck_vectors(maindecks)
-    copies, weight = COPIES[model.copies], model.card_weights.weight
+    copies = COPIES[model.copies]
+    weight = (lambda card: 1.0) if model.card_weights is None else model.card_weights.weight
     column = {card: i for i, card in enumerate(model.embedding.names)}
     lengths = np.zeros(len(maindecks))
     for r, maindeck in enumerate(maindecks):

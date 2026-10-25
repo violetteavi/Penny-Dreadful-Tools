@@ -142,3 +142,10 @@ def test_placed_decks_are_the_models_own_vectors_with_their_lengths(small_embedd
     for r, maindeck in enumerate(maindecks):  # Each line back unscaled: sqrt(copies) x the card's weight.
         assert [placed.lengths[r] * placed.lines[r, column[line.card]] for line in maindeck] == pytest.approx(
             [math.sqrt(line.n) * model.card_weights.weight(line.card) for line in maindeck])
+
+def test_with_no_weights_and_linear_copies_a_line_is_its_copies(small_embedding: Path) -> None:
+    model = weighted(small_embedding, weights='none', copies='linear')  # Run 14's kind of model.
+    maindeck = deck(Shock=4, Mountain=56)
+    placed = build_placed_decks(model, [maindeck])
+    column = {card: i for i, card in enumerate(model.embedding.names)}
+    assert [placed.lengths[0] * placed.lines[0, column[line.card]] for line in maindeck] == pytest.approx([56, 4])

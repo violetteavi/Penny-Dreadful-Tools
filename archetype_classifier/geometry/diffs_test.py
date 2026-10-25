@@ -104,3 +104,13 @@ def test_the_net_shift_is_the_unscaled_change_over_the_mean_length() -> None:
     target_lines, deck_lines = space.lines.toarray()
     lengths = math.sqrt(56 ** 2 + 4 ** 2), math.sqrt(56 ** 2 + 2 ** 2 + 2 ** 2)
     assert build_net_shift(space, deck_lines, lengths[1], target_lines, lengths[0]) == pytest.approx(2 * math.sqrt(2) / (sum(lengths) / 2))
+
+def test_the_net_shift_is_symmetric_and_ignores_overall_size() -> None:
+    doubled_target, doubled_deck = deck(Island=112, Shock=8), deck(Island=112, Essence_Scatter=4, Shock=4)
+    space = lists_space([(1, SWAP_TARGET), (2, SWAP_DECK), (3, doubled_target), (4, doubled_deck)])
+    target_lines, deck_lines, double_target_lines, double_deck_lines = space.lines.toarray()
+    lengths = math.sqrt(56 ** 2 + 4 ** 2), math.sqrt(56 ** 2 + 2 ** 2 + 2 ** 2)
+    forward = build_net_shift(space, deck_lines, lengths[1], target_lines, lengths[0])
+    assert build_net_shift(space, target_lines, lengths[0], deck_lines, lengths[1]) == pytest.approx(forward)  # Swapping D and T.
+    assert build_net_shift(space, double_deck_lines, 2 * lengths[1], double_target_lines, 2 * lengths[0]) == pytest.approx(forward)  # Every copy doubled.
+    assert build_net_shift(space, target_lines, lengths[0], target_lines, lengths[0]) == 0

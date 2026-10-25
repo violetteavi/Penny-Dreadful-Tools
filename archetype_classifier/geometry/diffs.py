@@ -47,9 +47,12 @@ def build_axis(space: DeckSpace, archetype_shares: np.ndarray, contrast_shares: 
     return Axis(direction, gap, space.alignment(direction))
 
 
-def build_share_axis(archetype_shares: np.ndarray, contrast_shares: np.ndarray) -> Axis:
-    """The same axis over card shares, each card its own coordinate: each card's alignment is beta_c = (a_c - b_c) / |a - b|."""
+def build_share_axis(archetype_shares: np.ndarray, contrast_shares: np.ndarray) -> Axis | None:
+    """The same axis over card shares, each card its own coordinate: each card's alignment is beta_c = (a_c - b_c) / |a - b|. None when the shares
+    coincide."""
     difference = archetype_shares - contrast_shares
     gap = float(np.linalg.norm(difference))
+    if gap == 0:
+        return None
     direction = difference / gap
     return Axis(direction, gap, direction)

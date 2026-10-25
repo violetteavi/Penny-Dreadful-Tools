@@ -38,3 +38,6 @@ def test_the_share_axis_aligns_each_card_by_its_share_difference() -> None:
     assert axis is not None
     assert axis.gap == pytest.approx(math.sqrt(2))
     assert axis.alignment == pytest.approx([0, 0, ROOT_HALF, 0, -ROOT_HALF])  # beta: the card's own share difference, not its text.
+
+def test_no_share_axis_when_the_shares_coincide() -> None:
+    assert build_share_axis(ALL_SHOCK, ALL_SHOCK) is None

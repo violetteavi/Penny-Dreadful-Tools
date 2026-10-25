@@ -24,6 +24,7 @@ import numpy as np
 from archetype_classifier.evaluation.metrics import ArchetypeTree
 from archetype_classifier.geometry.centroids import mean_lines
 from archetype_classifier.geometry.contrasts import RowContrast, build_contrast_rows
+from archetype_classifier.geometry.diffs import build_axis
 from archetype_classifier.geometry.space import DeckSpace, Presence
 
 TOP = 5
@@ -73,9 +74,9 @@ def build_defining_cards(presence: Presence, space: DeckSpace, tree: ArchetypeTr
 def build_push(space: DeckSpace, archetype_shares: np.ndarray, contrast_shares: np.ndarray) -> Push:
     """Each card's push between an archetype's card shares and a contrast's, for every card either side plays."""
     shift = archetype_shares - contrast_shares
-    difference = space.vector(shift)
-    distance = float(np.linalg.norm(difference))
-    alignment = space.alignment(difference / distance) if distance > 0 else np.zeros(len(space.cards))
+    axis = build_axis(space, archetype_shares, contrast_shares)
+    distance = 0.0 if axis is None else axis.gap
+    alignment = np.zeros(len(space.cards)) if axis is None else axis.alignment
     played = np.flatnonzero((archetype_shares != 0) | (contrast_shares != 0)).tolist()
     pushes = [CardPush(space.cards[c], float(archetype_shares[c]), float(contrast_shares[c]), float(alignment[c]), float(shift[c] * alignment[c]))
               for c in played]

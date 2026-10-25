@@ -1,0 +1,130 @@
+"""Deck diffs (#62): what changed between a training row T and a deck D, and how far it moved D along an archetype's axis."""
+import math
+
+import numpy as np
+import pytest
+
+from archetype_classifier.data_loading.dataset import CardCount
+from archetype_classifier.geometry.diffs import DeckDiff, build_agreement, build_axis, build_contributions, build_deck_diff, build_net_shift, build_share_axis, build_shift
+from archetype_classifier.geometry.space_test import deck, lists_space, rows_space
+
+ROOT_HALF = math.sqrt(0.5)
+
+
+def test_a_diff_goes_copy_by_copy() -> None:
+    target = deck(Shock=4, Burst_Lightning=4, Mountain=52)
+    mine = deck(Shock=2, Lightning_Bolt=4, Mountain=54)
+    assert build_deck_diff(target, mine) == DeckDiff(kept=deck(Shock=2, Mountain=52), removed=deck(Burst_Lightning=4, Shock=2),
+                                                     added=deck(Lightning_Bolt=4, Mountain=2))
+
+
+# The axis: from a contrast's centroid to the archetype's. Cards in CARD_EMBEDDING's order: Island (1, 0, 0), Mountain (0.8, 0, 0.6),
+# Essence Scatter (0, 1, 0), Negate (0, 0.8, 0.6), Shock (0, 0, 1).
+
+ALL_ESSENCE_SCATTER, ALL_SHOCK = np.array([0, 0, 1.0, 0, 0]), np.array([0, 0, 0, 0, 1.0])
+
+def test_the_axis_points_from_the_contrast_to_the_archetype() -> None:
+    axis = build_axis(lists_space([(1, deck(Island=60))]), ALL_ESSENCE_SCATTER, ALL_SHOCK)
+    assert axis is not None
+    assert axis.gap == pytest.approx(math.sqrt(2))  # From (0, 0, 1) to (0, 1, 0).
+    assert axis.direction == pytest.approx([0, ROOT_HALF, -ROOT_HALF])
+    assert axis.alignment == pytest.approx([0, -0.6 * ROOT_HALF, ROOT_HALF, 0.2 * ROOT_HALF, -ROOT_HALF])
+
+def test_no_axis_when_the_centroids_coincide() -> None:
+    assert build_axis(lists_space([(1, deck(Island=60))]), ALL_SHOCK, ALL_SHOCK) is None
+
+
+def test_the_share_axis_aligns_each_card_by_its_share_difference() -> None:
+    axis = build_share_axis(ALL_ESSENCE_SCATTER, ALL_SHOCK)
+    assert axis is not None
+    assert axis.gap == pytest.approx(math.sqrt(2))
+    assert axis.alignment == pytest.approx([0, 0, ROOT_HALF, 0, -ROOT_HALF])  # beta: the card's own share difference, not its text.
+
+def test_no_share_axis_when_the_shares_coincide() -> None:
+    assert build_share_axis(ALL_SHOCK, ALL_SHOCK) is None
+
+def test_in_the_bag_the_share_axis_is_the_spaces_axis() -> None:
+    space = rows_space([(1, (1, 0, 0, 0, 0))])  # No embedding: each card is its own coordinate, as in the bag of cards.
+    axis, shares = build_axis(space, ALL_ESSENCE_SCATTER, ALL_SHOCK), build_share_axis(ALL_ESSENCE_SCATTER, ALL_SHOCK)
+    assert axis is not None and shares is not None
+    assert [axis.gap, *axis.alignment] == pytest.approx([shares.gap, *shares.alignment])
+
+
+# The shift: how far D moved along the target archetype's axis, card by card. T is all Shock, at (0, 0, 1); D is 0.6 Essence Scatter and 0.8 Shock,
+# at (0, 0.6, 0.8).
+
+TARGET_LINES, DECK_LINES = np.array([0, 0, 0, 0, 1.0]), np.array([0, 0, 0.6, 0, 0.8])
+
+def test_the_shift_is_how_far_d_moved_along_the_axis() -> None:
+    axis = build_axis(lists_space([(1, deck(Island=60))]), ALL_ESSENCE_SCATTER, ALL_SHOCK)
+    assert axis is not None
+    shift = build_shift(axis, DECK_LINES, TARGET_LINES, movement=math.sqrt(0.4))  # |(0, 0.6, -0.2)|
+    assert shift.raw == pytest.approx(0.4 * math.sqrt(2))  # (0, 0.6, -0.2) . (0, 1, -1) / sqrt(2): toward Essence Scatter.
+    assert shift.fraction == pytest.approx(0.4)
+    assert shift.on_axis == pytest.approx(math.sqrt(0.8))
+
+def test_an_unchanged_deck_has_no_shift_and_no_on_axis_share() -> None:
+    axis = build_axis(lists_space([(1, deck(Island=60))]), ALL_ESSENCE_SCATTER, ALL_SHOCK)
+    assert axis is not None
+    shift = build_shift(axis, TARGET_LINES, TARGET_LINES, movement=0)
+    assert (shift.raw, shift.fraction, shift.on_axis) == (0, 0, None)
+
+
+# Contributions: each changed card's part of the shift, and the kept cards' part from rescaling. T is 56 Island and 4 Shock; D swaps 2 Shock for 2
+# Essence Scatter. The axis runs from all Mountain to all Essence Scatter: (-0.8, 1, -0.6) / sqrt(2).
+
+ALL_MOUNTAIN = np.array([0, 1.0, 0, 0, 0])
+SWAP_TARGET, SWAP_DECK = deck(Island=56, Shock=4), deck(Island=56, Essence_Scatter=2, Shock=2)
+
+def test_each_changed_card_contributes_and_the_kept_cards_rescale() -> None:
+    space = lists_space([(1, SWAP_TARGET), (2, SWAP_DECK)])
+    axis = build_axis(space, ALL_ESSENCE_SCATTER, ALL_MOUNTAIN)
+    assert axis is not None
+    target_lines, deck_lines = space.lines.toarray()
+    contributions = build_contributions(axis, space.cards, deck_lines, target_lines, build_deck_diff(SWAP_TARGET, SWAP_DECK))
+    assert [(c.card, c.copies_target, c.copies_deck) for c in contributions.cards] == [('Essence Scatter', 0, 2), ('Shock', 4, 2)]  # 4 -> 2: its own row.
+    assert [c.contribution for c in contributions.cards] == pytest.approx([0.025222, 0.015095], abs=1e-6)
+    assert contributions.rescaling == pytest.approx(-0.000717, abs=1e-6)  # Island, kept: its line shrinks, and it points away from Essence Scatter.
+
+def test_a_card_the_space_lacks_contributes_nothing_but_is_listed() -> None:
+    space = lists_space([(1, SWAP_TARGET), (2, SWAP_DECK)])
+    axis = build_axis(space, ALL_ESSENCE_SCATTER, ALL_MOUNTAIN)
+    assert axis is not None
+    target_lines, deck_lines = space.lines.toarray()
+    with_fury = (*SWAP_DECK, CardCount("Smaug's Fury", 1))  # No column for Smaug's Fury, like an unseen card in the bag.
+    contributions = build_contributions(axis, space.cards, deck_lines, target_lines, build_deck_diff(SWAP_TARGET, with_fury))
+    assert [(c.card, c.copies_deck, c.contribution) for c in contributions.cards][-1] == ("Smaug's Fury", 1, 0)
+
+
+# Net shift: the size of the change before scaling, over the mean of the two decks' lengths. With no weights and linear copies, T is (56, 0, 4)
+# and D is (56, 2, 2): they differ by (0, 2, -2).
+
+def test_the_net_shift_is_the_unscaled_change_over_the_mean_length() -> None:
+    space = lists_space([(1, SWAP_TARGET), (2, SWAP_DECK)])
+    target_lines, deck_lines = space.lines.toarray()
+    lengths = math.sqrt(56 ** 2 + 4 ** 2), math.sqrt(56 ** 2 + 2 ** 2 + 2 ** 2)
+    assert build_net_shift(space, deck_lines, lengths[1], target_lines, lengths[0]) == pytest.approx(2 * math.sqrt(2) / (sum(lengths) / 2))
+
+def test_the_net_shift_is_symmetric_and_ignores_overall_size() -> None:
+    doubled_target, doubled_deck = deck(Island=112, Shock=8), deck(Island=112, Essence_Scatter=4, Shock=4)
+    space = lists_space([(1, SWAP_TARGET), (2, SWAP_DECK), (3, doubled_target), (4, doubled_deck)])
+    target_lines, deck_lines, double_target_lines, double_deck_lines = space.lines.toarray()
+    lengths = math.sqrt(56 ** 2 + 4 ** 2), math.sqrt(56 ** 2 + 2 ** 2 + 2 ** 2)
+    forward = build_net_shift(space, deck_lines, lengths[1], target_lines, lengths[0])
+    assert build_net_shift(space, target_lines, lengths[0], deck_lines, lengths[1]) == pytest.approx(forward)  # Swapping D and T.
+    assert build_net_shift(space, double_deck_lines, 2 * lengths[1], double_target_lines, 2 * lengths[0]) == pytest.approx(forward)  # Every copy doubled.
+    assert build_net_shift(space, target_lines, lengths[0], target_lines, lengths[0]) == 0
+
+
+# Agreement between two spaces' shift fractions over the same pairs.
+
+def test_agreement_counts_signs_ranks_and_small_flips_over_pairs_with_both() -> None:
+    first = [0.1, 0.2, -0.3, 0.01, 0.4, None, 0.5]
+    second = [0.2, 0.1, -0.1, -0.02, -0.3, 0.3, None]
+    # Five pairs have both. Ranks 3, 4, 1, 2, 5 against 5, 4, 2, 3, 1: rho = 1 - 6 x 22 / (5 x 24) = -0.1. Two flips: 0.01 / -0.02 is small, 0.4 / -0.3 isn't.
+    agreement = build_agreement(first, second)
+    assert agreement.pairs == 5
+    assert [agreement.sign_agreement, agreement.spearman, agreement.small_flip_share] == pytest.approx([0.6, -0.1, 0.5])
+
+def test_with_no_flips_there_is_no_small_flip_share() -> None:
+    assert build_agreement([0.1, 0.2, 0.3], [0.1, 0.3, 0.2]).small_flip_share is None

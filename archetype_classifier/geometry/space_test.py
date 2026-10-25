@@ -1,4 +1,5 @@
 """The space a model reads decks in (#64), and helpers the other geometry tests build their spaces with."""
+import math
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -9,7 +10,7 @@ from scipy import sparse
 from archetype_classifier.card_embeddings.combined_embedding import save_combined_embedding
 from archetype_classifier.data_loading.dataset import CardCount, LabelStatus
 from archetype_classifier.evaluation.model import PredictDeck, TrainingDeck
-from archetype_classifier.geometry.space import DeckSpace, build_model_space, build_presence, build_space
+from archetype_classifier.geometry.space import DeckSpace, build_model_space, build_placed_decks, build_presence, build_space
 from archetype_classifier.models.bag_nearest_test import fitted
 from archetype_classifier.models.embedding_nearest import build_training_rows
 from archetype_classifier.models.embedding_nearest_test import EMBEDDING, weighted
@@ -126,3 +127,46 @@ def test_without_an_embedding_each_card_is_its_own_coordinate() -> None:
     space = rows_space([(1, (1, 0, 0))])
     assert np.allclose(space.vector(np.array([0.2, 0.3, 0.5])), [0.2, 0.3, 0.5])
     assert np.allclose(space.alignment(np.array([0.6, 0.8, 0])), [0.6, 0.8, 0])
+
+
+# Decks placed in a model's space (#62): any maindecks, by the model's own code, with each deck's length before scaling.
+
+def test_placed_decks_are_the_models_own_vectors_with_their_lengths(small_embedding: Path) -> None:
+    model = weighted(small_embedding, weights='idf', copies='sqrt')
+    maindecks = [deck(Shock=4, Mountain=56), deck(Shock=2, Burst_Lightning=4, Mountain=54)]
+    placed = build_placed_decks(model, maindecks)
+    vectors = model.deck_vectors(maindecks)
+    assert np.array_equal(placed.matrix, vectors.matrix)
+    assert (placed.lines != vectors.lines).nnz == 0
+    column = {card: i for i, card in enumerate(model.embedding.names)}
+    assert model.card_weights is not None
+    for r, maindeck in enumerate(maindecks):  # Each line back unscaled: sqrt(copies) x the card's weight.
+        assert [placed.lengths[r] * placed.lines[r, column[line.card]] for line in maindeck] == pytest.approx(
+            [math.sqrt(line.n) * model.card_weights.weight(line.card) for line in maindeck])
+
+def test_with_no_weights_and_linear_copies_a_line_is_its_copies(small_embedding: Path) -> None:
+    model = weighted(small_embedding, weights='none', copies='linear')  # Run 14's kind of model.
+    maindeck = deck(Shock=4, Mountain=56)
+    placed = build_placed_decks(model, [maindeck])
+    column = {card: i for i, card in enumerate(model.embedding.names)}
+    assert [placed.lengths[0] * placed.lines[0, column[line.card]] for line in maindeck] == pytest.approx([56, 4])
+
+def test_placed_decks_in_the_bag_count_an_unseen_card_in_their_length() -> None:
+    model = fitted()
+    maindeck = deck(Burst_Lightning=4, Shock=4, Mountain=52, Smaug_s_Fury=4)  # Smaug's Fury: no training row plays it.
+    placed = build_placed_decks(model, [maindeck])
+    vectors = model.bag_vectors([maindeck])
+    assert sparse.issparse(placed.matrix) and (placed.matrix != vectors.matrix).nnz == 0
+    assert (placed.lines != vectors.matrix).nnz == 0
+    known = [line for line in maindeck if line.card in model.vocabulary]
+    assert [placed.lengths[0] * placed.lines[0, model.vocabulary[line.card]] for line in known] == pytest.approx(
+        [math.sqrt(line.n) * model.card_weights.weight(line.card) for line in known])
+
+def test_a_deck_with_no_line_in_the_space_has_length_0() -> None:
+    placed = build_placed_decks(fitted(), [deck(Smaug_s_Fury=4, Divination=4)])
+    assert placed.lengths.tolist() == [0]
+    assert placed.lines.nnz == 0
+
+def test_another_model_places_no_decks() -> None:
+    with pytest.raises(ValueError, match="most common archetype"):
+        build_placed_decks(MostCommonArchetype({}), [deck(Island=60)])

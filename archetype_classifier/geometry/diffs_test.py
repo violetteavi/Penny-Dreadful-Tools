@@ -41,3 +41,9 @@ def test_the_share_axis_aligns_each_card_by_its_share_difference() -> None:
 
 def test_no_share_axis_when_the_shares_coincide() -> None:
     assert build_share_axis(ALL_SHOCK, ALL_SHOCK) is None
+
+def test_in_the_bag_the_share_axis_is_the_spaces_axis() -> None:
+    space = rows_space([(1, (1, 0, 0, 0, 0))])  # No embedding: each card is its own coordinate, as in the bag of cards.
+    axis, shares = build_axis(space, ALL_ESSENCE_SCATTER, ALL_SHOCK), build_share_axis(ALL_ESSENCE_SCATTER, ALL_SHOCK)
+    assert axis is not None and shares is not None
+    assert (axis.gap, axis.alignment.tolist()) == (pytest.approx(shares.gap), pytest.approx(shares.alignment.tolist()))

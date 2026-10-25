@@ -57,7 +57,7 @@ class Agreement:
     pairs: int  # Pairs with both shifts.
     sign_agreement: float
     spearman: float
-    small_flip_share: float  # Of the sign disagreements, the share where both shifts are small.
+    small_flip_share: float | None  # Of the sign disagreements, the share where both shifts are small; None with no disagreement.
 
 
 def build_deck_diff(target: tuple[CardCount, ...], deck: tuple[CardCount, ...]) -> DeckDiff:
@@ -125,4 +125,5 @@ def build_agreement(first: Sequence[float | None], second: Sequence[float | None
     x, y = np.array([a for a, _ in both]), np.array([b for _, b in both])
     flips = np.sign(x) != np.sign(y)
     small_flips = flips & (np.abs(x) < small) & (np.abs(y) < small)
-    return Agreement(len(both), float(1 - flips.mean()), float(stats.spearmanr(x, y).statistic), float(small_flips.sum() / flips.sum()))
+    return Agreement(len(both), float(1 - flips.mean()), float(stats.spearmanr(x, y).statistic),
+                     float(small_flips.sum() / flips.sum()) if flips.any() else None)

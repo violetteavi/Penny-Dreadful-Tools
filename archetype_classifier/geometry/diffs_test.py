@@ -124,3 +124,6 @@ def test_agreement_counts_signs_ranks_and_small_flips_over_pairs_with_both() -> 
     second = [0.2, 0.1, -0.1, -0.02, -0.3, 0.3, None]
     # Five pairs have both. Ranks 3, 4, 1, 2, 5 against 5, 4, 2, 3, 1: rho = 1 - 6 x 22 / (5 x 24) = -0.1. Two flips: 0.01 / -0.02 is small, 0.4 / -0.3 isn't.
     assert build_agreement(first, second) == Agreement(pairs=5, sign_agreement=pytest.approx(0.6), spearman=pytest.approx(-0.1), small_flip_share=pytest.approx(0.5))
+
+def test_with_no_flips_there_is_no_small_flip_share() -> None:
+    assert build_agreement([0.1, 0.2, 0.3], [0.1, 0.3, 0.2]).small_flip_share is None

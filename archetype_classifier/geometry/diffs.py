@@ -4,6 +4,9 @@ A diff goes copy by copy: a card at 4 copies in T and 2 in D keeps 2 and removes
 
 An axis runs from a contrast's centroid to the archetype's: u, the unit direction from mu_B to mu_A, with the gap |mu_A - mu_B| and each card's
 alignment with u (signatures.build_push uses the same arithmetic).
+
+The shift is how far D moved along an axis: (v_D - v_T) . u = sum_c (l_c^D - l_c^T) x alignment_c, over the decks' scaled lines l. Positive means D
+moved toward the archetype. It's exact and splits card by card; on the share axis (beta) it's the share shift.
 """
 from dataclasses import dataclass
 
@@ -24,6 +27,12 @@ class Axis:
     direction: np.ndarray  # u, unit length, in the space.
     gap: float  # |mu_A - mu_B|.
     alignment: np.ndarray  # Each card's alignment with u, in the space's card order.
+
+@dataclass(frozen=True)
+class Shift:
+    raw: float  # (v_D - v_T) . u.
+    fraction: float  # raw / the gap.
+    on_axis: float | None  # |raw| / how far D moved at all; None when it didn't.
 
 
 def build_deck_diff(target: tuple[CardCount, ...], deck: tuple[CardCount, ...]) -> DeckDiff:
@@ -56,3 +65,9 @@ def build_share_axis(archetype_shares: np.ndarray, contrast_shares: np.ndarray) 
         return None
     direction = difference / gap
     return Axis(direction, gap, direction)
+
+
+def build_shift(axis: Axis, deck_lines: np.ndarray, target_lines: np.ndarray, movement: float) -> Shift:
+    """movement is how far D moved at all: |v_D - v_T| on a space's axis, |l_D - l_T| on the share axis."""
+    raw = float((deck_lines - target_lines) @ axis.alignment)
+    return Shift(raw, raw / axis.gap, abs(raw) / movement)

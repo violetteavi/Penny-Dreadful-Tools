@@ -61,12 +61,14 @@ def build_coverage_rows(anchor_label: int, anchor_row: int | None, rows: Trainin
     runs = {int(rows.labels[rows.label_order[start]]): (int(start), int(end)) for start, end in zip(rows.label_starts, ends, strict=True)}
     classes = {label: build_pair_class(tree, anchor_label, label) for label in sorted(eligible)}  # Eligible labels have rows.
     drawn: dict[PairClass, int | None] = {}
+    def size(label: int) -> int:  # Only the anchor's own label can hold its row.
+        start, end = runs[label]
+        return end - start - (label == anchor_label and anchor_row is not None)
     for pair_class in DRAWN:
-        candidates = {label: [r for r in rows.label_order[slice(*runs[label])].tolist() if r != anchor_row] for label, c in classes.items() if c == pair_class}
-        labels = [label for label, found in candidates.items() if found]
+        labels = [label for label, c in classes.items() if c == pair_class and size(label) > 0]
         if not labels:
             drawn[pair_class] = None
             continue
-        found = candidates[labels[rng.integers(len(labels))]]
+        found = [r for r in rows.label_order[slice(*runs[labels[rng.integers(len(labels))]])].tolist() if r != anchor_row]
         drawn[pair_class] = int(found[rng.integers(len(found))])
     return drawn

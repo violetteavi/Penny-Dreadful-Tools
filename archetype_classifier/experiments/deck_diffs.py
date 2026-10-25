@@ -117,6 +117,7 @@ def main() -> None:
     clock = time.perf_counter()
     model, provenance_17 = refit(edb, AVERAGE)
     timings['run 17: refit'] = time.perf_counter() - clock
+    log('run 17 refitted')
     record, _ = load_model_record(edb, load_run(edb, AVERAGE).model_id)
     snapshot = loader.load_snapshot(edb, record.snapshot_id, record.scheme_id)
     tree = ArchetypeTree(snapshot.archetypes)
@@ -132,12 +133,14 @@ def main() -> None:
     geometry = build_geometry(space)
     medoids = build_medoids(space, geometry.centroids)
     timings['run 17: geometry'] = time.perf_counter() - clock
+    log('run 17 geometry')
     rows = space.rows
     deck_labels = {d.deck_id: int(d.label_id) for d in decks if d.label_id is not None}
 
     clock = time.perf_counter()
     pairs, skipped = build_all_pairs(model, space, geometry, medoids, tree, deck_labels, contents, guesses)
     timings['pairs'] = time.perf_counter() - clock
+    log(f'{len(pairs)} pairs')
 
     def maindeck_of_deck(p: Pair) -> tuple[CardCount, ...]:
         return contents[p.deck_id] if p.deck_id is not None else rows.maindecks[p.anchor_row]  # type: ignore[index]
@@ -147,17 +150,21 @@ def main() -> None:
     concentration = dict(zip(presence.cards, build_label_concentration(presence, rows.labels).tolist(), strict=True))
     assert isinstance(model, EmbeddingNearestDeck) and model.card_weights is not None  # Run 17 weighs by IDF.
     idf = model.card_weights.weight
-    diffs = {p.pair_id: build_deck_diff(rows.maindecks[p.row], maindeck_of_deck(p)) for p in pairs}
+    def diff_of(p: Pair) -> DeckDiff:
+        return build_deck_diff(rows.maindecks[p.row], maindeck_of_deck(p))
     for p in pairs:
-        p.measures.update(specificity(diffs[p.pair_id], idf, concentration))
+        p.measures.update(specificity(diff_of(p), idf, concentration))
         p.measures.update(seasons(p, snapshot, rows.newest_deck_ids))
     timings['run 17: specificity'] = time.perf_counter() - clock
+    log('run 17 specificity')
 
     clock = time.perf_counter()
     placed, position = place(model, pairs, contents, rows.maindecks)
     measure_average(space, geometry, placed, position, pairs)
     timings['run 17: measures'] = time.perf_counter() - clock
-    cards = case_cards(space, geometry, placed, position, pairs, diffs, idf, concentration, names)
+    log('run 17 measures')
+    cards = case_cards(space, geometry, placed, position, pairs, diff_of, idf, concentration)
+    log('run 17 card tables')
     neighbours_17 = geometry.neighbours
     row_identity = (rows.labels.copy(), rows.newest_deck_ids.copy())
     del model, space, geometry, placed, presence
@@ -165,6 +172,7 @@ def main() -> None:
     clock = time.perf_counter()
     model, provenance_14 = refit(edb, UNWEIGHTED)
     timings['run 14: refit'] = time.perf_counter() - clock
+    log('run 14 refitted')
     clock = time.perf_counter()
     space = build_model_space(model)
     check_rows(space, row_identity, UNWEIGHTED)
@@ -172,11 +180,13 @@ def main() -> None:
     placed, position = place(model, pairs, contents, rows.maindecks)
     measure_other(space, geometry, placed, position, pairs, 'r14')
     timings['run 14: geometry and measures'] = time.perf_counter() - clock
+    log('run 14 measures')
     del model, space, geometry, placed
 
     clock = time.perf_counter()
     model, provenance_16 = refit(edb, BAG)
     timings['run 16: refit'] = time.perf_counter() - clock
+    log('run 16 refitted')
     clock = time.perf_counter()
     space = build_model_space(model)
     check_rows(space, row_identity, BAG)
@@ -186,6 +196,7 @@ def main() -> None:
     borrowed = build_neighbour_contrasts(geometry.centroids, geometry.shares, neighbours_17)  # The bag with run 17's span neighbours.
     measure_other(space, geometry, placed, position, pairs, 'bag_n17', local=borrowed)
     timings['run 16: geometry and measures'] = time.perf_counter() - clock
+    log('run 16 measures')
     del model, space, geometry, placed
 
     timings['peak memory, MB'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
@@ -197,6 +208,12 @@ def main() -> None:
     path = OUT / f'{args.date}_deck_diffs.md'
     path.write_text(summary(pairs, skipped, provenance, timings, args.pr))
     print(path)
+
+
+def log(step: str) -> None:
+    """Progress, with the memory in use now (VmRSS) and at its peak."""
+    rss = next(line.split()[1] for line in Path('/proc/self/status').read_text().splitlines() if line.startswith('VmRSS'))
+    print(f'{time.strftime("%H:%M:%S")} {step}: {int(rss) // 1024} MB now, {resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024} MB peak', flush=True)
 
 
 def refit(edb: Any, run_id: int) -> tuple[Model, dict[str, Any]]:
@@ -263,6 +280,7 @@ def build_all_pairs(model: Model, space: DeckSpace, geometry: Geometry, medoids:
     rng = np.random.default_rng(DRAW_SEED)
     for start in range(0, len(anchors), CHUNK):
         chunk = anchors[start:start + CHUNK]
+        log(f'anchors {start}-{start + len(chunk)} of {len(anchors)}')
         vectors = build_placed_decks(model, [contents[d] if d is not None else rows.maindecks[r] for _, d, r, _ in chunk]).matrix  # type: ignore[index]
         similarities = np.asarray(vectors @ space.matrix.T)
         for (anchor, anchor_deck, anchor_row, label), sims in zip(chunk, similarities, strict=True):
@@ -374,8 +392,8 @@ def seasons(p: Pair, snapshot: Snapshot, newest: np.ndarray) -> dict[str, Any]:
     return {'deck_season': deck_season, 'row_season': row_season, 'season_gap': deck_season - row_season}
 
 
-def case_cards(space: DeckSpace, geometry: Geometry, placed: PlacedDecks, position: dict[tuple[str, int], int], pairs: Sequence[Pair], diffs: dict[int, DeckDiff],
-               idf: Callable[[str], float], concentration: dict[str, float], names: dict[int, str]) -> list[list[Any]]:
+def case_cards(space: DeckSpace, geometry: Geometry, placed: PlacedDecks, position: dict[tuple[str, int], int], pairs: Sequence[Pair],
+               diff_of: Callable[[Pair], DeckDiff], idf: Callable[[str], float], concentration: dict[str, float]) -> list[list[Any]]:
     """Card tables for the case studies' match and typical-list pairs, and for one coverage pair per anchor and class at its median shift."""
     wanted = {p.pair_id: 'case study' for p in pairs if p.deck_id in CASE_STUDIES and p.kind != 'coverage'}
     by_cell: dict[tuple[str, str], list[Pair]] = {}
@@ -400,7 +418,7 @@ def case_cards(space: DeckSpace, geometry: Geometry, placed: PlacedDecks, positi
             a = axis(label, kind)
             if a is None:
                 continue
-            contributions = build_contributions(a, space.cards, deck_lines, target_lines, diffs[p.pair_id])
+            contributions = build_contributions(a, space.cards, deck_lines, target_lines, diff_of(p))
             for c in contributions.cards:
                 found.append([p.pair_id, wanted[p.pair_id], 'embedding' if kind == 'blended' else 'share', c.card, c.copies_target, c.copies_deck,
                               c.contribution, idf(c.card), concentration.get(c.card), c.card not in concentration, c.card in signature])

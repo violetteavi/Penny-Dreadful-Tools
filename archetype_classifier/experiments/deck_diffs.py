@@ -33,8 +33,8 @@ from archetype_classifier.data_loading.dataset import CardCount
 from archetype_classifier.data_loading.slices import Snapshot, build_deck_set
 from archetype_classifier.data_loading.splits import Split
 from archetype_classifier.evaluation.metrics import ArchetypeTree
-from archetype_classifier.evaluation.model import Model, Prediction
-from archetype_classifier.evaluation.store import identity_hash, load_guesses, load_model, load_model_record, load_run
+from archetype_classifier.evaluation.model import Model
+from archetype_classifier.evaluation.store import identity_hash, load_model, load_model_record, load_run
 from archetype_classifier.geometry.centroids import Centroids, build_centroids, build_medoids, build_shares, build_spread
 from archetype_classifier.geometry.contrasts import (
     Neighbour,
@@ -66,7 +66,7 @@ OUT = Path(__file__).parents[1] / 'docs' / 'experiments'
 AVERAGE, UNWEIGHTED, BAG = 17, 14, 16
 EXISTING = 5  # Training decks under the cutoff for an archetype to count as existing on season 39 (#59).
 ANCHOR_ROWS, ANCHOR_SEED, DRAW_SEED = 2000, 0, 1
-CHUNK = 1000  # Anchors compared with every training row at once.
+CHUNK = 250  # Anchors compared with every training row at once: a 250 x 84,000 float64 block is 170 MB.
 SIGNATURE = 10  # A target archetype's blended signature cards: the top of its blended push.
 CASE_STUDIES = {270580: 'Izzet Twin miss', 269557: 'Temur Ascendancy miss', 270765: 'Squirrel Aristocrats miss', 270471: 'only the bag right',
                 269637: 'only the average right'}  # Picked by the median net shift against run 17's match (20261024 spec).
@@ -126,7 +126,8 @@ def main() -> None:
     decks = sorted((d for d in snapshot.decks.values() if d.split == Split.VALIDATION and d.label_id is not None and train_counts.get(d.label_id, 0) >= EXISTING),
                    key=lambda d: d.deck_id)
     contents = {i: c.maindeck for i, c in loader.load_contents([d.deck_id for d in decks]).items()}
-    guesses = {run: load_guesses(edb, run) for run in (AVERAGE, BAG)}
+    guesses = {run: load_matches(edb, run, [d.deck_id for d in decks]) for run in (AVERAGE, BAG)}
+    log('guesses')
 
     clock = time.perf_counter()
     space = build_model_space(model)
@@ -216,6 +217,19 @@ def log(step: str) -> None:
     print(f'{time.strftime("%H:%M:%S")} {step}: {int(rss) // 1024} MB now, {resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024} MB peak', flush=True)
 
 
+@dataclass(frozen=True)
+class Match:
+    guess_id: int | None
+    match_deck_id: int | None
+
+
+def load_matches(edb: Any, run_id: int, deck_ids: Sequence[int]) -> dict[int, Match]:
+    """Each deck's guess and match deck from a stored run, without the candidates: parsing every deck's ranked list costs gigabytes."""
+    marks = ','.join(['%s'] * len(deck_ids))
+    return {r['deck_id']: Match(r['guess_archetype_id'], json.loads(r['evidence']).get('match_deck_id'))
+            for r in edb.select(f'SELECT deck_id, guess_archetype_id, evidence FROM run_guess WHERE run_id = %s AND deck_id IN ({marks})', [run_id, *deck_ids])}
+
+
 def refit(edb: Any, run_id: int) -> tuple[Model, dict[str, Any]]:
     run = load_run(edb, run_id)
     record, state = load_model_record(edb, run.model_id)
@@ -240,7 +254,7 @@ def check_rows(space: DeckSpace, identity: tuple[np.ndarray, np.ndarray], run_id
 
 
 def build_all_pairs(model: Model, space: DeckSpace, geometry: Geometry, medoids: dict[int, int], tree: ArchetypeTree, deck_labels: dict[int, int],
-                    contents: dict[int, tuple[CardCount, ...]], guesses: dict[int, dict[int, Prediction]]) -> tuple[list[Pair], Counter[str]]:
+                    contents: dict[int, tuple[CardCount, ...]], guesses: dict[int, dict[int, Match]]) -> tuple[list[Pair], Counter[str]]:
     rows = space.rows
     pairs: list[Pair] = []
     skipped: Counter[str] = Counter()
@@ -253,10 +267,10 @@ def build_all_pairs(model: Model, space: DeckSpace, geometry: Geometry, medoids:
     for deck_id, label in deck_labels.items():
         for run in (AVERAGE, BAG):
             guess = guesses[run].get(deck_id)
-            if guess is None or guess.guess_id is None:
+            if guess is None or guess.guess_id is None or guess.match_deck_id is None:
                 skipped[f'match {run}: no guess'] += 1
                 continue
-            add(f'match {run}', 'season 39', deck_id, None, label, build_match_row(rows, int(guess.evidence['match_deck_id']), guess.guess_id))  # type: ignore[arg-type]
+            add(f'match {run}', 'season 39', deck_id, None, label, build_match_row(rows, guess.match_deck_id, guess.guess_id))
         if label in medoids:
             add('typical, true', 'season 39', deck_id, None, label, medoids[label])
         else:

@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from archetype_classifier.data_loading.dataset import CardCount
-from archetype_classifier.geometry.diffs import CardContribution, DeckDiff, build_axis, build_contributions, build_deck_diff, build_share_axis, build_shift
+from archetype_classifier.geometry.diffs import CardContribution, DeckDiff, build_axis, build_contributions, build_deck_diff, build_net_shift, build_share_axis, build_shift
 from archetype_classifier.geometry.space_test import deck, lists_space, rows_space
 
 ROOT_HALF = math.sqrt(0.5)
@@ -94,3 +94,13 @@ def test_a_card_the_space_lacks_contributes_nothing_but_is_listed() -> None:
     with_fury = (*SWAP_DECK, CardCount("Smaug's Fury", 1))  # No column for Smaug's Fury, like an unseen card in the bag.
     contributions = build_contributions(axis, space.cards, deck_lines, target_lines, build_deck_diff(SWAP_TARGET, with_fury))
     assert [(c.card, c.copies_deck, c.contribution) for c in contributions.cards][-1] == ("Smaug's Fury", 1, 0)
+
+
+# Net shift: the size of the change before scaling, over the mean of the two decks' lengths. With no weights and linear copies, T is (56, 0, 4)
+# and D is (56, 2, 2): they differ by (0, 2, -2).
+
+def test_the_net_shift_is_the_unscaled_change_over_the_mean_length() -> None:
+    space = lists_space([(1, SWAP_TARGET), (2, SWAP_DECK)])
+    target_lines, deck_lines = space.lines.toarray()
+    lengths = math.sqrt(56 ** 2 + 4 ** 2), math.sqrt(56 ** 2 + 2 ** 2 + 2 ** 2)
+    assert build_net_shift(space, deck_lines, lengths[1], target_lines, lengths[0]) == pytest.approx(2 * math.sqrt(2) / (sum(lengths) / 2))

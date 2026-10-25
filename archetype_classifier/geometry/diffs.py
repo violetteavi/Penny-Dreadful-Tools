@@ -7,6 +7,9 @@ alignment with u (signatures.build_push uses the same arithmetic).
 
 The shift is how far D moved along an axis: (v_D - v_T) . u = sum_c (l_c^D - l_c^T) x alignment_c, over the decks' scaled lines l. Positive means D
 moved toward the archetype. It's exact and splits card by card; on the share axis (beta) it's the share shift.
+
+The net shift is how much changed in any direction: |raw_D - raw_T| over the mean of the two decks' lengths, raw being a deck's vector before scaling
+to unit length. Kept copies cancel in the difference, and the mean length makes it symmetric and comparable across spaces.
 """
 from collections import Counter
 from collections.abc import Sequence
@@ -100,3 +103,9 @@ def build_contributions(axis: Axis, cards: Sequence[str], deck_lines: np.ndarray
     listed = [CardContribution(card, before[card], after[card], float(parts[column[card]]) if card in column else 0.0)  # No column, no part.
               for card in changed]
     return Contributions(listed, float(parts.sum()) - sum(c.contribution for c in listed))
+
+
+def build_net_shift(space: DeckSpace, deck_lines: np.ndarray, deck_length: float, target_lines: np.ndarray, target_length: float) -> float:
+    """lines are scaled and lengths are the decks' lengths before scaling (space.build_placed_decks), so lines x length is a deck's unscaled lines."""
+    difference = space.vector(deck_lines * deck_length - target_lines * target_length)
+    return float(np.linalg.norm(difference)) / ((deck_length + target_length) / 2)

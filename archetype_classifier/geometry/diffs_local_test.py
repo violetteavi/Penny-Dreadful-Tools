@@ -67,8 +67,10 @@ def test_the_goblins_worked_example(run_17: Run17) -> None:
     assert contributions.rescaling == pytest.approx(0.0089, abs=1e-4)  # 41% of the shift.
 
 
-def test_a_case_study_decks_match_is_its_run_17_guess(run_17: Run17) -> None:
+def test_a_case_study_decks_match_is_the_row_run_17_matched(run_17: Run17) -> None:
     guess = load_guesses(loader.experiments_db(), RUN)[270580]  # The Izzet Twin miss.
     assert guess.guess_id is not None
     row = build_match_row(run_17.space.rows, int(guess.evidence['match_deck_id']), guess.guess_id)  # type: ignore[arg-type]
     assert run_17.names[int(run_17.space.rows.labels[row])] == 'Izzet Control'
+    placed = build_placed_decks(run_17.model, [loader.load_contents([270580])[270580].maindeck])
+    assert float(placed.matrix[0] @ run_17.space.matrix[row]) == pytest.approx(guess.evidence['similarity'], abs=1e-6)  # The very row it matched.

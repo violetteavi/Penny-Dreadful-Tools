@@ -9,7 +9,6 @@ import numpy as np
 from archetype_classifier.evaluation.metrics import ArchetypeTree
 from archetype_classifier.models.embedding_nearest import TrainingRows, build_candidates
 
-
 NEAR_RIVALS = 5
 
 

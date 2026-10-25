@@ -139,6 +139,7 @@ def test_placed_decks_are_the_models_own_vectors_with_their_lengths(small_embedd
     assert np.array_equal(placed.matrix, vectors.matrix)
     assert (placed.lines != vectors.lines).nnz == 0
     column = {card: i for i, card in enumerate(model.embedding.names)}
+    assert model.card_weights is not None
     for r, maindeck in enumerate(maindecks):  # Each line back unscaled: sqrt(copies) x the card's weight.
         assert [placed.lengths[r] * placed.lines[r, column[line.card]] for line in maindeck] == pytest.approx(
             [math.sqrt(line.n) * model.card_weights.weight(line.card) for line in maindeck])

@@ -61,7 +61,10 @@ def test_the_goblins_worked_example(run_17: Run17) -> None:
     placed = build_placed_decks(run_17.model, [target, deck])
     target_lines, deck_lines = placed.lines.toarray()
     shift = build_shift(axis, deck_lines, target_lines, movement=float(np.linalg.norm(placed.matrix[1] - placed.matrix[0])))
-    assert (shift.raw, shift.fraction, shift.on_axis) == (pytest.approx(0.0214, abs=1e-4), pytest.approx(0.106, abs=1e-3), pytest.approx(0.51, abs=0.01))
+    assert shift.on_axis is not None
+    assert shift.raw == pytest.approx(0.0214, abs=1e-4)
+    assert shift.fraction == pytest.approx(0.106, abs=1e-3)
+    assert shift.on_axis == pytest.approx(0.51, abs=0.01)
     contributions = build_contributions(axis, space.cards, deck_lines, target_lines, build_deck_diff(target, deck))
     assert [(c.card, round(c.contribution, 4)) for c in contributions.cards] == [('Goblin King', 0.0071), ('Murderous Redcap', 0.0055)]
     assert contributions.rescaling == pytest.approx(0.0089, abs=1e-4)  # 41% of the shift.

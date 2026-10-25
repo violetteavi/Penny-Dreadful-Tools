@@ -5,8 +5,7 @@ import numpy as np
 import pytest
 
 from archetype_classifier.data_loading.dataset import CardCount
-from archetype_classifier.geometry.diffs import Agreement, CardContribution, DeckDiff, build_axis, build_contributions, build_deck_diff, build_net_shift, build_share_axis, build_shift
-from archetype_classifier.geometry.diffs import build_agreement
+from archetype_classifier.geometry.diffs import DeckDiff, build_agreement, build_axis, build_contributions, build_deck_diff, build_net_shift, build_share_axis, build_shift
 from archetype_classifier.geometry.space_test import deck, lists_space, rows_space
 
 ROOT_HALF = math.sqrt(0.5)
@@ -48,7 +47,7 @@ def test_in_the_bag_the_share_axis_is_the_spaces_axis() -> None:
     space = rows_space([(1, (1, 0, 0, 0, 0))])  # No embedding: each card is its own coordinate, as in the bag of cards.
     axis, shares = build_axis(space, ALL_ESSENCE_SCATTER, ALL_SHOCK), build_share_axis(ALL_ESSENCE_SCATTER, ALL_SHOCK)
     assert axis is not None and shares is not None
-    assert (axis.gap, axis.alignment.tolist()) == (pytest.approx(shares.gap), pytest.approx(shares.alignment.tolist()))
+    assert [axis.gap, *axis.alignment] == pytest.approx([shares.gap, *shares.alignment])
 
 
 # The shift: how far D moved along the target archetype's axis, card by card. T is all Shock, at (0, 0, 1); D is 0.6 Essence Scatter and 0.8 Shock,
@@ -83,8 +82,8 @@ def test_each_changed_card_contributes_and_the_kept_cards_rescale() -> None:
     assert axis is not None
     target_lines, deck_lines = space.lines.toarray()
     contributions = build_contributions(axis, space.cards, deck_lines, target_lines, build_deck_diff(SWAP_TARGET, SWAP_DECK))
-    assert contributions.cards == [CardContribution('Essence Scatter', 0, 2, pytest.approx(0.025222, abs=1e-6)),
-                                   CardContribution('Shock', 4, 2, pytest.approx(0.015095, abs=1e-6))]  # 4 -> 2: its own row, though 2 are kept.
+    assert [(c.card, c.copies_target, c.copies_deck) for c in contributions.cards] == [('Essence Scatter', 0, 2), ('Shock', 4, 2)]  # 4 -> 2: its own row.
+    assert [c.contribution for c in contributions.cards] == pytest.approx([0.025222, 0.015095], abs=1e-6)
     assert contributions.rescaling == pytest.approx(-0.000717, abs=1e-6)  # Island, kept: its line shrinks, and it points away from Essence Scatter.
 
 def test_a_card_the_space_lacks_contributes_nothing_but_is_listed() -> None:
@@ -123,7 +122,9 @@ def test_agreement_counts_signs_ranks_and_small_flips_over_pairs_with_both() -> 
     first = [0.1, 0.2, -0.3, 0.01, 0.4, None, 0.5]
     second = [0.2, 0.1, -0.1, -0.02, -0.3, 0.3, None]
     # Five pairs have both. Ranks 3, 4, 1, 2, 5 against 5, 4, 2, 3, 1: rho = 1 - 6 x 22 / (5 x 24) = -0.1. Two flips: 0.01 / -0.02 is small, 0.4 / -0.3 isn't.
-    assert build_agreement(first, second) == Agreement(pairs=5, sign_agreement=pytest.approx(0.6), spearman=pytest.approx(-0.1), small_flip_share=pytest.approx(0.5))
+    agreement = build_agreement(first, second)
+    assert agreement.pairs == 5
+    assert [agreement.sign_agreement, agreement.spearman, agreement.small_flip_share] == pytest.approx([0.6, -0.1, 0.5])
 
 def test_with_no_flips_there_is_no_small_flip_share() -> None:
     assert build_agreement([0.1, 0.2, 0.3], [0.1, 0.3, 0.2]).small_flip_share is None

@@ -2,12 +2,10 @@
 import numpy as np
 import pytest
 
-from archetype_classifier.data_loading.dataset import ArchetypeSnapshot
+from archetype_classifier.data_loading.dataset import ArchetypeSnapshot, CardCount
 from archetype_classifier.evaluation.metrics import ArchetypeTree
-from archetype_classifier.data_loading.dataset import CardCount
 from archetype_classifier.geometry.pairs import PairClass, build_coverage_rows, build_match_row, build_near_rivals, build_pair_class
-from archetype_classifier.geometry.tree_test import (ACTUAL_TWIN, AGGRO, AZORIUS_CONTROL, COMBO, CONTROL, FAMILY_TREE, IZZET_CONTROL, IZZET_TWIN,
-                                                     RED_DECK_WINS)
+from archetype_classifier.geometry.tree_test import ACTUAL_TWIN, AGGRO, AZORIUS_CONTROL, COMBO, CONTROL, FAMILY_TREE, IZZET_CONTROL, IZZET_TWIN
 from archetype_classifier.models.embedding_nearest import build_training_rows
 from archetype_classifier.models.embedding_nearest_test import MONO_RED_SWARM, RED_DECK_WINS, TRAINING, training
 

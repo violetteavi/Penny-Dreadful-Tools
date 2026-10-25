@@ -66,6 +66,7 @@ OUT = Path(__file__).parents[1] / 'docs' / 'experiments'
 AVERAGE, UNWEIGHTED, BAG = 17, 14, 16
 EXISTING = 5  # Training decks under the cutoff for an archetype to count as existing on season 39 (#59).
 ANCHOR_ROWS, ANCHOR_SEED, DRAW_SEED = 2000, 0, 1
+PROGRESS = 5000  # Pairs between progress lines.
 CHUNK = 250  # Anchors compared with every training row at once: a 250 x 84,000 float64 block is 170 MB.
 SIGNATURE = 10  # A target archetype's blended signature cards: the top of its blended push.
 CASE_STUDIES = {270580: 'Izzet Twin miss', 269557: 'Temur Ascendancy miss', 270765: 'Squirrel Aristocrats miss', 270471: 'only the bag right',
@@ -358,6 +359,8 @@ def shift_measures(prefix: str, shift: Shift | None, on_axis: bool) -> dict[str,
 def measure_average(space: DeckSpace, geometry: Geometry, placed: PlacedDecks, position: dict[tuple[str, int], int], pairs: Sequence[Pair]) -> None:
     axis = axes(space, geometry)
     for p in pairs:
+        if p.pair_id % PROGRESS == 0:
+            log(f'run 17 measures, pair {p.pair_id}')
         deck_lines, deck_length, target_lines, target_length, v_d, v_t = lines_of(placed, position, p)
         movement = float(np.linalg.norm(v_d - v_t))
         p.measures['r17_cosine'] = float(v_d @ v_t)
@@ -379,6 +382,8 @@ def measure_other(space: DeckSpace, geometry: Geometry, placed: PlacedDecks, pos
     """Run 14 or 16: cosine and net shift (unless borrowing neighbours, which changes neither) and the blended shift."""
     axis = axes(space, geometry, local)
     for p in pairs:
+        if p.pair_id % PROGRESS == 0:
+            log(f'{prefix} measures, pair {p.pair_id}')
         deck_lines, deck_length, target_lines, target_length, v_d, v_t = lines_of(placed, position, p)
         if local is None:
             p.measures[f'{prefix}_cosine'] = float(v_d @ v_t)

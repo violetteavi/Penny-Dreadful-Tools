@@ -165,3 +165,7 @@ def test_a_deck_with_no_line_in_the_space_has_length_0() -> None:
     placed = build_placed_decks(fitted(), [deck(Smaug_s_Fury=4, Divination=4)])
     assert placed.lengths.tolist() == [0]
     assert placed.lines.nnz == 0
+
+def test_another_model_places_no_decks() -> None:
+    with pytest.raises(ValueError, match="most common archetype"):
+        build_placed_decks(MostCommonArchetype({}), [deck(Island=60)])

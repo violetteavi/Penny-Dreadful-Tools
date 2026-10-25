@@ -4,8 +4,8 @@ import math
 import numpy as np
 import pytest
 
-from archetype_classifier.geometry.diffs import DeckDiff, build_axis, build_deck_diff
-from archetype_classifier.geometry.space_test import deck, lists_space
+from archetype_classifier.geometry.diffs import DeckDiff, build_axis, build_deck_diff, build_share_axis
+from archetype_classifier.geometry.space_test import deck, lists_space, rows_space
 
 ROOT_HALF = math.sqrt(0.5)
 
@@ -31,3 +31,10 @@ def test_the_axis_points_from_the_contrast_to_the_archetype() -> None:
 
 def test_no_axis_when_the_centroids_coincide() -> None:
     assert build_axis(lists_space([(1, deck(Island=60))]), ALL_SHOCK, ALL_SHOCK) is None
+
+
+def test_the_share_axis_aligns_each_card_by_its_share_difference() -> None:
+    axis = build_share_axis(ALL_ESSENCE_SCATTER, ALL_SHOCK)
+    assert axis is not None
+    assert axis.gap == pytest.approx(math.sqrt(2))
+    assert axis.alignment == pytest.approx([0, 0, ROOT_HALF, 0, -ROOT_HALF])  # beta: the card's own share difference, not its text.

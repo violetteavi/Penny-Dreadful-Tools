@@ -4,7 +4,7 @@ import math
 import numpy as np
 import pytest
 
-from archetype_classifier.geometry.diffs import DeckDiff, build_axis, build_deck_diff, build_share_axis, build_shift
+from archetype_classifier.geometry.diffs import CardContribution, DeckDiff, build_axis, build_contributions, build_deck_diff, build_share_axis, build_shift
 from archetype_classifier.geometry.space_test import deck, lists_space, rows_space
 
 ROOT_HALF = math.sqrt(0.5)
@@ -67,3 +67,20 @@ def test_an_unchanged_deck_has_no_shift_and_no_on_axis_share() -> None:
     assert axis is not None
     shift = build_shift(axis, TARGET_LINES, TARGET_LINES, movement=0)
     assert (shift.raw, shift.fraction, shift.on_axis) == (0, 0, None)
+
+
+# Contributions: each changed card's part of the shift, and the kept cards' part from rescaling. T is 56 Island and 4 Shock; D swaps 2 Shock for 2
+# Essence Scatter. The axis runs from all Mountain to all Essence Scatter: (-0.8, 1, -0.6) / sqrt(2).
+
+ALL_MOUNTAIN = np.array([0, 1.0, 0, 0, 0])
+SWAP_TARGET, SWAP_DECK = deck(Island=56, Shock=4), deck(Island=56, Essence_Scatter=2, Shock=2)
+
+def test_each_changed_card_contributes_and_the_kept_cards_rescale() -> None:
+    space = lists_space([(1, SWAP_TARGET), (2, SWAP_DECK)])
+    axis = build_axis(space, ALL_ESSENCE_SCATTER, ALL_MOUNTAIN)
+    assert axis is not None
+    target_lines, deck_lines = space.lines.toarray()
+    contributions = build_contributions(axis, space.cards, deck_lines, target_lines, build_deck_diff(SWAP_TARGET, SWAP_DECK))
+    assert contributions.cards == [CardContribution('Essence Scatter', 0, 2, pytest.approx(0.025222, abs=1e-6)),
+                                   CardContribution('Shock', 4, 2, pytest.approx(0.015095, abs=1e-6))]  # 4 -> 2: its own row, though 2 are kept.
+    assert contributions.rescaling == pytest.approx(-0.000717, abs=1e-6)  # Island, kept: its line shrinks, and it points away from Essence Scatter.

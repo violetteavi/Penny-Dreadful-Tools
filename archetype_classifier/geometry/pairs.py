@@ -6,7 +6,10 @@ from enum import Enum
 import numpy as np
 
 from archetype_classifier.evaluation.metrics import ArchetypeTree
-from archetype_classifier.models.embedding_nearest import TrainingRows
+from archetype_classifier.models.embedding_nearest import TrainingRows, build_candidates
+
+
+NEAR_RIVALS = 5
 
 
 class PairClass(Enum):
@@ -38,3 +41,10 @@ def build_pair_class(tree: ArchetypeTree, deck_label: int, row_label: int) -> Pa
     if parent is not None and parent == tree.archetypes[row_label].parent_id:
         return PairClass.SIBLING
     return PairClass.SAME_BRANCH if deck_lineage & row_lineage else PairClass.UNRELATED
+
+
+def build_near_rivals(similarities: np.ndarray, rows: TrainingRows, label_id: int, count: int = NEAR_RIVALS) -> list[int]:
+    """The best row of each of the count best-scoring other archetypes, ranked as the nearest deck ranks its candidates. An identical list under
+    another label counts: it's the nearest rival there is. Of a label's tied best rows, the first."""
+    rivals = [c.archetype_id for c in build_candidates(similarities, rows) if c.archetype_id != label_id][:count]
+    return [int(np.flatnonzero(rows.labels == rival)[np.argmax(similarities[rows.labels == rival])]) for rival in rivals]

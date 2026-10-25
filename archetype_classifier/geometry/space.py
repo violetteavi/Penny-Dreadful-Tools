@@ -10,8 +10,10 @@ from dataclasses import dataclass
 import numpy as np
 from scipy import sparse
 
+from archetype_classifier.data_loading.dataset import CardCount
 from archetype_classifier.evaluation.model import Model
 from archetype_classifier.models.bag_nearest import BagNearestDeck
+from archetype_classifier.models.card_weights import COPIES
 from archetype_classifier.models.embedding_nearest import EmbeddingNearestDeck, TrainingRows
 
 
@@ -35,6 +37,13 @@ class DeckSpace:
 class Presence:
     cards: tuple[str, ...]  # Every card a training row's maindeck plays, in name order.
     matrix: sparse.csr_matrix  # Rows x cards: 1 where the row plays the card, whatever its copies.
+
+
+@dataclass(frozen=True)
+class PlacedDecks:
+    matrix: np.ndarray | sparse.csr_matrix  # One unit vector per deck, as the model's own rows are.
+    lines: sparse.csr_matrix  # Each deck's scaled lines, columns as the space's cards.
+    lengths: np.ndarray  # Each deck's length before scaling: a line's copies(n) x weight over its scaled line.
 
 
 def build_space(rows: TrainingRows, matrix: np.ndarray | sparse.csr_matrix, lines: sparse.csr_matrix, cards: Sequence[str],
@@ -72,3 +81,16 @@ def build_presence(space: DeckSpace) -> Presence:
     matrix.data[:] = 1
     return Presence(cards, matrix)
 
+
+
+def build_placed_decks(model: Model, maindecks: Sequence[tuple[CardCount, ...]]) -> PlacedDecks:
+    """Any maindecks placed in a nearest deck's space by its own code (#62). Each deck's length is read back from one of its lines, so the model's
+    weighting isn't repeated: a line's unscaled value, copies(n) x the card's weight, over its scaled value."""
+    vectors = model.deck_vectors(maindecks)
+    copies, weight = COPIES[model.copies], model.card_weights.weight
+    column = {card: i for i, card in enumerate(model.embedding.names)}
+    lengths = np.zeros(len(maindecks))
+    for r, maindeck in enumerate(maindecks):
+        line = next(line for line in maindeck if line.card in column)
+        lengths[r] = copies(line.n) * weight(line.card) / vectors.lines[r, column[line.card]]
+    return PlacedDecks(vectors.matrix, vectors.lines, lengths)

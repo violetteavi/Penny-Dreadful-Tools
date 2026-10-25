@@ -1,4 +1,5 @@
 """The space a model reads decks in (#64), and helpers the other geometry tests build their spaces with."""
+import math
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -9,7 +10,7 @@ from scipy import sparse
 from archetype_classifier.card_embeddings.combined_embedding import save_combined_embedding
 from archetype_classifier.data_loading.dataset import CardCount, LabelStatus
 from archetype_classifier.evaluation.model import PredictDeck, TrainingDeck
-from archetype_classifier.geometry.space import DeckSpace, build_model_space, build_presence, build_space
+from archetype_classifier.geometry.space import DeckSpace, build_model_space, build_placed_decks, build_presence, build_space
 from archetype_classifier.models.bag_nearest_test import fitted
 from archetype_classifier.models.embedding_nearest import build_training_rows
 from archetype_classifier.models.embedding_nearest_test import EMBEDDING, weighted
@@ -126,3 +127,18 @@ def test_without_an_embedding_each_card_is_its_own_coordinate() -> None:
     space = rows_space([(1, (1, 0, 0))])
     assert np.allclose(space.vector(np.array([0.2, 0.3, 0.5])), [0.2, 0.3, 0.5])
     assert np.allclose(space.alignment(np.array([0.6, 0.8, 0])), [0.6, 0.8, 0])
+
+
+# Decks placed in a model's space (#62): any maindecks, by the model's own code, with each deck's length before scaling.
+
+def test_placed_decks_are_the_models_own_vectors_with_their_lengths(small_embedding: Path) -> None:
+    model = weighted(small_embedding, weights='idf', copies='sqrt')
+    maindecks = [deck(Shock=4, Mountain=56), deck(Shock=2, Burst_Lightning=4, Mountain=54)]
+    placed = build_placed_decks(model, maindecks)
+    vectors = model.deck_vectors(maindecks)
+    assert np.array_equal(placed.matrix, vectors.matrix)
+    assert (placed.lines != vectors.lines).nnz == 0
+    column = {card: i for i, card in enumerate(model.embedding.names)}
+    for r, maindeck in enumerate(maindecks):  # Each line back unscaled: sqrt(copies) x the card's weight.
+        assert [placed.lengths[r] * placed.lines[r, column[line.card]] for line in maindeck] == pytest.approx(
+            [math.sqrt(line.n) * model.card_weights.weight(line.card) for line in maindeck])

@@ -98,6 +98,7 @@ def build_placed_decks(model: Model, maindecks: Sequence[tuple[CardCount, ...]])
     column = {card: i for i, card in enumerate(cards)}
     lengths = np.zeros(len(maindecks))
     for r, maindeck in enumerate(maindecks):
-        line = next(line for line in maindeck if line.card in column)
-        lengths[r] = copies(line.n) * weight(line.card) / lines[r, column[line.card]]
+        line = next((line for line in maindeck if line.card in column), None)
+        if line is not None:  # A deck with no line in the space keeps length 0: it has no vector either.
+            lengths[r] = copies(line.n) * weight(line.card) / lines[r, column[line.card]]
     return PlacedDecks(matrix, lines, lengths)

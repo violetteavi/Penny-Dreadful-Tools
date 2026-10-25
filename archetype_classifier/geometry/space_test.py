@@ -160,3 +160,8 @@ def test_placed_decks_in_the_bag_count_an_unseen_card_in_their_length() -> None:
     known = [line for line in maindeck if line.card in model.vocabulary]
     assert [placed.lengths[0] * placed.lines[0, model.vocabulary[line.card]] for line in known] == pytest.approx(
         [math.sqrt(line.n) * model.card_weights.weight(line.card) for line in known])
+
+def test_a_deck_with_no_line_in_the_space_has_length_0() -> None:
+    placed = build_placed_decks(fitted(), [deck(Smaug_s_Fury=4, Divination=4)])
+    assert placed.lengths.tolist() == [0]
+    assert placed.lines.nnz == 0

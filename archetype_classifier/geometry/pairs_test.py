@@ -63,3 +63,10 @@ def test_coverage_draws_one_row_per_class_never_the_anchors_own() -> None:
     assert (drawn[PairClass.SAME], drawn[PairClass.SIBLING], drawn[PairClass.ANCESTOR_DESCENDANT]) == (1, 2, 3)
     assert drawn[PairClass.UNRELATED] in (4, 5)
     assert drawn[PairClass.SAME_BRANCH] is None
+
+def test_the_same_seed_gives_the_same_draws() -> None:
+    def draws(seed: int) -> list[int | None]:
+        rng = np.random.default_rng(seed)
+        return [build_coverage_rows(IZZET_CONTROL, None, FAMILY_ROWS, COUSINS, frozenset(FAMILY), rng)[PairClass.UNRELATED] for _ in range(20)]
+    assert draws(5) == draws(5)
+    assert set(draws(5)) == {4, 5}  # Both unrelated labels get drawn.
